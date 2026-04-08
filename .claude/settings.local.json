@@ -1,0 +1,34 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(find d:/Repositories/TeeNova -type f '\\(' -name '*.cs' -o -name '*.csproj' -o -name '*.sln' -o -name '*.json' -o -name '*.ts' -o -name '*.tsx' -o -name '*.css' -o -name '*.md' '\\)' -exec sed -i 's/PrintCraft/TeeNova/g; s/printcraft/teenova/g' '{}' ';')",
+      "Bash(mv src/PrintCraft.Domain.Shared/PrintCraftDomainSharedModule.cs src/PrintCraft.Domain.Shared/TeeNovaDomainSharedModule.cs)",
+      "Bash(mv src/PrintCraft.Domain.Shared/PrintCraftResource.cs          src/PrintCraft.Domain.Shared/TeeNovaResource.cs)",
+      "Bash(mv src/PrintCraft.Domain.Shared/PrintCraft.Domain.Shared.csproj src/PrintCraft.Domain.Shared/TeeNova.Domain.Shared.csproj)",
+      "Bash(mv src/PrintCraft.Domain/PrintCraftDomainModule.cs src/PrintCraft.Domain/TeeNovaDomainModule.cs)",
+      "Bash(mv src/PrintCraft.Domain/PrintCraft.Domain.csproj  src/PrintCraft.Domain/TeeNova.Domain.csproj)",
+      "Bash(mv src/PrintCraft.Domain.Shared          src/TeeNova.Domain.Shared)",
+      "Bash(mv src/PrintCraft.Domain                 src/TeeNova.Domain)",
+      "Bash(mv \"src/PrintCraft.Application.Contracts\" \"src/TeeNova.Application.Contracts\")",
+      "Bash(mv src/PrintCraft.Application            src/TeeNova.Application)",
+      "Bash(mv src/PrintCraft.EntityFrameworkCore    src/TeeNova.EntityFrameworkCore)",
+      "Bash(npm install:*)",
+      "Bash(npx tsc:*)",
+      "Bash(xargs sed -i 's/<TargetFramework>net9\\\\.0<\\\\/TargetFramework>/<TargetFramework>net8.0<\\\\/TargetFramework>/g;:*)",
+      "Bash(xargs grep:*)",
+      "Bash(dotnet build:*)",
+      "Bash(echo \"exit: $?\")",
+      "Bash(dotnet ef:*)",
+      "Bash(dotnet add:*)",
+      "Bash(grep -l \"ISoftDelete\" \"C:/Users/admin/.nuget/packages/volo.abp.auditing/8.3.0/lib/net8.0/\"*)",
+      "Bash(powershell -c 'Add-Type -Path '\\\\''C:\\\\Users\\\\admin\\\\.nuget\\\\packages\\\\volo.abp.auditing\\\\8.3.0\\\\lib\\\\net8.0\\\\Volo.Abp.Auditing.dll'\\\\''; [System.AppDomain]::CurrentDomain.GetAssemblies\\(\\) | ForEach-Object { $_.GetTypes\\(\\) | Where-Object { $_.Name -eq '\\\\''ISoftDelete'\\\\'' } } | Select-Object FullName, Assembly')",
+      "Bash(timeout 60 npx next build)",
+      "Bash(timeout 80 npx next build)",
+      "Bash(rm -rf .next)",
+      "Bash(npx next:*)",
+      "Bash(xargs wc:*)",
+      "Bash(powershell -Command \"Stop-Process -Name git -Force -ErrorAction SilentlyContinue; Start-Sleep 1; Remove-Item 'D:\\\\Repositories\\\\TeeNova\\\\.git\\\\index.lock' -Force -ErrorAction SilentlyContinue; Write-Output 'done'\")",
+      "Bash(git commit -m ':*)"
+    ]
+  }
+}
