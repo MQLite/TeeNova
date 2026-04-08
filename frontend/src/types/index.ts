@@ -116,6 +116,7 @@ export interface PrintPositionUpload {
   position: PrintPosition
   uploadedAssetId?: string
   uploadedAssetUrl?: string
+  designNote?: string
 }
 
 export interface CartItem {
