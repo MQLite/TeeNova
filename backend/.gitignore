@@ -1,0 +1,26 @@
+# Build output
+bin/
+obj/
+*.user
+.vs/
+
+# Logs
+Logs/
+*.log
+
+# Local environment overrides — never commit these
+**/appsettings.Development.json
+**/appsettings.Production.json
+**/appsettings.Staging.json
+
+# Uploaded files (local storage)
+**/wwwroot/uploads/
+
+# EF Core migration snapshots generated locally (keep migrations themselves)
+# Uncomment if you don't want to track snapshots:
+# **/Migrations/*ModelSnapshot.cs
+
+# Secrets
+secrets.json
+*.pfx
+*.p12

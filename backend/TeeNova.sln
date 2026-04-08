@@ -1,0 +1,26 @@
+
+Microsoft Visual Studio Solution File, Format Version 12.00
+# Visual Studio Version 17
+VisualStudioVersion = 17.0.0.0
+
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "TeeNova.Domain.Shared", "src\TeeNova.Domain.Shared\TeeNova.Domain.Shared.csproj", "{A1000001-0000-0000-0000-000000000001}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "TeeNova.Domain", "src\TeeNova.Domain\TeeNova.Domain.csproj", "{A1000002-0000-0000-0000-000000000002}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "TeeNova.Application.Contracts", "src\TeeNova.Application.Contracts\TeeNova.Application.Contracts.csproj", "{A1000003-0000-0000-0000-000000000003}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "TeeNova.Application", "src\TeeNova.Application\TeeNova.Application.csproj", "{A1000004-0000-0000-0000-000000000004}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "TeeNova.EntityFrameworkCore", "src\TeeNova.EntityFrameworkCore\TeeNova.EntityFrameworkCore.csproj", "{A1000005-0000-0000-0000-000000000005}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "TeeNova.HttpApi", "src\TeeNova.HttpApi\TeeNova.HttpApi.csproj", "{A1000006-0000-0000-0000-000000000006}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "TeeNova.HttpApi.Host", "src\TeeNova.HttpApi.Host\TeeNova.HttpApi.Host.csproj", "{A1000007-0000-0000-0000-000000000007}"
+EndProject
+
+Global
+    GlobalSection(SolutionConfigurationPlatforms) = preSolution
+        Debug|Any CPU = Debug|Any CPU
+        Release|Any CPU = Release|Any CPU
+    EndGlobalSection
+EndGlobal

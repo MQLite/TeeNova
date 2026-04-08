@@ -1,0 +1,53 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    // ─── Backend: ASP.NET Core ────────────────────────────────────────────────
+    {
+      "name": "Backend: TeeNova API",
+      "type": "coreclr",
+      "request": "launch",
+      "preLaunchTask": "backend: build",
+      "program": "${workspaceFolder}/backend/src/TeeNova.HttpApi.Host/bin/Debug/net8.0/TeeNova.HttpApi.Host.dll",
+      "args": [],
+      "cwd": "${workspaceFolder}/backend/src/TeeNova.HttpApi.Host",
+      "stopAtEntry": false,
+      "serverReadyAction": {
+        "action": "openExternally",
+        "pattern": "\\bNow listening on:\\s+(https?://\\S+)"
+      },
+      "env": {
+        "ASPNETCORE_ENVIRONMENT": "Development",
+        "ASPNETCORE_URLS": "https://localhost:44300"
+      },
+      "sourceFileMap": {
+        "/Views": "${workspaceFolder}/backend/src/TeeNova.HttpApi.Host/Views"
+      }
+    },
+    // ─── Frontend: Next.js ────────────────────────────────────────────────────
+    {
+      "name": "Frontend: Next.js",
+      "type": "node",
+      "request": "launch",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["run", "dev"],
+      "cwd": "${workspaceFolder}/frontend",
+      "console": "integratedTerminal",
+      "serverReadyAction": {
+        "action": "openExternally",
+        "pattern": "- Local:\\s+(http://\\S+)"
+      }
+    },
+    // ─── Full Stack: Backend + Frontend ──────────────────────────────────────
+    {
+      "name": "Full Stack",
+      "configurations": ["Backend: TeeNova API", "Frontend: Next.js"]
+    }
+  ],
+  "compounds": [
+    {
+      "name": "Full Stack",
+      "configurations": ["Backend: TeeNova API", "Frontend: Next.js"],
+      "stopAll": true
+    }
+  ]
+}

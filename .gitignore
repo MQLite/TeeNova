@@ -1,0 +1,10 @@
+# VSCode personal settings (do not commit)
+.vscode/settings.json
+
+# Environment files
+.env.local
+.env.*.local
+
+# OS
+.DS_Store
+Thumbs.db

@@ -1,0 +1,84 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    // ─── Backend ─────────────────────────────────────────────────────────────
+    {
+      "label": "backend: build",
+      "type": "shell",
+      "command": "dotnet build ${workspaceFolder}/backend/src/TeeNova.HttpApi.Host/TeeNova.HttpApi.Host.csproj -c Debug",
+      "group": "build",
+      "presentation": {
+        "reveal": "silent",
+        "panel": "shared"
+      },
+      "problemMatcher": "$msCompile"
+    },
+    {
+      "label": "backend: watch",
+      "type": "shell",
+      "command": "dotnet watch run --project ${workspaceFolder}/backend/src/TeeNova.HttpApi.Host/TeeNova.HttpApi.Host.csproj",
+      "group": "build",
+      "presentation": {
+        "reveal": "always",
+        "panel": "dedicated"
+      },
+      "problemMatcher": "$msCompile",
+      "isBackground": true
+    },
+    {
+      "label": "backend: ef migrate",
+      "type": "shell",
+      "command": "dotnet ef database update --project src/TeeNova.EntityFrameworkCore --startup-project src/TeeNova.HttpApi.Host",
+      "options": {
+        "cwd": "${workspaceFolder}/backend"
+      },
+      "presentation": {
+        "reveal": "always",
+        "panel": "dedicated"
+      },
+      "problemMatcher": []
+    },
+    // ─── Frontend ─────────────────────────────────────────────────────────────
+    {
+      "label": "frontend: install",
+      "type": "shell",
+      "command": "npm install",
+      "options": {
+        "cwd": "${workspaceFolder}/frontend"
+      },
+      "presentation": {
+        "reveal": "always",
+        "panel": "dedicated"
+      },
+      "problemMatcher": []
+    },
+    {
+      "label": "frontend: dev",
+      "type": "shell",
+      "command": "npm run dev",
+      "options": {
+        "cwd": "${workspaceFolder}/frontend"
+      },
+      "group": "build",
+      "presentation": {
+        "reveal": "always",
+        "panel": "dedicated"
+      },
+      "problemMatcher": [],
+      "isBackground": true
+    },
+    {
+      "label": "frontend: type-check",
+      "type": "shell",
+      "command": "npm run type-check",
+      "options": {
+        "cwd": "${workspaceFolder}/frontend"
+      },
+      "presentation": {
+        "reveal": "always",
+        "panel": "dedicated"
+      },
+      "problemMatcher": ["$tsc"]
+    }
+  ]
+}
