@@ -4,39 +4,35 @@ import type { PrintPositionOption } from '@/types'
 
 interface DesignPreviewProps {
   productImageUrl: string | null
-  designUrl: string | null
-  selectedPosition: number | null
+  positionUploads: Record<number, string>  // positionValue → designUrl
+  selectedPositions: number[]
   positions: PrintPositionOption[]
 }
 
-// Approximate placement on a T-shirt silhouette (percent-based)
 const positionLayout: Record<string, { top: string; left: string; width: string; transform?: string }> = {
-  FrontCenter:  { top: '36%', left: '50%',  width: '38%', transform: 'translateX(-50%)' },
-  BackCenter:   { top: '36%', left: '50%',  width: '38%', transform: 'translateX(-50%)' },
-  LeftChest:    { top: '26%', left: '30%',  width: '20%' },
-  RightChest:   { top: '26%', left: '50%',  width: '20%' },
-  LeftSleeve:   { top: '20%', left: '7%',   width: '16%' },
-  RightSleeve:  { top: '20%', left: '77%',  width: '16%' },
-  NeckLabel:    { top: '6%',  left: '50%',  width: '14%', transform: 'translateX(-50%)' },
+  FrontCenter: { top: '36%', left: '50%', width: '38%', transform: 'translateX(-50%)' },
+  BackCenter:  { top: '36%', left: '50%', width: '38%', transform: 'translateX(-50%)' },
+  LeftChest:   { top: '26%', left: '30%', width: '20%' },
+  RightChest:  { top: '26%', left: '50%', width: '20%' },
+  LeftSleeve:  { top: '20%', left: '7%',  width: '16%' },
+  RightSleeve: { top: '20%', left: '77%', width: '16%' },
+  NeckLabel:   { top: '6%',  left: '50%', width: '14%', transform: 'translateX(-50%)' },
 }
 
-export function DesignPreview({ productImageUrl, designUrl, selectedPosition, positions }: DesignPreviewProps) {
-  const positionName = positions.find((p) => p.value === selectedPosition)?.name ?? null
-  const layout = positionName ? positionLayout[positionName] : null
-  const positionLabel = positions.find((p) => p.value === selectedPosition)?.displayLabel
+export function DesignPreview({ productImageUrl, positionUploads, selectedPositions, positions }: DesignPreviewProps) {
+  const uploadedCount = Object.keys(positionUploads).length
 
   return (
     <div className="space-y-3">
       <div className="flex items-center justify-between">
         <p className="text-sm font-semibold text-gray-800">Live Preview</p>
-        {positionLabel && (
-          <span className="rounded-full bg-brand-100 px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-wide text-brand-700">
-            {positionLabel}
+        {uploadedCount > 0 && (
+          <span className="rounded-full bg-green-100 px-2.5 py-0.5 text-[10px] font-bold text-green-700">
+            ✓ {uploadedCount} design{uploadedCount !== 1 ? 's' : ''} applied
           </span>
         )}
       </div>
 
-      {/* Preview frame */}
       <div className="relative overflow-hidden rounded-2xl border-2 border-gray-100 bg-gradient-to-br from-gray-50 to-white shadow-inner">
         {productImageUrl ? (
           // eslint-disable-next-line @next/next/no-img-element
@@ -52,45 +48,66 @@ export function DesignPreview({ productImageUrl, designUrl, selectedPosition, po
           </div>
         )}
 
-        {/* Design overlay */}
-        {designUrl && layout && (
-          // eslint-disable-next-line @next/next/no-img-element
-          <img
-            src={designUrl}
-            alt="Your design"
-            className="absolute object-contain opacity-90"
-            style={{
-              top: layout.top,
-              left: layout.left,
-              width: layout.width,
-              transform: layout.transform,
-              maxHeight: '30%',
-              filter: 'drop-shadow(0 2px 6px rgba(0,0,0,0.25))',
-            }}
-          />
-        )}
+        {/* Dashed placeholders for selected positions with no upload */}
+        {selectedPositions.map((posVal) => {
+          const posName = positions.find((p) => p.value === posVal)?.name ?? null
+          const layout = posName ? positionLayout[posName] : null
+          if (!layout || positionUploads[posVal]) return null
+          return (
+            <div
+              key={`placeholder-${posVal}`}
+              className="absolute rounded-lg border-2 border-dashed border-brand-300/60"
+              style={{
+                top: layout.top,
+                left: layout.left,
+                width: layout.width,
+                transform: layout.transform,
+                minHeight: '8%',
+                aspectRatio: '1',
+              }}
+            />
+          )
+        })}
 
-        {/* Upload prompt when no design */}
-        {!designUrl && (
+        {/* Design overlays for all uploaded positions */}
+        {selectedPositions.map((posVal) => {
+          const posName = positions.find((p) => p.value === posVal)?.name ?? null
+          const designUrl = positionUploads[posVal]
+          const layout = posName ? positionLayout[posName] : null
+          if (!designUrl || !layout) return null
+          return (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img
+              key={`design-${posVal}`}
+              src={designUrl}
+              alt="Design"
+              className="absolute object-contain opacity-90"
+              style={{
+                top: layout.top,
+                left: layout.left,
+                width: layout.width,
+                transform: layout.transform,
+                maxHeight: '30%',
+                filter: 'drop-shadow(0 2px 6px rgba(0,0,0,0.25))',
+              }}
+            />
+          )
+        })}
+
+        {/* Empty state */}
+        {selectedPositions.length === 0 && uploadedCount === 0 && (
           <div className="absolute inset-0 flex flex-col items-center justify-center gap-2">
             <div className="rounded-2xl bg-white/80 px-5 py-3 text-center shadow-sm backdrop-blur-sm border border-gray-100">
-              <p className="text-sm font-semibold text-gray-700">Upload a design</p>
+              <p className="text-sm font-semibold text-gray-700">Select a position & upload</p>
               <p className="text-xs text-gray-400 mt-0.5">to see your preview here</p>
             </div>
           </div>
         )}
 
-        {/* Position label badge */}
-        {positionName && (
+        {/* Position count badge */}
+        {selectedPositions.length > 0 && (
           <div className="absolute bottom-3 right-3 rounded-xl bg-black/60 px-2.5 py-1 text-[10px] font-bold uppercase tracking-wide text-white backdrop-blur-sm">
-            {positionLabel}
-          </div>
-        )}
-
-        {/* Design uploaded badge */}
-        {designUrl && (
-          <div className="absolute left-3 top-3 flex items-center gap-1 rounded-full bg-green-500 px-2.5 py-1 text-[10px] font-bold text-white shadow">
-            <span>✓</span> Design applied
+            {selectedPositions.length} position{selectedPositions.length !== 1 ? 's' : ''}
           </div>
         )}
       </div>

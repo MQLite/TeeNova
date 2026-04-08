@@ -112,6 +112,12 @@ export interface Order {
 
 // ─── Cart (client-side) ───────────────────────────────────────────────────────
 
+export interface PrintPositionUpload {
+  position: PrintPosition
+  uploadedAssetId?: string
+  uploadedAssetUrl?: string
+}
+
 export interface CartItem {
   productId: string
   productVariantId: string
@@ -119,6 +125,8 @@ export interface CartItem {
   variantLabel: string
   unitPrice: number
   quantity: number
+  printPositions?: PrintPositionUpload[]
+  // legacy single-position fields kept for checkout API compatibility
   uploadedAssetId?: string
   uploadedAssetUrl?: string
   printPosition?: PrintPosition
