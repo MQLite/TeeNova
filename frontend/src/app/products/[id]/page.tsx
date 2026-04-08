@@ -23,6 +23,7 @@ export default function ProductDetailPage() {
   const [selectedVariant, setSelectedVariant] = useState<ProductVariant | null>(null)
   const [selectedPositions, setSelectedPositions] = useState<number[]>([])
   const [positionUploads, setPositionUploads] = useState<Record<number, UploadedAsset>>({})
+  const [positionNotes, setPositionNotes] = useState<Record<number, string>>({})
   const [uploadingPosition, setUploadingPosition] = useState<number | null>(null)
   const [dragOverPosition, setDragOverPosition] = useState<number | null>(null)
   const [loading, setLoading] = useState(true)
@@ -68,7 +69,12 @@ export default function ProductDetailPage() {
         const posName = positions.find((p) => p.value === posVal)?.name as PrintPosition | undefined
         const asset = positionUploads[posVal]
         return posName
-          ? { position: posName, uploadedAssetId: asset?.assetId, uploadedAssetUrl: asset?.fileUrl }
+          ? {
+              position: posName,
+              uploadedAssetId: asset?.assetId,
+              uploadedAssetUrl: asset?.fileUrl,
+              designNote: positionNotes[posVal] || undefined,
+            }
           : null
       })
       .filter((x): x is NonNullable<typeof x> => x !== null)
@@ -298,7 +304,7 @@ export default function ProductDetailPage() {
                   Select a print position above first
                 </p>
               ) : (
-                <div className="space-y-2">
+                <div className="space-y-3">
                   {selectedPositions.map((posVal) => {
                     const posLabel = positions.find((p) => p.value === posVal)?.displayLabel ?? ''
                     const asset = positionUploads[posVal]
@@ -306,67 +312,83 @@ export default function ProductDetailPage() {
                     const isDragOver = dragOverPosition === posVal
 
                     return (
-                      <div key={posVal} className="flex items-center gap-2">
-                        <span className="w-24 shrink-0 text-xs font-medium text-gray-600">{posLabel}</span>
-                        <label
-                          className={`flex flex-1 cursor-pointer items-center gap-2 rounded-xl border-2 border-dashed px-3 py-2 transition-all
-                            ${isDragOver ? 'border-brand-500 bg-brand-50' : 'border-gray-200 hover:border-brand-300 hover:bg-gray-50'}
-                            ${asset ? 'border-green-300 bg-green-50' : ''}`}
-                          onDragOver={(e) => { e.preventDefault(); setDragOverPosition(posVal) }}
-                          onDragLeave={() => setDragOverPosition(null)}
-                          onDrop={(e) => {
-                            e.preventDefault()
-                            setDragOverPosition(null)
-                            const file = e.dataTransfer.files[0]
-                            if (file) handleFileUpload(file, posVal)
-                          }}
-                        >
-                          <input
-                            type="file"
-                            accept="image/png,image/jpeg,image/svg+xml,image/webp"
-                            className="hidden"
-                            onChange={(e) => {
-                              const file = e.target.files?.[0]
+                      <div key={posVal} className="rounded-xl border border-gray-100 bg-gray-50/50 p-3 space-y-2">
+                        {/* Position label */}
+                        <p className="text-xs font-semibold text-gray-700">📍 {posLabel}</p>
+
+                        {/* Upload zone */}
+                        <div className="flex items-center gap-2">
+                          <label
+                            className={`flex flex-1 cursor-pointer items-center gap-2 rounded-xl border-2 border-dashed px-3 py-2 transition-all
+                              ${isDragOver ? 'border-brand-500 bg-brand-50' : 'border-gray-200 bg-white hover:border-brand-300 hover:bg-gray-50'}
+                              ${asset ? 'border-green-300 bg-green-50' : ''}`}
+                            onDragOver={(e) => { e.preventDefault(); setDragOverPosition(posVal) }}
+                            onDragLeave={() => setDragOverPosition(null)}
+                            onDrop={(e) => {
+                              e.preventDefault()
+                              setDragOverPosition(null)
+                              const file = e.dataTransfer.files[0]
                               if (file) handleFileUpload(file, posVal)
                             }}
-                          />
-                          {isUploading ? (
-                            <div className="flex items-center gap-2">
-                              <div className="h-5 w-5 animate-spin rounded-full border-2 border-brand-100 border-t-brand-600" />
-                              <span className="text-xs text-brand-600">Uploading…</span>
-                            </div>
-                          ) : asset ? (
-                            <div className="flex w-full items-center gap-2">
-                              {/* eslint-disable-next-line @next/next/no-img-element */}
-                              <img
-                                src={asset.fileUrl}
-                                alt=""
-                                className="h-8 w-8 shrink-0 rounded-lg border border-gray-200 object-contain"
-                              />
-                              <span className="flex-1 truncate text-xs font-medium text-green-700">
-                                ✓ {asset.originalFileName}
-                              </span>
-                              <span className="shrink-0 text-[10px] text-gray-400">change</span>
-                            </div>
-                          ) : (
-                            <div className="flex items-center gap-2">
-                              <UploadIcon />
-                              <span className="text-xs text-gray-500">Drop or click to upload</span>
-                            </div>
-                          )}
-                        </label>
-                        {asset && (
-                          <button
-                            type="button"
-                            onClick={() => removePositionUpload(posVal)}
-                            className="shrink-0 text-gray-300 transition-colors hover:text-red-400"
-                            title="Remove design"
                           >
-                            <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                              <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
-                            </svg>
-                          </button>
-                        )}
+                            <input
+                              type="file"
+                              accept="image/png,image/jpeg,image/svg+xml,image/webp"
+                              className="hidden"
+                              onChange={(e) => {
+                                const file = e.target.files?.[0]
+                                if (file) handleFileUpload(file, posVal)
+                              }}
+                            />
+                            {isUploading ? (
+                              <div className="flex items-center gap-2">
+                                <div className="h-5 w-5 animate-spin rounded-full border-2 border-brand-100 border-t-brand-600" />
+                                <span className="text-xs text-brand-600">Uploading…</span>
+                              </div>
+                            ) : asset ? (
+                              <div className="flex w-full items-center gap-2">
+                                {/* eslint-disable-next-line @next/next/no-img-element */}
+                                <img
+                                  src={asset.fileUrl}
+                                  alt=""
+                                  className="h-8 w-8 shrink-0 rounded-lg border border-gray-200 object-contain"
+                                />
+                                <span className="flex-1 truncate text-xs font-medium text-green-700">
+                                  ✓ {asset.originalFileName}
+                                </span>
+                                <span className="shrink-0 text-[10px] text-gray-400">change</span>
+                              </div>
+                            ) : (
+                              <div className="flex items-center gap-2">
+                                <UploadIcon />
+                                <span className="text-xs text-gray-500">Drop or click to upload</span>
+                              </div>
+                            )}
+                          </label>
+                          {asset && (
+                            <button
+                              type="button"
+                              onClick={() => removePositionUpload(posVal)}
+                              className="shrink-0 text-gray-300 transition-colors hover:text-red-400"
+                              title="Remove design"
+                            >
+                              <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                                <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+                              </svg>
+                            </button>
+                          )}
+                        </div>
+
+                        {/* Text / description input */}
+                        <textarea
+                          rows={2}
+                          value={positionNotes[posVal] ?? ''}
+                          onChange={(e) =>
+                            setPositionNotes((prev) => ({ ...prev, [posVal]: e.target.value }))
+                          }
+                          placeholder="Input the text to print here… or describe your requirements (e.g. colour, font, size)"
+                          className="w-full resize-none rounded-xl border border-gray-200 bg-white px-3 py-2 text-xs text-gray-700 placeholder-gray-400 outline-none transition-colors focus:border-brand-400 focus:ring-2 focus:ring-brand-100"
+                        />
                       </div>
                     )
                   })}
