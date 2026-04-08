@@ -55,10 +55,10 @@ export default function CartPage() {
                 <div className="flex gap-4 p-5">
                   {/* Thumbnail */}
                   <div className="flex-shrink-0 h-20 w-20 rounded-xl overflow-hidden bg-gradient-to-br from-brand-50 to-purple-50 flex items-center justify-center">
-                    {item.uploadedAssetUrl ? (
+                    {(item.printPositions?.[0]?.uploadedAssetUrl ?? item.uploadedAssetUrl) ? (
                       // eslint-disable-next-line @next/next/no-img-element
                       <img
-                        src={item.uploadedAssetUrl}
+                        src={item.printPositions?.[0]?.uploadedAssetUrl ?? item.uploadedAssetUrl ?? ''}
                         alt="design"
                         className="h-full w-full object-contain p-1"
                       />
@@ -75,11 +75,19 @@ export default function CartPage() {
                       <div>
                         <h3 className="font-semibold text-gray-900 truncate">{item.productName}</h3>
                         <p className="mt-0.5 text-sm text-gray-500">{item.variantLabel}</p>
-                        {item.printPosition && (
+                        {(item.printPositions && item.printPositions.length > 0) ? (
+                          <div className="mt-1 flex flex-wrap gap-1">
+                            {item.printPositions.map((pp) => (
+                              <span key={pp.position} className="inline-flex items-center rounded-full bg-brand-50 px-2 py-0.5 text-[10px] font-semibold text-brand-700">
+                                📍 {pp.position.replace(/([A-Z])/g, ' $1').trim()}
+                              </span>
+                            ))}
+                          </div>
+                        ) : item.printPosition ? (
                           <span className="mt-1 inline-flex items-center rounded-full bg-brand-50 px-2 py-0.5 text-[10px] font-semibold text-brand-700">
                             📍 {item.printPosition.replace(/([A-Z])/g, ' $1').trim()}
                           </span>
-                        )}
+                        ) : null}
                       </div>
                       <button
                         onClick={() => removeItem(item.productVariantId)}

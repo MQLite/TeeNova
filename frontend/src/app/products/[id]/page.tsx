@@ -21,13 +21,13 @@ export default function ProductDetailPage() {
   const [product, setProduct] = useState<Product | null>(null)
   const [positions, setPositions] = useState<PrintPositionOption[]>([])
   const [selectedVariant, setSelectedVariant] = useState<ProductVariant | null>(null)
-  const [selectedPosition, setSelectedPosition] = useState<number | null>(null)
-  const [uploadedAsset, setUploadedAsset] = useState<UploadedAsset | null>(null)
-  const [uploading, setUploading] = useState(false)
+  const [selectedPositions, setSelectedPositions] = useState<number[]>([])
+  const [positionUploads, setPositionUploads] = useState<Record<number, UploadedAsset>>({})
+  const [uploadingPosition, setUploadingPosition] = useState<number | null>(null)
+  const [dragOverPosition, setDragOverPosition] = useState<number | null>(null)
   const [loading, setLoading] = useState(true)
   const [quantity, setQuantity] = useState(1)
   const [addedToCart, setAddedToCart] = useState(false)
-  const [dragOver, setDragOver] = useState(false)
 
   useEffect(() => {
     Promise.all([catalogApi.getProduct(id), customizationApi.getPrintPositions()])
@@ -37,36 +37,43 @@ export default function ProductDetailPage() {
         const first = p.variants.find((v) => v.isAvailable)
         if (first) setSelectedVariant(first)
         const front = pos.find((p) => p.name === 'FrontCenter')
-        if (front) setSelectedPosition(front.value)
+        if (front) setSelectedPositions([front.value])
       })
       .finally(() => setLoading(false))
   }, [id])
 
-  async function handleFileUpload(file: File) {
-    setUploading(true)
+  async function handleFileUpload(file: File, positionValue: number) {
+    setUploadingPosition(positionValue)
     try {
       const asset = await filesApi.upload(file)
-      setUploadedAsset(asset)
+      setPositionUploads((prev) => ({ ...prev, [positionValue]: asset }))
     } finally {
-      setUploading(false)
+      setUploadingPosition(null)
     }
   }
 
-  async function handleFileChange(e: React.ChangeEvent<HTMLInputElement>) {
-    const file = e.target.files?.[0]
-    if (file) handleFileUpload(file)
-  }
-
-  function handleDrop(e: React.DragEvent) {
-    e.preventDefault()
-    setDragOver(false)
-    const file = e.dataTransfer.files[0]
-    if (file) handleFileUpload(file)
+  function removePositionUpload(positionValue: number) {
+    setPositionUploads((prev) => {
+      const next = { ...prev }
+      delete next[positionValue]
+      return next
+    })
   }
 
   function handleAddToCart() {
     if (!product || !selectedVariant) return
-    const positionName = positions.find((p) => p.value === selectedPosition)?.name as PrintPosition | undefined
+
+    const printPositions = selectedPositions
+      .map((posVal) => {
+        const posName = positions.find((p) => p.value === posVal)?.name as PrintPosition | undefined
+        const asset = positionUploads[posVal]
+        return posName
+          ? { position: posName, uploadedAssetId: asset?.assetId, uploadedAssetUrl: asset?.fileUrl }
+          : null
+      })
+      .filter((x): x is NonNullable<typeof x> => x !== null)
+
+    const first = printPositions[0]
     addItem({
       productId: product.id,
       productVariantId: selectedVariant.id,
@@ -74,9 +81,11 @@ export default function ProductDetailPage() {
       variantLabel: `${selectedVariant.color} / ${selectedVariant.size}`,
       unitPrice: product.basePrice + selectedVariant.priceAdjustment,
       quantity,
-      uploadedAssetId: uploadedAsset?.assetId,
-      uploadedAssetUrl: uploadedAsset?.fileUrl,
-      printPosition: positionName,
+      printPositions,
+      // legacy fields for checkout API
+      uploadedAssetId: first?.uploadedAssetId,
+      uploadedAssetUrl: first?.uploadedAssetUrl,
+      printPosition: first?.position,
     })
     setAddedToCart(true)
     setTimeout(() => setAddedToCart(false), 2500)
@@ -110,6 +119,9 @@ export default function ProductDetailPage() {
   const uniqueColors = [...new Set(product.variants.map((v) => v.color))]
   const uniqueSizes = [...new Set(product.variants.map((v) => v.size))]
   const totalPrice = effectivePrice * quantity
+  const positionUploadUrls: Record<number, string> = Object.fromEntries(
+    Object.entries(positionUploads).map(([k, v]) => [Number(k), v.fileUrl])
+  )
 
   return (
     <div className="bg-gray-50 min-h-screen">
@@ -132,7 +144,7 @@ export default function ProductDetailPage() {
           {/* ── Column 1: Product image ── */}
           <div className="lg:col-span-1">
             <div className="sticky top-24">
-              <div className="overflow-hidden rounded-2xl border border-gray-100 bg-white ">
+              <div className="overflow-hidden rounded-2xl border border-gray-100 bg-white">
                 {primaryImage ? (
                   // eslint-disable-next-line @next/next/no-img-element
                   <img
@@ -150,7 +162,6 @@ export default function ProductDetailPage() {
                 )}
               </div>
 
-              {/* Product highlights */}
               <div className="mt-4 grid grid-cols-3 gap-2">
                 {[
                   { icon: '✓', text: 'Premium cotton' },
@@ -270,62 +281,98 @@ export default function ProductDetailPage() {
               </div>
             </div>
 
-            {/* Upload design */}
-            <div className="rounded-2xl bg-white border border-gray-100 shadow-sm p-5 space-y-3">
-              <p className="text-sm font-semibold text-gray-800">Upload Your Design</p>
-              <label
-                className={`flex cursor-pointer flex-col items-center justify-center gap-3 rounded-xl border-2 border-dashed p-6 text-center transition-all
-                  ${dragOver ? 'border-brand-500 bg-brand-50' : 'border-gray-200 hover:border-brand-300 hover:bg-gray-50'}
-                  ${uploadedAsset ? 'border-green-300 bg-green-50' : ''}`}
-                onDragOver={(e) => { e.preventDefault(); setDragOver(true) }}
-                onDragLeave={() => setDragOver(false)}
-                onDrop={handleDrop}
-              >
-                <input
-                  type="file"
-                  accept="image/png,image/jpeg,image/svg+xml,image/webp"
-                  className="hidden"
-                  onChange={handleFileChange}
-                />
-                {uploading ? (
-                  <div className="flex flex-col items-center gap-2">
-                    <div className="h-8 w-8 animate-spin rounded-full border-4 border-brand-100 border-t-brand-600" />
-                    <p className="text-sm font-medium text-brand-600">Uploading…</p>
-                  </div>
-                ) : uploadedAsset ? (
-                  <div className="flex flex-col items-center gap-2">
-                    {/* eslint-disable-next-line @next/next/no-img-element */}
-                    <img
-                      src={uploadedAsset.fileUrl}
-                      alt="Uploaded design"
-                      className="h-16 w-16 rounded-xl object-contain border border-gray-200 shadow-sm"
-                    />
-                    <p className="text-sm font-semibold text-green-700">✓ {uploadedAsset.originalFileName}</p>
-                    <p className="text-xs text-gray-400">Click to replace</p>
-                  </div>
-                ) : (
-                  <>
-                    <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-brand-50 text-brand-600">
-                      <UploadIcon />
-                    </div>
-                    <div>
-                      <p className="text-sm font-semibold text-gray-700">
-                        Drag & drop or <span className="text-brand-600">browse</span>
-                      </p>
-                      <p className="mt-1 text-xs text-gray-400">PNG, JPEG, SVG or WebP · max 10 MB</p>
-                    </div>
-                  </>
-                )}
-              </label>
-            </div>
-
-            {/* Print position */}
+            {/* Print positions (multi-select) */}
             <div className="rounded-2xl bg-white border border-gray-100 shadow-sm p-5">
               <PrintPositionSelector
                 positions={positions}
-                selected={selectedPosition}
-                onChange={setSelectedPosition}
+                selected={selectedPositions}
+                onChange={setSelectedPositions}
               />
+            </div>
+
+            {/* Upload designs — per position */}
+            <div className="rounded-2xl bg-white border border-gray-100 shadow-sm p-5 space-y-3">
+              <p className="text-sm font-semibold text-gray-800">Upload Designs</p>
+              {selectedPositions.length === 0 ? (
+                <p className="rounded-xl border border-dashed border-gray-200 py-5 text-center text-sm text-gray-400">
+                  Select a print position above first
+                </p>
+              ) : (
+                <div className="space-y-2">
+                  {selectedPositions.map((posVal) => {
+                    const posLabel = positions.find((p) => p.value === posVal)?.displayLabel ?? ''
+                    const asset = positionUploads[posVal]
+                    const isUploading = uploadingPosition === posVal
+                    const isDragOver = dragOverPosition === posVal
+
+                    return (
+                      <div key={posVal} className="flex items-center gap-2">
+                        <span className="w-24 shrink-0 text-xs font-medium text-gray-600">{posLabel}</span>
+                        <label
+                          className={`flex flex-1 cursor-pointer items-center gap-2 rounded-xl border-2 border-dashed px-3 py-2 transition-all
+                            ${isDragOver ? 'border-brand-500 bg-brand-50' : 'border-gray-200 hover:border-brand-300 hover:bg-gray-50'}
+                            ${asset ? 'border-green-300 bg-green-50' : ''}`}
+                          onDragOver={(e) => { e.preventDefault(); setDragOverPosition(posVal) }}
+                          onDragLeave={() => setDragOverPosition(null)}
+                          onDrop={(e) => {
+                            e.preventDefault()
+                            setDragOverPosition(null)
+                            const file = e.dataTransfer.files[0]
+                            if (file) handleFileUpload(file, posVal)
+                          }}
+                        >
+                          <input
+                            type="file"
+                            accept="image/png,image/jpeg,image/svg+xml,image/webp"
+                            className="hidden"
+                            onChange={(e) => {
+                              const file = e.target.files?.[0]
+                              if (file) handleFileUpload(file, posVal)
+                            }}
+                          />
+                          {isUploading ? (
+                            <div className="flex items-center gap-2">
+                              <div className="h-5 w-5 animate-spin rounded-full border-2 border-brand-100 border-t-brand-600" />
+                              <span className="text-xs text-brand-600">Uploading…</span>
+                            </div>
+                          ) : asset ? (
+                            <div className="flex w-full items-center gap-2">
+                              {/* eslint-disable-next-line @next/next/no-img-element */}
+                              <img
+                                src={asset.fileUrl}
+                                alt=""
+                                className="h-8 w-8 shrink-0 rounded-lg border border-gray-200 object-contain"
+                              />
+                              <span className="flex-1 truncate text-xs font-medium text-green-700">
+                                ✓ {asset.originalFileName}
+                              </span>
+                              <span className="shrink-0 text-[10px] text-gray-400">change</span>
+                            </div>
+                          ) : (
+                            <div className="flex items-center gap-2">
+                              <UploadIcon />
+                              <span className="text-xs text-gray-500">Drop or click to upload</span>
+                            </div>
+                          )}
+                        </label>
+                        {asset && (
+                          <button
+                            type="button"
+                            onClick={() => removePositionUpload(posVal)}
+                            className="shrink-0 text-gray-300 transition-colors hover:text-red-400"
+                            title="Remove design"
+                          >
+                            <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                              <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+                            </svg>
+                          </button>
+                        )}
+                      </div>
+                    )
+                  })}
+                </div>
+              )}
+              <p className="text-[10px] text-gray-400">PNG, JPEG, SVG or WebP · max 10 MB per file</p>
             </div>
 
             {/* Add to cart CTA */}
@@ -334,7 +381,7 @@ export default function ProductDetailPage() {
                 size="lg"
                 onClick={handleAddToCart}
                 disabled={!selectedVariant}
-                loading={uploading}
+                loading={uploadingPosition !== null}
                 className="w-full text-base py-4"
               >
                 {addedToCart ? (
@@ -367,19 +414,19 @@ export default function ProductDetailPage() {
               <div className="rounded-2xl bg-white border border-gray-100 shadow-sm p-5">
                 <DesignPreview
                   productImageUrl={primaryImage?.url ?? null}
-                  designUrl={uploadedAsset?.fileUrl ?? null}
-                  selectedPosition={selectedPosition}
+                  positionUploads={positionUploadUrls}
+                  selectedPositions={selectedPositions}
                   positions={positions}
                 />
               </div>
 
-              {/* Info card */}
               <div className="rounded-2xl border border-brand-100 bg-brand-50 p-4">
                 <h4 className="text-sm font-bold text-brand-900 mb-2">Design Tips</h4>
                 <ul className="space-y-1.5 text-xs text-brand-700">
                   <li className="flex gap-1.5"><span>→</span> Use high-res images (300 DPI+)</li>
                   <li className="flex gap-1.5"><span>→</span> PNG with transparent background works best</li>
                   <li className="flex gap-1.5"><span>→</span> SVG files give the sharpest results</li>
+                  <li className="flex gap-1.5"><span>→</span> You can print on multiple positions</li>
                   <li className="flex gap-1.5"><span>→</span> We review all designs before printing</li>
                 </ul>
               </div>
@@ -394,7 +441,7 @@ export default function ProductDetailPage() {
 
 function UploadIcon() {
   return (
-    <svg className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+    <svg className="h-4 w-4 shrink-0 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
       <path strokeLinecap="round" strokeLinejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
     </svg>
   )
