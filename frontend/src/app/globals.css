@@ -1,0 +1,45 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  html {
+    @apply antialiased scroll-smooth;
+  }
+
+  body {
+    @apply bg-white text-gray-900;
+  }
+
+  /* Better focus ring */
+  :focus-visible {
+    @apply outline-none ring-2 ring-brand-500 ring-offset-2;
+  }
+
+  /* Input base */
+  input, textarea, select {
+    @apply transition-colors duration-150;
+  }
+}
+
+@layer components {
+  .section-container {
+    @apply mx-auto max-w-7xl px-4 sm:px-6 lg:px-8;
+  }
+
+  .section-heading {
+    @apply text-3xl font-bold tracking-tight text-gray-900 sm:text-4xl;
+  }
+
+  .section-subheading {
+    @apply mt-4 text-lg text-gray-500 max-w-2xl;
+  }
+
+  /* Styled input */
+  .form-input {
+    @apply w-full rounded-xl border border-gray-200 bg-white px-4 py-3 text-sm
+           shadow-sm placeholder:text-gray-400
+           focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-500/20
+           transition-all duration-150;
+  }
+}

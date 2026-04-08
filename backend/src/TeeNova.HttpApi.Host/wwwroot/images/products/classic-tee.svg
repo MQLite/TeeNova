@@ -1,0 +1,19 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 420" width="400" height="420">
+  <rect width="400" height="420" fill="#EEF4FA"/>
+  <!-- Shadow -->
+  <path d="M 118 72 L 60 95 L 28 170 L 82 188 L 88 170 L 88 370 L 312 370 L 312 170 L 318 188 L 372 170 L 340 95 L 282 72 C 268 108 236 122 200 122 C 164 122 132 108 118 72 Z" fill="rgba(0,0,0,0.06)" transform="translate(4,4)"/>
+  <!-- T-shirt body -->
+  <path d="M 118 72 L 60 95 L 28 170 L 82 188 L 88 170 L 88 370 L 312 370 L 312 170 L 318 188 L 372 170 L 340 95 L 282 72 C 268 108 236 122 200 122 C 164 122 132 108 118 72 Z" fill="#4B9FDB" stroke="#2E7AB5" stroke-width="2"/>
+  <!-- Collar -->
+  <path d="M 118 72 Q 200 138 282 72" fill="none" stroke="#2E7AB5" stroke-width="2"/>
+  <!-- Subtle fabric texture lines -->
+  <line x1="88" y1="200" x2="312" y2="200" stroke="#3A8AC8" stroke-width="0.5" opacity="0.4"/>
+  <line x1="88" y1="240" x2="312" y2="240" stroke="#3A8AC8" stroke-width="0.5" opacity="0.4"/>
+  <line x1="88" y1="280" x2="312" y2="280" stroke="#3A8AC8" stroke-width="0.5" opacity="0.4"/>
+  <line x1="88" y1="320" x2="312" y2="320" stroke="#3A8AC8" stroke-width="0.5" opacity="0.4"/>
+  <!-- Print area indicator -->
+  <rect x="148" y="185" width="104" height="100" rx="4" fill="none" stroke="#2E7AB5" stroke-width="1" stroke-dasharray="4 3" opacity="0.5"/>
+  <text x="200" y="240" text-anchor="middle" font-family="sans-serif" font-size="10" fill="#2E7AB5" opacity="0.6">Print Area</text>
+  <!-- Product label -->
+  <text x="200" y="400" text-anchor="middle" font-family="sans-serif" font-size="13" font-weight="600" fill="#4A6FA5" letter-spacing="0.5">Classic Cotton Tee</text>
+</svg>
