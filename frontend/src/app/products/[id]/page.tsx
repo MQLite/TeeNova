@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { useParams, useRouter } from 'next/navigation'
+import { useParams } from 'next/navigation'
 import Link from 'next/link'
 import { catalogApi } from '@/api/catalog'
 import { customizationApi } from '@/api/customization'
@@ -10,32 +10,29 @@ import { useCartStore } from '@/features/cart/cart-store'
 import { Button } from '@/components/ui/Button'
 import { Badge } from '@/components/ui/Badge'
 import { PrintPositionSelector } from '@/components/products/PrintPositionSelector'
-import type { Product, ProductVariant, PrintPositionOption, PrintPosition, UploadedAsset } from '@/types'
+import type { Product, PrintPositionOption, PrintPosition, UploadedAsset } from '@/types'
 
 export default function ProductDetailPage() {
   const { id } = useParams<{ id: string }>()
-  const router = useRouter()
   const addItem = useCartStore((s) => s.addItem)
 
   const [product, setProduct] = useState<Product | null>(null)
   const [positions, setPositions] = useState<PrintPositionOption[]>([])
-  const [selectedVariant, setSelectedVariant] = useState<ProductVariant | null>(null)
   const [selectedPositions, setSelectedPositions] = useState<number[]>([])
   const [positionUploads, setPositionUploads] = useState<Record<number, UploadedAsset>>({})
   const [positionNotes, setPositionNotes] = useState<Record<number, string>>({})
   const [uploadingPosition, setUploadingPosition] = useState<number | null>(null)
   const [dragOverPosition, setDragOverPosition] = useState<number | null>(null)
   const [loading, setLoading] = useState(true)
-  const [quantity, setQuantity] = useState(1)
   const [addedToCart, setAddedToCart] = useState(false)
+  // variantQtys: variantId → quantity (only non-zero entries are meaningful)
+  const [variantQtys, setVariantQtys] = useState<Record<string, number>>({})
 
   useEffect(() => {
     Promise.all([catalogApi.getProduct(id), customizationApi.getPrintPositions()])
       .then(([p, pos]) => {
         setProduct(p)
         setPositions(pos)
-        const first = p.variants.find((v) => v.isAvailable)
-        if (first) setSelectedVariant(first)
         const front = pos.find((p) => p.name === 'FrontCenter')
         if (front) setSelectedPositions([front.value])
       })
@@ -60,8 +57,13 @@ export default function ProductDetailPage() {
     })
   }
 
+  function setQty(variantId: string, value: string) {
+    const n = Math.max(0, Math.min(999, parseInt(value) || 0))
+    setVariantQtys((prev) => ({ ...prev, [variantId]: n }))
+  }
+
   function handleAddToCart() {
-    if (!product || !selectedVariant) return
+    if (!product) return
 
     const printPositions = selectedPositions
       .map((posVal) => {
@@ -79,19 +81,25 @@ export default function ProductDetailPage() {
       .filter((x): x is NonNullable<typeof x> => x !== null)
 
     const first = printPositions[0]
-    addItem({
-      productId: product.id,
-      productVariantId: selectedVariant.id,
-      productName: product.name,
-      variantLabel: `${selectedVariant.color} / ${selectedVariant.size}`,
-      unitPrice: product.basePrice + selectedVariant.priceAdjustment,
-      quantity,
-      printPositions,
-      // legacy fields for checkout API
-      uploadedAssetId: first?.uploadedAssetId,
-      uploadedAssetUrl: first?.uploadedAssetUrl,
-      printPosition: first?.position,
+
+    Object.entries(variantQtys).forEach(([variantId, qty]) => {
+      if (qty <= 0) return
+      const variant = product.variants.find((v) => v.id === variantId)
+      if (!variant) return
+      addItem({
+        productId: product.id,
+        productVariantId: variant.id,
+        productName: product.name,
+        variantLabel: `${variant.color} / ${variant.size}`,
+        unitPrice: product.basePrice + variant.priceAdjustment,
+        quantity: qty,
+        printPositions,
+        uploadedAssetId: first?.uploadedAssetId,
+        uploadedAssetUrl: first?.uploadedAssetUrl,
+        printPosition: first?.position,
+      })
     })
+
     setAddedToCart(true)
     setTimeout(() => setAddedToCart(false), 2500)
   }
@@ -120,10 +128,24 @@ export default function ProductDetailPage() {
   }
 
   const primaryImage = product.images.find((i) => i.isPrimary) ?? product.images[0]
-  const effectivePrice = product.basePrice + (selectedVariant?.priceAdjustment ?? 0)
   const uniqueColors = [...new Set(product.variants.map((v) => v.color))]
   const uniqueSizes = [...new Set(product.variants.map((v) => v.size))]
-  const totalPrice = effectivePrice * quantity
+
+  // Compute totals from table
+  const totalQty = Object.values(variantQtys).reduce((s, q) => s + (q > 0 ? q : 0), 0)
+  const totalPrice = product.variants.reduce((sum, v) => {
+    const qty = variantQtys[v.id] ?? 0
+    return sum + (qty > 0 ? (product.basePrice + v.priceAdjustment) * qty : 0)
+  }, 0)
+
+  // Price adjustment note: collect unique adjustments
+  const priceAdjustments = uniqueSizes
+    .map((size) => {
+      const v = product.variants.find((vr) => vr.size === size)
+      return v && v.priceAdjustment !== 0 ? { size, adj: v.priceAdjustment } : null
+    })
+    .filter((x): x is { size: string; adj: number } => x !== null)
+
   return (
     <div className="bg-gray-50 min-h-screen">
       {/* Breadcrumb */}
@@ -180,6 +202,7 @@ export default function ProductDetailPage() {
 
           {/* ── Column 2: Options ── */}
           <div className="flex flex-col gap-6 lg:col-span-1">
+
             {/* Product title & price */}
             <div className="rounded-2xl bg-white border border-gray-100 shadow-sm p-5">
               <Badge color="purple" className="mb-2">{product.productType}</Badge>
@@ -188,98 +211,101 @@ export default function ProductDetailPage() {
                 <p className="mt-2 text-sm leading-relaxed text-gray-500">{product.description}</p>
               )}
               <div className="mt-4 flex items-baseline gap-2">
-                <span className="text-3xl font-extrabold text-brand-600">${effectivePrice.toFixed(2)}</span>
-                {selectedVariant?.priceAdjustment !== 0 && selectedVariant?.priceAdjustment && (
-                  <span className="text-xs text-gray-400">
-                    (+${selectedVariant.priceAdjustment.toFixed(2)} for this size)
-                  </span>
+                <span className="text-3xl font-extrabold text-brand-600">${product.basePrice.toFixed(2)}</span>
+                <span className="text-sm text-gray-400">per item</span>
+              </div>
+              {priceAdjustments.length > 0 && (
+                <p className="mt-1 text-xs text-gray-400">
+                  {priceAdjustments.map((a) => `${a.size}: +$${a.adj.toFixed(2)}`).join(' · ')}
+                </p>
+              )}
+            </div>
+
+            {/* Quantity table: Color × Size */}
+            <div className="rounded-2xl bg-white border border-gray-100 shadow-sm p-5">
+              <div className="mb-3 flex items-center justify-between">
+                <p className="text-sm font-semibold text-gray-800">Select Sizes & Quantities</p>
+                {totalQty > 0 && (
+                  <span className="text-xs font-medium text-brand-600">{totalQty} item{totalQty !== 1 ? 's' : ''} selected</span>
                 )}
               </div>
-            </div>
 
-            {/* Colour selector */}
-            <div className="rounded-2xl bg-white border border-gray-100 shadow-sm p-5 space-y-3">
-              <div className="flex items-center justify-between">
-                <p className="text-sm font-semibold text-gray-800">Colour</p>
-                <span className="text-sm font-medium text-brand-600">{selectedVariant?.color}</span>
-              </div>
-              <div className="flex flex-wrap gap-2">
-                {uniqueColors.map((color) => {
-                  const isSelected = selectedVariant?.color === color
-                  return (
-                    <button
-                      key={color}
-                      onClick={() => {
-                        const v = product.variants.find(
-                          (vr) => vr.color === color && vr.size === selectedVariant?.size && vr.isAvailable
-                        ) ?? product.variants.find((vr) => vr.color === color && vr.isAvailable)
-                        if (v) setSelectedVariant(v)
-                      }}
-                      className={`rounded-xl border-2 px-3.5 py-1.5 text-sm font-medium transition-all ${
-                        isSelected
-                          ? 'border-brand-600 bg-brand-50 text-brand-700 shadow-sm'
-                          : 'border-gray-200 text-gray-600 hover:border-brand-300 hover:text-brand-600'
-                      }`}
-                    >
-                      {color}
-                    </button>
-                  )
-                })}
-              </div>
-            </div>
+              <div className="overflow-x-auto">
+                <table className="w-full border-collapse text-sm">
+                  <thead>
+                    <tr>
+                      <th className="pb-2 pr-3 text-left text-xs font-semibold text-gray-500 w-28">Colour</th>
+                      {uniqueSizes.map((size) => {
+                        const adj = product.variants.find((v) => v.size === size)?.priceAdjustment ?? 0
+                        return (
+                          <th key={size} className="pb-2 px-1.5 text-center text-xs font-semibold text-gray-700 min-w-[4rem]">
+                            <span>{size}</span>
+                            {adj !== 0 && (
+                              <span className="block text-[9px] font-normal text-gray-400">+${adj.toFixed(2)}</span>
+                            )}
+                          </th>
+                        )
+                      })}
+                      <th className="pb-2 pl-3 text-right text-xs font-semibold text-gray-500">Subtotal</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-50">
+                    {uniqueColors.map((color) => {
+                      const rowTotal = uniqueSizes.reduce((sum, size) => {
+                        const v = product.variants.find((vr) => vr.color === color && vr.size === size)
+                        if (!v) return sum
+                        const qty = variantQtys[v.id] ?? 0
+                        return sum + qty * (product.basePrice + v.priceAdjustment)
+                      }, 0)
 
-            {/* Size selector */}
-            <div className="rounded-2xl bg-white border border-gray-100 shadow-sm p-5 space-y-3">
-              <div className="flex items-center justify-between">
-                <p className="text-sm font-semibold text-gray-800">Size</p>
-                <span className="text-sm font-medium text-brand-600">{selectedVariant?.size}</span>
+                      return (
+                        <tr key={color} className="hover:bg-gray-50/50">
+                          <td className="py-2 pr-3 text-xs font-medium text-gray-700 align-middle">{color}</td>
+                          {uniqueSizes.map((size) => {
+                            const variant = product.variants.find(
+                              (vr) => vr.color === color && vr.size === size
+                            )
+                            const unavailable = !variant || !variant.isAvailable
+                            return (
+                              <td key={size} className="py-2 px-1.5 text-center align-middle">
+                                {unavailable ? (
+                                  <span className="text-[10px] text-gray-300">—</span>
+                                ) : (
+                                  <input
+                                    type="number"
+                                    min={0}
+                                    max={999}
+                                    value={variantQtys[variant!.id] || ''}
+                                    placeholder="0"
+                                    onChange={(e) => setQty(variant!.id, e.target.value)}
+                                    className="w-14 rounded-lg border border-gray-200 bg-gray-50 px-1.5 py-1.5 text-center text-sm font-semibold text-gray-900 outline-none transition-colors focus:border-brand-400 focus:bg-white focus:ring-2 focus:ring-brand-100 [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
+                                  />
+                                )}
+                              </td>
+                            )
+                          })}
+                          <td className="py-2 pl-3 text-right text-xs font-semibold text-gray-700 align-middle tabular-nums">
+                            {rowTotal > 0 ? `$${rowTotal.toFixed(2)}` : <span className="text-gray-300">—</span>}
+                          </td>
+                        </tr>
+                      )
+                    })}
+                  </tbody>
+                  {totalQty > 0 && (
+                    <tfoot>
+                      <tr className="border-t-2 border-gray-100">
+                        <td colSpan={uniqueSizes.length + 1} className="pt-2.5 pr-3 text-xs text-gray-500">
+                          {totalQty} item{totalQty !== 1 ? 's' : ''}
+                        </td>
+                        <td className="pt-2.5 pl-3 text-right text-sm font-bold text-gray-900 tabular-nums">
+                          ${totalPrice.toFixed(2)}
+                        </td>
+                      </tr>
+                    </tfoot>
+                  )}
+                </table>
               </div>
-              <div className="flex flex-wrap gap-2">
-                {uniqueSizes.map((size) => {
-                  const v = product.variants.find(
-                    (vr) => vr.size === size && vr.color === selectedVariant?.color
-                  )
-                  const isSelected = selectedVariant?.size === size
-                  const isAvailable = v?.isAvailable ?? false
-                  return (
-                    <button
-                      key={size}
-                      disabled={!isAvailable}
-                      onClick={() => { if (v) setSelectedVariant(v) }}
-                      className={`min-w-[3rem] rounded-xl border-2 py-1.5 text-sm font-semibold transition-all
-                        disabled:opacity-40 disabled:cursor-not-allowed
-                        ${isSelected
-                          ? 'border-brand-600 bg-brand-600 text-white shadow-sm'
-                          : 'border-gray-200 text-gray-700 hover:border-brand-300'}`}
-                    >
-                      {size}
-                    </button>
-                  )
-                })}
-              </div>
-            </div>
-
-            {/* Quantity */}
-            <div className="rounded-2xl bg-white border border-gray-100 shadow-sm p-5">
-              <p className="mb-3 text-sm font-semibold text-gray-800">Quantity</p>
-              <div className="flex items-center gap-3">
-                <button
-                  onClick={() => setQuantity(q => Math.max(1, q - 1))}
-                  className="flex h-10 w-10 items-center justify-center rounded-xl border-2 border-gray-200 text-gray-600 hover:border-brand-300 hover:text-brand-600 transition-colors text-lg font-bold"
-                >
-                  −
-                </button>
-                <span className="w-12 text-center text-lg font-bold text-gray-900">{quantity}</span>
-                <button
-                  onClick={() => setQuantity(q => Math.min(99, q + 1))}
-                  className="flex h-10 w-10 items-center justify-center rounded-xl border-2 border-gray-200 text-gray-600 hover:border-brand-300 hover:text-brand-600 transition-colors text-lg font-bold"
-                >
-                  +
-                </button>
-                <span className="ml-auto text-sm font-medium text-gray-500">
-                  Subtotal: <strong className="text-gray-900">${totalPrice.toFixed(2)}</strong>
-                </span>
-              </div>
+              <p className="mt-3 text-[10px] text-gray-400">Enter 0 or leave blank to skip a size. Max 999 per cell.</p>
             </div>
 
             {/* Print positions (multi-select) */}
@@ -308,10 +334,8 @@ export default function ProductDetailPage() {
 
                     return (
                       <div key={posVal} className="rounded-xl border border-gray-100 bg-gray-50/50 p-3 space-y-2">
-                        {/* Position label */}
                         <p className="text-xs font-semibold text-gray-700">📍 {posLabel}</p>
 
-                        {/* Upload zone */}
                         <div className="flex items-center gap-2">
                           <label
                             className={`flex flex-1 cursor-pointer items-center gap-2 rounded-xl border-2 border-dashed px-3 py-2 transition-all
@@ -343,14 +367,8 @@ export default function ProductDetailPage() {
                             ) : asset ? (
                               <div className="flex w-full items-center gap-2">
                                 {/* eslint-disable-next-line @next/next/no-img-element */}
-                                <img
-                                  src={asset.fileUrl}
-                                  alt=""
-                                  className="h-8 w-8 shrink-0 rounded-lg border border-gray-200 object-contain"
-                                />
-                                <span className="flex-1 truncate text-xs font-medium text-green-700">
-                                  ✓ {asset.originalFileName}
-                                </span>
+                                <img src={asset.fileUrl} alt="" className="h-8 w-8 shrink-0 rounded-lg border border-gray-200 object-contain" />
+                                <span className="flex-1 truncate text-xs font-medium text-green-700">✓ {asset.originalFileName}</span>
                                 <span className="shrink-0 text-[10px] text-gray-400">change</span>
                               </div>
                             ) : (
@@ -374,13 +392,10 @@ export default function ProductDetailPage() {
                           )}
                         </div>
 
-                        {/* Text / description input */}
                         <textarea
                           rows={2}
                           value={positionNotes[posVal] ?? ''}
-                          onChange={(e) =>
-                            setPositionNotes((prev) => ({ ...prev, [posVal]: e.target.value }))
-                          }
+                          onChange={(e) => setPositionNotes((prev) => ({ ...prev, [posVal]: e.target.value }))}
                           placeholder="Input the text to print here… or describe your requirements (e.g. colour, font, size)"
                           className="w-full resize-none rounded-xl border border-gray-200 bg-white px-3 py-2 text-xs text-gray-700 placeholder-gray-400 outline-none transition-colors focus:border-brand-400 focus:ring-2 focus:ring-brand-100"
                         />
@@ -397,16 +412,16 @@ export default function ProductDetailPage() {
               <Button
                 size="lg"
                 onClick={handleAddToCart}
-                disabled={!selectedVariant}
+                disabled={totalQty === 0}
                 loading={uploadingPosition !== null}
                 className="w-full text-base py-4"
               >
                 {addedToCart ? (
-                  <span className="flex items-center gap-2">
-                    <span>✓</span> Added to Cart!
-                  </span>
+                  <span className="flex items-center gap-2"><span>✓</span> Added to Cart!</span>
+                ) : totalQty > 0 ? (
+                  `Add ${totalQty} Item${totalQty !== 1 ? 's' : ''} to Cart — $${totalPrice.toFixed(2)}`
                 ) : (
-                  `Add to Cart — $${totalPrice.toFixed(2)}`
+                  'Select quantities above'
                 )}
               </Button>
               <p className="mt-3 text-center text-xs text-gray-500">
@@ -423,6 +438,7 @@ export default function ProductDetailPage() {
                 </div>
               )}
             </div>
+
           </div>
 
           {/* ── Column 3: Live preview (temporarily hidden) ── */}
