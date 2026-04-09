@@ -3,25 +3,24 @@ using System.IO;
 using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.Hosting;
 
 namespace TeeNova.Files;
 
 /// <summary>
 /// Development-only local disk implementation.
 /// Replace with AzureBlobStorageService or S3FileStorageService before production.
-/// Upload path is read from App:UploadPath (default: uploads/ next to the executable).
+/// Files are saved under {ContentRoot}/wwwroot/uploads so UseStaticFiles() can serve them.
 /// </summary>
 public class LocalFileStorageService : IFileStorageService
 {
     private readonly string _uploadDirectory;
     private readonly string _baseUrl;
 
-    public LocalFileStorageService(IConfiguration configuration)
+    public LocalFileStorageService(IConfiguration configuration, IHostEnvironment env)
     {
-        var uploadPath = configuration["App:UploadPath"] ?? "uploads";
-        _uploadDirectory = Path.IsPathRooted(uploadPath)
-            ? uploadPath
-            : Path.Combine(AppContext.BaseDirectory, uploadPath);
+        // ContentRootPath is the project root; wwwroot is served by UseStaticFiles()
+        _uploadDirectory = Path.Combine(env.ContentRootPath, "wwwroot", "uploads");
         _baseUrl = configuration["App:SelfUrl"] ?? "https://localhost:44300";
 
         if (!Directory.Exists(_uploadDirectory))
