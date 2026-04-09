@@ -10,7 +10,6 @@ import { useCartStore } from '@/features/cart/cart-store'
 import { Button } from '@/components/ui/Button'
 import { Badge } from '@/components/ui/Badge'
 import { PrintPositionSelector } from '@/components/products/PrintPositionSelector'
-import { DesignPreview } from '@/components/products/DesignPreview'
 import type { Product, ProductVariant, PrintPositionOption, PrintPosition, UploadedAsset } from '@/types'
 
 export default function ProductDetailPage() {
@@ -125,10 +124,6 @@ export default function ProductDetailPage() {
   const uniqueColors = [...new Set(product.variants.map((v) => v.color))]
   const uniqueSizes = [...new Set(product.variants.map((v) => v.size))]
   const totalPrice = effectivePrice * quantity
-  const positionUploadUrls: Record<number, string> = Object.fromEntries(
-    Object.entries(positionUploads).map(([k, v]) => [Number(k), v.fileUrl])
-  )
-
   return (
     <div className="bg-gray-50 min-h-screen">
       {/* Breadcrumb */}
@@ -431,29 +426,7 @@ export default function ProductDetailPage() {
           </div>
 
           {/* ── Column 3: Live preview (temporarily hidden) ── */}
-          {/* <div className="lg:col-span-1">
-            <div className="sticky top-24 space-y-4">
-              <div className="rounded-2xl bg-white border border-gray-100 shadow-sm p-5">
-                <DesignPreview
-                  productImageUrl={primaryImage?.url ?? null}
-                  positionUploads={positionUploadUrls}
-                  selectedPositions={selectedPositions}
-                  positions={positions}
-                />
-              </div>
-
-              <div className="rounded-2xl border border-brand-100 bg-brand-50 p-4">
-                <h4 className="text-sm font-bold text-brand-900 mb-2">Design Tips</h4>
-                <ul className="space-y-1.5 text-xs text-brand-700">
-                  <li className="flex gap-1.5"><span>→</span> Use high-res images (300 DPI+)</li>
-                  <li className="flex gap-1.5"><span>→</span> PNG with transparent background works best</li>
-                  <li className="flex gap-1.5"><span>→</span> SVG files give the sharpest results</li>
-                  <li className="flex gap-1.5"><span>→</span> You can print on multiple positions</li>
-                  <li className="flex gap-1.5"><span>→</span> We review all designs before printing</li>
-                </ul>
-              </div>
-            </div>
-          </div> */}
+          {null}
 
         </div>
       </div>
