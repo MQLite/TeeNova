@@ -1,4 +1,5 @@
 using System;
+using System.IO;
 using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.AspNetCore.Http;
@@ -12,7 +13,21 @@ namespace TeeNova.Files;
 
 public class FileAppService : ApplicationService, IFileAppService
 {
-    private static readonly string[] AllowedContentTypes = { "image/png", "image/jpeg", "image/svg+xml", "image/webp" };
+    private static readonly string[] AllowedContentTypes =
+    {
+        "image/png",
+        "image/jpeg",
+        "image/svg+xml",
+        "image/webp",
+        "application/pdf",
+        "application/illustrator",
+        "application/postscript",   // .ai files sometimes reported as this
+    };
+
+    private static readonly string[] AllowedExtensions =
+    {
+        ".png", ".jpg", ".jpeg", ".svg", ".webp", ".pdf", ".ai",
+    };
     private const long MaxFileSizeBytes = 10 * 1024 * 1024; // 10 MB
 
     private readonly IFileStorageService _storageService;
@@ -34,8 +49,12 @@ public class FileAppService : ApplicationService, IFileAppService
         if (file.Length > MaxFileSizeBytes)
             throw new UserFriendlyException($"File size exceeds the {MaxFileSizeBytes / (1024 * 1024)} MB limit.");
 
-        if (!Array.Exists(AllowedContentTypes, ct => ct == file.ContentType))
-            throw new UserFriendlyException("Only PNG, JPEG, SVG, and WebP files are accepted.");
+        var ext = Path.GetExtension(file.FileName).ToLowerInvariant();
+        var contentTypeAllowed = Array.Exists(AllowedContentTypes, ct => ct == file.ContentType);
+        var extensionAllowed = Array.Exists(AllowedExtensions, e => e == ext);
+
+        if (!contentTypeAllowed && !extensionAllowed)
+            throw new UserFriendlyException("Only PNG, JPEG, SVG, WebP, PDF, and AI files are accepted.");
 
         await using var stream = file.OpenReadStream();
         var fileUrl = await _storageService.SaveAsync(stream, file.FileName, file.ContentType, cancellationToken);
