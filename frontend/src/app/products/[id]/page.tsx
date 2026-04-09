@@ -328,7 +328,7 @@ export default function ProductDetailPage() {
                           >
                             <input
                               type="file"
-                              accept="image/png,image/jpeg,image/svg+xml,image/webp,.ai,application/pdf,application/postscript"
+                              accept="image/png,image/jpeg,image/svg+xml,image/webp,.ai,application/pdf"
                               className="hidden"
                               onChange={(e) => {
                                 const file = e.target.files?.[0]
