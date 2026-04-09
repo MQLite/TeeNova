@@ -1,10 +1,13 @@
 'use client'
 
 import Link from 'next/link'
+import { useEffect, useState } from 'react'
 import { useCartStore } from '@/features/cart/cart-store'
 
 export function Header() {
   const totalItems = useCartStore((s) => s.totalItems())
+  const [mounted, setMounted] = useState(false)
+  useEffect(() => setMounted(true), [])
 
   return (
     <header className="sticky top-0 z-50 border-b border-gray-100 bg-white/95 backdrop-blur-md shadow-sm">
@@ -52,7 +55,7 @@ export function Header() {
             title="Cart"
           >
             <CartIcon />
-            {totalItems > 0 && (
+            {mounted && totalItems > 0 && (
               <span className="absolute -right-0.5 -top-0.5 flex h-5 w-5 items-center justify-center rounded-full bg-brand-600 text-[10px] font-bold text-white ring-2 ring-white">
                 {totalItems > 99 ? '99+' : totalItems}
               </span>
