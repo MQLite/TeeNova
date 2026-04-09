@@ -27,6 +27,7 @@ export default function ProductDetailPage() {
   const [addedToCart, setAddedToCart] = useState(false)
   // variantQtys: variantId → quantity (only non-zero entries are meaningful)
   const [variantQtys, setVariantQtys] = useState<Record<string, number>>({})
+  const [focusedVariantId, setFocusedVariantId] = useState<string | null>(null)
 
   useEffect(() => {
     Promise.all([catalogApi.getProduct(id), customizationApi.getPrintPositions()])
@@ -221,93 +222,6 @@ export default function ProductDetailPage() {
               )}
             </div>
 
-            {/* Quantity table: Color × Size */}
-            <div className="rounded-2xl bg-white border border-gray-100 shadow-sm p-5">
-              <div className="mb-3 flex items-center justify-between">
-                <p className="text-sm font-semibold text-gray-800">Select Sizes & Quantities</p>
-                {totalQty > 0 && (
-                  <span className="text-xs font-medium text-brand-600">{totalQty} item{totalQty !== 1 ? 's' : ''} selected</span>
-                )}
-              </div>
-
-              <div className="overflow-x-auto">
-                <table className="w-full border-collapse text-sm">
-                  <thead>
-                    <tr>
-                      <th className="pb-2 pr-3 text-left text-xs font-semibold text-gray-500 w-28">Colour</th>
-                      {uniqueSizes.map((size) => {
-                        const adj = product.variants.find((v) => v.size === size)?.priceAdjustment ?? 0
-                        return (
-                          <th key={size} className="pb-2 px-1.5 text-center text-xs font-semibold text-gray-700 min-w-[4rem]">
-                            <span>{size}</span>
-                            {adj !== 0 && (
-                              <span className="block text-[9px] font-normal text-gray-400">+${adj.toFixed(2)}</span>
-                            )}
-                          </th>
-                        )
-                      })}
-                      <th className="pb-2 pl-3 text-right text-xs font-semibold text-gray-500">Subtotal</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-gray-50">
-                    {uniqueColors.map((color) => {
-                      const rowTotal = uniqueSizes.reduce((sum, size) => {
-                        const v = product.variants.find((vr) => vr.color === color && vr.size === size)
-                        if (!v) return sum
-                        const qty = variantQtys[v.id] ?? 0
-                        return sum + qty * (product.basePrice + v.priceAdjustment)
-                      }, 0)
-
-                      return (
-                        <tr key={color} className="hover:bg-gray-50/50">
-                          <td className="py-2 pr-3 text-xs font-medium text-gray-700 align-middle">{color}</td>
-                          {uniqueSizes.map((size) => {
-                            const variant = product.variants.find(
-                              (vr) => vr.color === color && vr.size === size
-                            )
-                            const unavailable = !variant || !variant.isAvailable
-                            return (
-                              <td key={size} className="py-2 px-1.5 text-center align-middle">
-                                {unavailable ? (
-                                  <span className="text-[10px] text-gray-300">—</span>
-                                ) : (
-                                  <input
-                                    type="number"
-                                    min={0}
-                                    max={999}
-                                    value={variantQtys[variant!.id] || ''}
-                                    placeholder="0"
-                                    onChange={(e) => setQty(variant!.id, e.target.value)}
-                                    className="w-14 rounded-lg border border-gray-200 bg-gray-50 px-1.5 py-1.5 text-center text-sm font-semibold text-gray-900 outline-none transition-colors focus:border-brand-400 focus:bg-white focus:ring-2 focus:ring-brand-100 [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
-                                  />
-                                )}
-                              </td>
-                            )
-                          })}
-                          <td className="py-2 pl-3 text-right text-xs font-semibold text-gray-700 align-middle tabular-nums">
-                            {rowTotal > 0 ? `$${rowTotal.toFixed(2)}` : <span className="text-gray-300">—</span>}
-                          </td>
-                        </tr>
-                      )
-                    })}
-                  </tbody>
-                  {totalQty > 0 && (
-                    <tfoot>
-                      <tr className="border-t-2 border-gray-100">
-                        <td colSpan={uniqueSizes.length + 1} className="pt-2.5 pr-3 text-xs text-gray-500">
-                          {totalQty} item{totalQty !== 1 ? 's' : ''}
-                        </td>
-                        <td className="pt-2.5 pl-3 text-right text-sm font-bold text-gray-900 tabular-nums">
-                          ${totalPrice.toFixed(2)}
-                        </td>
-                      </tr>
-                    </tfoot>
-                  )}
-                </table>
-              </div>
-              <p className="mt-3 text-[10px] text-gray-400">Enter 0 or leave blank to skip a size. Max 999 per cell.</p>
-            </div>
-
             {/* Print positions (multi-select) */}
             <div className="rounded-2xl bg-white border border-gray-100 shadow-sm p-5">
               <PrintPositionSelector
@@ -405,6 +319,101 @@ export default function ProductDetailPage() {
                 </div>
               )}
               <p className="text-[10px] text-gray-400">PNG, JPG, SVG, WebP, AI, PDF · max 10 MB per file</p>
+            </div>
+
+            {/* Quantity table: Color × Size */}
+            <div className="rounded-2xl bg-white border border-gray-100 shadow-sm p-5">
+              <div className="mb-3 flex items-center justify-between">
+                <p className="text-sm font-semibold text-gray-800">Select Sizes & Quantities</p>
+                {totalQty > 0 && (
+                  <span className="text-xs font-medium text-brand-600">{totalQty} item{totalQty !== 1 ? 's' : ''} selected</span>
+                )}
+              </div>
+
+              <div className="overflow-x-auto">
+                <table className="w-full border-collapse text-sm">
+                  <thead>
+                    <tr>
+                      <th className="pb-2 pr-3 text-left text-xs font-semibold text-gray-500 w-28">Colour</th>
+                      {uniqueSizes.map((size) => {
+                        const adj = product.variants.find((v) => v.size === size)?.priceAdjustment ?? 0
+                        return (
+                          <th key={size} className="pb-2 px-1.5 text-center text-xs font-semibold text-gray-700 min-w-[4rem]">
+                            <span>{size}</span>
+                            {adj !== 0 && (
+                              <span className="block text-[9px] font-normal text-gray-400">+${adj.toFixed(2)}</span>
+                            )}
+                          </th>
+                        )
+                      })}
+                      <th className="pb-2 pl-3 text-right text-xs font-semibold text-gray-500">Subtotal</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-50">
+                    {uniqueColors.map((color) => {
+                      const rowTotal = uniqueSizes.reduce((sum, size) => {
+                        const v = product.variants.find((vr) => vr.color === color && vr.size === size)
+                        if (!v) return sum
+                        const qty = variantQtys[v.id] ?? 0
+                        return sum + qty * (product.basePrice + v.priceAdjustment)
+                      }, 0)
+
+                      return (
+                        <tr key={color} className="hover:bg-gray-50/50">
+                          <td className="py-2 pr-3 text-xs font-medium text-gray-700 align-middle">{color}</td>
+                          {uniqueSizes.map((size) => {
+                            const variant = product.variants.find(
+                              (vr) => vr.color === color && vr.size === size
+                            )
+                            const unavailable = !variant || !variant.isAvailable
+                            const isFocused = focusedVariantId === variant?.id
+                            const displayValue = variant
+                              ? isFocused && (variantQtys[variant.id] ?? 0) === 0
+                                ? ''
+                                : variantQtys[variant.id] || ''
+                              : ''
+                            return (
+                              <td key={size} className="py-2 px-1.5 text-center align-middle">
+                                {unavailable ? (
+                                  <span className="text-[10px] text-gray-300">—</span>
+                                ) : (
+                                  <input
+                                    type="number"
+                                    min={0}
+                                    max={999}
+                                    value={displayValue}
+                                    placeholder="0"
+                                    onFocus={() => setFocusedVariantId(variant!.id)}
+                                    onBlur={() => setFocusedVariantId(null)}
+                                    onChange={(e) => setQty(variant!.id, e.target.value)}
+                                    className="w-14 rounded-lg border border-gray-200 bg-gray-50 px-1.5 py-1.5 text-center text-sm font-semibold text-gray-900 outline-none transition-colors focus:border-brand-400 focus:bg-white focus:ring-2 focus:ring-brand-100 [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
+                                  />
+                                )}
+                              </td>
+                            )
+                          })}
+                          <td className="py-2 pl-3 text-right text-xs font-semibold text-gray-700 align-middle tabular-nums">
+                            {rowTotal > 0 ? `$${rowTotal.toFixed(2)}` : <span className="text-gray-300">—</span>}
+                          </td>
+                        </tr>
+                      )
+                    })}
+                  </tbody>
+                  {totalQty > 0 && (
+                    <tfoot>
+                      <tr className="border-t-2 border-gray-100">
+                        <td colSpan={uniqueSizes.length + 1} className="pt-2.5 pr-3 text-xs text-gray-500">
+                          {totalQty} item{totalQty !== 1 ? 's' : ''}
+                        </td>
+                        <td className="pt-2.5 pl-3 text-right text-sm font-bold text-gray-900 tabular-nums">
+                          ${totalPrice.toFixed(2)}
+                        </td>
+                      </tr>
+                    </tfoot>
+                  )}
+                </table>
+              </div>
+              <p className="mt-3 text-[10px] text-gray-400">Enter 0 or leave blank to skip a size. Max 999 per cell.</p>
             </div>
 
             {/* Add to cart CTA */}
