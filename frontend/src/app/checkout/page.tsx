@@ -57,7 +57,7 @@ export default function CheckoutPage() {
         })),
       })
       clearCart()
-      router.push(`/orders/${order.id}`)
+      router.push(`/checkout/success?orderId=${order.id}`)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Something went wrong. Please try again.')
     } finally {
