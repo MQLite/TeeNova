@@ -328,7 +328,7 @@ export default function ProductDetailPage() {
                           >
                             <input
                               type="file"
-                              accept="image/png,image/jpeg,image/svg+xml,image/webp"
+                              accept="image/png,image/jpeg,image/svg+xml,image/webp,.ai,application/pdf,application/postscript"
                               className="hidden"
                               onChange={(e) => {
                                 const file = e.target.files?.[0]
@@ -389,7 +389,7 @@ export default function ProductDetailPage() {
                   })}
                 </div>
               )}
-              <p className="text-[10px] text-gray-400">PNG, JPEG, SVG or WebP · max 10 MB per file</p>
+              <p className="text-[10px] text-gray-400">PNG, JPG, SVG, WebP, AI, PDF · max 10 MB per file</p>
             </div>
 
             {/* Add to cart CTA */}
