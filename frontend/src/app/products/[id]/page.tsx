@@ -145,7 +145,7 @@ export default function ProductDetailPage() {
       </div>
 
       <div className="mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8">
-        <div className="grid grid-cols-1 gap-8 lg:grid-cols-3">
+        <div className="grid grid-cols-1 gap-8 lg:grid-cols-2">
 
           {/* ── Column 1: Product image ── */}
           <div className="lg:col-span-1">
@@ -430,8 +430,8 @@ export default function ProductDetailPage() {
             </div>
           </div>
 
-          {/* ── Column 3: Live preview ── */}
-          <div className="lg:col-span-1">
+          {/* ── Column 3: Live preview (temporarily hidden) ── */}
+          {/* <div className="lg:col-span-1">
             <div className="sticky top-24 space-y-4">
               <div className="rounded-2xl bg-white border border-gray-100 shadow-sm p-5">
                 <DesignPreview
@@ -453,7 +453,7 @@ export default function ProductDetailPage() {
                 </ul>
               </div>
             </div>
-          </div>
+          </div> */}
 
         </div>
       </div>
