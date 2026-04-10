@@ -12,6 +12,7 @@ export default function CheckoutPage() {
   const router = useRouter()
   const { items, clearCart, totalPrice } = useCartStore()
   const [submitting, setSubmitting] = useState(false)
+  const [submitted, setSubmitted] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
   const [form, setForm] = useState<ShippingAddress & { email: string }>({
@@ -56,6 +57,7 @@ export default function CheckoutPage() {
           printPosition: item.printPosition as PrintPosition | undefined,
         })),
       })
+      setSubmitted(true)
       clearCart()
       router.push(`/checkout/success?orderId=${order.id}`)
     } catch (err) {
@@ -65,7 +67,7 @@ export default function CheckoutPage() {
     }
   }
 
-  if (items.length === 0) {
+  if (items.length === 0 && !submitted) {
     router.replace('/cart')
     return null
   }
