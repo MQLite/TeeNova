@@ -1,6 +1,7 @@
 import Link from 'next/link'
 import { ordersApi } from '@/api/orders'
 import { Badge } from '@/components/ui/Badge'
+import { DownloadDesignButton } from '@/components/orders/DownloadDesignButton'
 import type { OrderStatus } from '@/types'
 
 export const metadata = { title: 'Order Confirmed' }
@@ -96,6 +97,14 @@ export default async function OrderDetailPage({ params }: PageProps) {
                       <span className="mt-1 inline-flex items-center rounded-full bg-brand-50 px-2 py-0.5 text-[10px] font-semibold text-brand-700">
                         📍 {item.printPosition.replace(/([A-Z])/g, ' $1').trim()}
                       </span>
+                    )}
+                    {item.uploadedAssetUrl && (
+                      <DownloadDesignButton url={item.uploadedAssetUrl} />
+                    )}
+                    {item.designNote && (
+                      <div className="mt-2 rounded-lg bg-amber-50 border border-amber-100 px-3 py-2 text-xs text-amber-800">
+                        <span className="font-semibold">Note: </span>{item.designNote}
+                      </div>
                     )}
                   </div>
                   <span className="text-sm font-bold text-gray-900">${item.lineTotal.toFixed(2)}</span>

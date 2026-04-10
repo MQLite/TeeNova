@@ -64,5 +64,7 @@ public class OrderEntityTypeConfiguration :
         builder.Property(i => i.PrintPosition)
             .HasConversion<string>()
             .HasMaxLength(32);
+
+        builder.Property(i => i.DesignNote).HasMaxLength(2000);
     }
 }
