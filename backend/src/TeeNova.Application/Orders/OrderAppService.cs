@@ -42,7 +42,13 @@ public class OrderAppService : ApplicationService, IOrderAppService
 
         foreach (var itemDto in input.Items)
         {
-            var product = await _productRepository.GetAsync(itemDto.ProductId);
+            var productQuery = await _productRepository.GetQueryableAsync();
+            var product = await productQuery
+                .Include(p => p.Variants)
+                .FirstOrDefaultAsync(p => p.Id == itemDto.ProductId)
+                ?? throw new Volo.Abp.Domain.Entities.EntityNotFoundException(
+                    typeof(Catalog.Product), itemDto.ProductId);
+
             var variant = product.Variants.FirstOrDefault(v => v.Id == itemDto.ProductVariantId)
                 ?? throw new Volo.Abp.BusinessException("TeeNova:Catalog:VariantNotFound");
 
