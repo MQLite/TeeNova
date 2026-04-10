@@ -147,14 +147,14 @@ export default async function HomePage() {
           <div className="mb-14 text-center">
             <p className="mb-2 text-sm font-semibold uppercase tracking-widest text-brand-600">Simple Process</p>
             <h2 className="text-3xl font-bold tracking-tight text-gray-900 sm:text-4xl">
-              3 Steps to Your Custom Tee
+              4 Steps to Your Custom Tee
             </h2>
             <p className="mx-auto mt-4 max-w-xl text-base text-gray-500">
               From idea to doorstep in days — no design experience needed.
             </p>
           </div>
 
-          <div className="grid grid-cols-1 gap-0 sm:grid-cols-3">
+          <div className="grid grid-cols-1 gap-0 sm:grid-cols-2 lg:grid-cols-4">
             {[
               {
                 step: '01',
@@ -165,11 +165,17 @@ export default async function HomePage() {
               {
                 step: '02',
                 icon: '🎨',
-                title: 'Upload Your Design',
-                desc: 'Upload your PNG, SVG, or JPEG. Select exactly where on the shirt it prints.',
+                title: 'Upload or Describe Your Design',
+                desc: 'Upload your PNG, SVG, or JPEG, or describe your idea in text. Select exactly where on the shirt it prints.',
               },
               {
                 step: '03',
+                icon: '💬',
+                title: 'Confirm With Us',
+                desc: 'We\'ll reach out to confirm the design details before printing so everything looks perfect.',
+              },
+              {
+                step: '04',
                 icon: '📦',
                 title: 'We Print & Ship',
                 desc: 'We handle the rest. Your order is printed and shipped to your door in NZ.',
@@ -177,8 +183,8 @@ export default async function HomePage() {
             ].map(({ step, icon, title, desc }, i) => (
               <div key={step} className="relative flex flex-col items-center px-8 py-10 text-center">
                 {/* Connector line */}
-                {i < 2 && (
-                  <div className="absolute right-0 top-12 hidden h-px w-8 bg-gradient-to-r from-brand-200 to-transparent sm:block" />
+                {i < 3 && (
+                  <div className="absolute right-0 top-12 hidden h-px w-8 bg-gradient-to-r from-brand-200 to-transparent lg:block" />
                 )}
                 {/* Step number */}
                 <div className="mb-5 flex h-16 w-16 items-center justify-center rounded-2xl bg-brand-50 ring-4 ring-white shadow-sm">

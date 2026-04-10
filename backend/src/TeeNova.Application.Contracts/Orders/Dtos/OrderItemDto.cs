@@ -16,4 +16,5 @@ public class OrderItemDto
     public Guid? UploadedAssetId { get; set; }
     public string? UploadedAssetUrl { get; set; }
     public PrintPosition? PrintPosition { get; set; }
+    public string? DesignNote { get; set; }
 }

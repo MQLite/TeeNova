@@ -10,6 +10,6 @@ public interface IOrderAppService : IApplicationService
 {
     Task<OrderDto> CreateAsync(CreateOrderDto input);
     Task<OrderDto> GetAsync(Guid id);
-    Task<PagedResultDto<OrderDto>> GetListAsync(PagedResultRequestDto input);
+    Task<PagedResultDto<OrderDto>> GetListAsync(GetOrdersInput input);
     Task<OrderDto> UpdateStatusAsync(Guid id, UpdateOrderStatusDto input);
 }

@@ -22,6 +22,7 @@ public class OrderItem : Entity<Guid>
     public Guid? UploadedAssetId { get; set; }
     public string? UploadedAssetUrl { get; set; }   // denormalized URL for display
     public PrintPosition? PrintPosition { get; set; }
+    public string? DesignNote { get; set; }
 
     // Future: DesignProjectId, TemplateId, CropFrameData (JSON)
 
@@ -33,7 +34,7 @@ public class OrderItem : Entity<Guid>
         string productName, string variantLabel,
         int quantity, decimal unitPrice,
         Guid? uploadedAssetId = null, PrintPosition? printPosition = null,
-        string? uploadedAssetUrl = null)
+        string? uploadedAssetUrl = null, string? designNote = null)
         : base(id)
     {
         OrderId = orderId;
@@ -46,5 +47,6 @@ public class OrderItem : Entity<Guid>
         UploadedAssetId = uploadedAssetId;
         UploadedAssetUrl = uploadedAssetUrl;
         PrintPosition = printPosition;
+        DesignNote = designNote;
     }
 }

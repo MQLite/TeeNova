@@ -52,9 +52,10 @@ export default function CheckoutPage() {
           productId: item.productId,
           productVariantId: item.productVariantId,
           quantity: item.quantity,
-          uploadedAssetId: item.uploadedAssetId,
-          uploadedAssetUrl: item.uploadedAssetUrl,
-          printPosition: item.printPosition as PrintPosition | undefined,
+          uploadedAssetId: item.uploadedAssetId ?? item.printPositions?.[0]?.uploadedAssetId,
+          uploadedAssetUrl: item.uploadedAssetUrl ?? item.printPositions?.[0]?.uploadedAssetUrl,
+          printPosition: (item.printPosition ?? item.printPositions?.[0]?.position) as PrintPosition | undefined,
+          designNote: item.printPositions?.[0]?.designNote,
         })),
       })
       setSubmitted(true)
