@@ -24,34 +24,31 @@ public class OrphanedAssetCleanupWorker : AsyncPeriodicBackgroundWorkerBase
     /// <summary>Assets not linked to an order within this window are considered orphans.</summary>
     private const int OrphanThresholdHours = 24;
 
-    private readonly IRepository<UploadedAsset, Guid> _assetRepository;
-    private readonly IRepository<OrderItem, Guid> _orderItemRepository;
-    private readonly IFileStorageService _storageService;
-
     public OrphanedAssetCleanupWorker(
         AbpAsyncTimer timer,
-        IServiceScopeFactory serviceScopeFactory,
-        IRepository<UploadedAsset, Guid> assetRepository,
-        IRepository<OrderItem, Guid> orderItemRepository,
-        IFileStorageService storageService)
+        IServiceScopeFactory serviceScopeFactory)
         : base(timer, serviceScopeFactory)
     {
         Timer.Period = (int)TimeSpan.FromHours(24).TotalMilliseconds;
-        _assetRepository = assetRepository;
-        _orderItemRepository = orderItemRepository;
-        _storageService = storageService;
     }
 
     [UnitOfWork]
     protected override async Task DoWorkAsync(PeriodicBackgroundWorkerContext workerContext)
     {
+        // Resolve scoped services from the worker's per-execution scope,
+        // NOT from constructor injection (would be captive dependency in singleton).
+        var assetRepository = workerContext.ServiceProvider
+            .GetRequiredService<IRepository<UploadedAsset, Guid>>();
+        var orderItemRepository = workerContext.ServiceProvider
+            .GetRequiredService<IRepository<OrderItem, Guid>>();
+        var storageService = workerContext.ServiceProvider
+            .GetRequiredService<IFileStorageService>();
+
         Logger.LogInformation("[AssetCleanup] Starting orphaned asset cleanup...");
 
         var cutoff = DateTime.UtcNow.AddHours(-OrphanThresholdHours);
 
-        // All assets older than the threshold
-        var candidates = await _assetRepository.GetListAsync(
-            a => a.CreationTime < cutoff);
+        var candidates = await assetRepository.GetListAsync(a => a.CreationTime < cutoff);
 
         if (candidates.Count == 0)
         {
@@ -59,9 +56,8 @@ public class OrphanedAssetCleanupWorker : AsyncPeriodicBackgroundWorkerBase
             return;
         }
 
-        // IDs of assets that ARE referenced by at least one order item
         var candidateIds = candidates.Select(a => a.Id).ToList();
-        var referencedIds = (await _orderItemRepository.GetListAsync(
+        var referencedIds = (await orderItemRepository.GetListAsync(
                 oi => oi.UploadedAssetId != null && candidateIds.Contains(oi.UploadedAssetId!.Value)))
             .Select(oi => oi.UploadedAssetId!.Value)
             .ToHashSet();
@@ -79,8 +75,8 @@ public class OrphanedAssetCleanupWorker : AsyncPeriodicBackgroundWorkerBase
         {
             try
             {
-                await _storageService.DeleteAsync(asset.StoredFileUrl);
-                await _assetRepository.DeleteAsync(asset, autoSave: true);
+                await storageService.DeleteAsync(asset.StoredFileUrl);
+                await assetRepository.DeleteAsync(asset, autoSave: true);
                 deleted++;
             }
             catch (Exception ex)

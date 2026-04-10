@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { Suspense, useEffect, useState } from 'react'
 import { useSearchParams } from 'next/navigation'
 import Link from 'next/link'
 import { ordersApi } from '@/api/orders'
@@ -8,6 +8,14 @@ import { Button } from '@/components/ui/Button'
 import type { Order } from '@/types'
 
 export default function CheckoutSuccessPage() {
+  return (
+    <Suspense fallback={<div className="flex min-h-screen items-center justify-center"><div className="h-10 w-10 animate-spin rounded-full border-4 border-brand-100 border-t-brand-600" /></div>}>
+      <SuccessContent />
+    </Suspense>
+  )
+}
+
+function SuccessContent() {
   const searchParams = useSearchParams()
   const orderId = searchParams.get('orderId')
 

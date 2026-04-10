@@ -25,6 +25,6 @@ public class ShippingAddressDto
     public string City { get; set; } = default!;
     public string State { get; set; } = default!;
     public string PostalCode { get; set; } = default!;
-    public string Country { get; set; } = "US";
+    public string Country { get; set; } = "NZ";
     public string? Phone { get; set; }
 }
