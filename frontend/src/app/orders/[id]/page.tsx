@@ -30,18 +30,25 @@ interface PageProps {
 export default async function OrderDetailPage({ params }: PageProps) {
   const { id } = await params
   const order = await ordersApi.getById(id)
-  const msg = statusMessages[order.status]
+
+  // Defensive: backend may serialize enum as integer before restart
+  const status = (typeof order.status === 'number'
+    ? (['Pending','Confirmed','InProduction','Shipped','Delivered','Cancelled'] as const)[order.status as unknown as number]
+    : order.status) ?? 'Pending'
+  const safeOrder = { ...order, status }
+
+  const msg = statusMessages[safeOrder.status] ?? statusMessages['Pending']
 
   return (
     <div className="bg-gray-50 min-h-screen">
       {/* Success banner */}
-      <div className={`py-12 ${order.status === 'Cancelled' ? 'bg-gray-100' : 'bg-gradient-to-br from-brand-950 via-brand-800 to-brand-600'}`}>
+      <div className={`py-12 ${safeOrder.status === 'Cancelled' ? 'bg-gray-100' : 'bg-gradient-to-br from-brand-950 via-brand-800 to-brand-600'}`}>
         <div className="mx-auto max-w-3xl px-4 text-center sm:px-6">
           <div className="mx-auto mb-4 flex h-20 w-20 items-center justify-center rounded-full bg-white/15 backdrop-blur-sm">
             <span className="text-4xl">
-              {order.status === 'Cancelled' ? '❌' :
-               order.status === 'Delivered' ? '🎉' :
-               order.status === 'Shipped' ? '🚚' : '✅'}
+              {safeOrder.status === 'Cancelled' ? '❌' :
+               safeOrder.status === 'Delivered' ? '🎉' :
+               safeOrder.status === 'Shipped' ? '🚚' : '✅'}
             </span>
           </div>
           <h1 className="text-3xl font-extrabold text-white sm:text-4xl">{msg.title}</h1>
@@ -50,7 +57,7 @@ export default async function OrderDetailPage({ params }: PageProps) {
             <span className="rounded-full bg-white/10 px-4 py-1.5 text-sm font-mono font-semibold text-white">
               #{order.orderNumber}
             </span>
-            <Badge color={statusColors[order.status]} className="px-3 py-1 text-sm">{order.status}</Badge>
+            <Badge color={statusColors[safeOrder.status]} className="px-3 py-1 text-sm">{safeOrder.status}</Badge>
           </div>
         </div>
       </div>
@@ -135,15 +142,15 @@ export default async function OrderDetailPage({ params }: PageProps) {
           </div>
 
           {/* What's next */}
-          {order.status !== 'Cancelled' && (
+          {safeOrder.status !== 'Cancelled' && (
             <div className="rounded-2xl border border-brand-100 bg-gradient-to-br from-brand-50 to-purple-50 p-5">
               <h3 className="font-bold text-brand-900 mb-3">What happens next?</h3>
               <div className="space-y-2">
                 {[
-                  { done: ['Confirmed','InProduction','Shipped','Delivered'].includes(order.status), text: 'Order confirmed by our team' },
-                  { done: ['InProduction','Shipped','Delivered'].includes(order.status), text: 'Your T-shirt enters production' },
-                  { done: ['Shipped','Delivered'].includes(order.status), text: 'Shipped via NZ Post' },
-                  { done: order.status === 'Delivered', text: 'Delivered to your door' },
+                  { done: ['Confirmed','InProduction','Shipped','Delivered'].includes(safeOrder.status), text: 'Order confirmed by our team' },
+                  { done: ['InProduction','Shipped','Delivered'].includes(safeOrder.status), text: 'Your T-shirt enters production' },
+                  { done: ['Shipped','Delivered'].includes(safeOrder.status), text: 'Shipped via NZ Post' },
+                  { done: safeOrder.status === 'Delivered', text: 'Delivered to your door' },
                 ].map(({ done, text }) => (
                   <div key={text} className="flex items-center gap-2.5 text-sm">
                     <span className={`flex h-5 w-5 flex-shrink-0 items-center justify-center rounded-full text-[10px] font-bold
