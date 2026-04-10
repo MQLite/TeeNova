@@ -315,6 +315,10 @@ namespace TeeNova.Migrations
                     b.Property<Guid>("OrderId")
                         .HasColumnType("uniqueidentifier");
 
+                    b.Property<string>("DesignNote")
+                        .HasMaxLength(2000)
+                        .HasColumnType("nvarchar(2000)");
+
                     b.Property<string>("PrintPosition")
                         .HasMaxLength(32)
                         .HasColumnType("nvarchar(32)");

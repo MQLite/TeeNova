@@ -11,6 +11,7 @@ export interface CreateOrderPayload {
     uploadedAssetId?: string
     uploadedAssetUrl?: string
     printPosition?: PrintPosition
+    designNote?: string
   }[]
   notes?: string
 }

@@ -96,6 +96,7 @@ export interface OrderItem {
   uploadedAssetId: string | null
   uploadedAssetUrl: string | null
   printPosition: PrintPosition | null
+  designNote: string | null
 }
 
 export interface Order {

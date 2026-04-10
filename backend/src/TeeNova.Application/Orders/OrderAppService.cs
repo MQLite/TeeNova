@@ -61,7 +61,7 @@ public class OrderAppService : ApplicationService, IOrderAppService
                 product.Name, variantLabel,
                 itemDto.Quantity, effectivePrice,
                 itemDto.UploadedAssetId, itemDto.PrintPosition,
-                itemDto.UploadedAssetUrl);
+                itemDto.UploadedAssetUrl, itemDto.DesignNote);
 
             order.AddItem(item);
         }

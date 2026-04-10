@@ -21,5 +21,10 @@ public static class TeeNovaPermissions
         public const string ViewAll = Default + ".ViewAll";  // Admin-level
     }
 
+    public static class Dashboard
+    {
+        public const string Default = GroupName + ".Dashboard";
+    }
+
     public static string[] GetAll() => ReflectionHelper.GetPublicConstantsRecursively(typeof(TeeNovaPermissions));
 }
