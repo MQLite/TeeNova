@@ -1,4 +1,5 @@
 using System;
+using System.Text.Json.Serialization;
 using System.Threading.Tasks;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Cors;
@@ -32,6 +33,10 @@ public class TeeNovaHttpApiHostModule : AbpModule
 
         ConfigureCors(context, configuration);
         ConfigureSwagger(context);
+
+        // Serialize enums as strings so the frontend receives "Pending" not 0
+        context.Services.AddControllers()
+            .AddJsonOptions(o => o.JsonSerializerOptions.Converters.Add(new JsonStringEnumConverter()));
 
         Configure<AbpAspNetCoreMvcOptions>(options =>
         {
