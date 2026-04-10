@@ -382,6 +382,7 @@ export default function ProductDetailPage() {
                                     min={0}
                                     max={999}
                                     value={displayValue}
+                                    placeholder={focusedVariantId === variant!.id ? '' : '0'}
                                     onFocus={() => setFocusedVariantId(variant!.id)}
                                     onBlur={() => setFocusedVariantId(null)}
                                     onChange={(e) => setQty(variant!.id, e.target.value)}
