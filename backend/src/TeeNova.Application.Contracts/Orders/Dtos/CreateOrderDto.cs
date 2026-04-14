@@ -30,8 +30,20 @@ public class CreateOrderItemDto
     [Range(1, 100)]
     public int Quantity { get; set; } = 1;
 
+    // Legacy single-position fields (kept for backward compatibility)
     public Guid? UploadedAssetId { get; set; }
     public string? UploadedAssetUrl { get; set; }
     public PrintPosition? PrintPosition { get; set; }
+    public string? DesignNote { get; set; }
+
+    // All selected positions with their individual uploads
+    public List<CreateOrderItemPositionDto>? PrintPositions { get; set; }
+}
+
+public class CreateOrderItemPositionDto
+{
+    public string Position { get; set; } = default!;
+    public Guid? AssetId { get; set; }
+    public string? AssetUrl { get; set; }
     public string? DesignNote { get; set; }
 }

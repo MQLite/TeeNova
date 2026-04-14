@@ -52,10 +52,18 @@ export default function CheckoutPage() {
           productId: item.productId,
           productVariantId: item.productVariantId,
           quantity: item.quantity,
+          // Legacy single-position fields (kept for backward compat)
           uploadedAssetId: item.uploadedAssetId ?? item.printPositions?.[0]?.uploadedAssetId,
           uploadedAssetUrl: item.uploadedAssetUrl ?? item.printPositions?.[0]?.uploadedAssetUrl,
           printPosition: (item.printPosition ?? item.printPositions?.[0]?.position) as PrintPosition | undefined,
           designNote: item.printPositions?.[0]?.designNote,
+          // Multi-position data
+          printPositions: item.printPositions?.map((p) => ({
+            position: p.position,
+            assetId: p.uploadedAssetId,
+            assetUrl: p.uploadedAssetUrl,
+            designNote: p.designNote,
+          })),
         })),
       })
       setSubmitted(true)

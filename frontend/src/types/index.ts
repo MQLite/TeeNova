@@ -84,6 +84,13 @@ export interface ShippingAddress {
   phone?: string
 }
 
+export interface OrderItemPositionEntry {
+  position: PrintPosition
+  assetUrl?: string
+  assetId?: string
+  designNote?: string
+}
+
 export interface OrderItem {
   id: string
   productId: string
@@ -97,6 +104,7 @@ export interface OrderItem {
   uploadedAssetUrl: string | null
   printPosition: PrintPosition | null
   designNote: string | null
+  printPositionsJson: string | null
 }
 
 export interface Order {
@@ -108,6 +116,7 @@ export interface Order {
   totalAmount: number
   shippingAddress: ShippingAddress
   items: OrderItem[]
+  notes: string | null
   creationTime: string
 }
 
@@ -132,6 +141,56 @@ export interface CartItem {
   uploadedAssetId?: string
   uploadedAssetUrl?: string
   printPosition?: PrintPosition
+}
+
+// ─── Dashboard ────────────────────────────────────────────────────────────────
+
+export interface DashboardRecentOrder {
+  id: string
+  orderNumber: string
+  customerName: string
+  totalAmount: number
+  status: OrderStatus
+  creationTime: string
+  itemCount: number
+}
+
+export interface DashboardDailyCount {
+  date: string
+  count: number
+}
+
+export interface DashboardStats {
+  totalOrders: number
+  ordersToday: number
+  ordersThisMonth: number
+  ordersByStatus: Record<string, number>
+  totalRevenue: number
+  revenueToday: number
+  revenueThisMonth: number
+  totalProducts: number
+  activeProducts: number
+  lowStockVariants: number
+  recentOrders: DashboardRecentOrder[]
+  dailyOrderCounts: DashboardDailyCount[]
+}
+
+// ─── Admin Assets ─────────────────────────────────────────────────────────────
+
+export interface AdminAsset {
+  id: string
+  originalFileName: string
+  fileUrl: string
+  contentType: string
+  fileSizeBytes: number
+  creationTime: string
+  linkedOrderId: string | null
+  linkedOrderNumber: string | null
+  linkedCustomerName: string | null
+  linkedOrderItemId: string | null
+  linkedProductName: string | null
+  printPosition: string | null
+  designNote: string | null
 }
 
 // ─── API Pagination ───────────────────────────────────────────────────────────

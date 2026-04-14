@@ -1,6 +1,13 @@
 import { apiClient } from '@/lib/api-client'
 import type { Order, OrderStatus, PagedResult, PrintPosition, ShippingAddress } from '@/types'
 
+export interface CreateOrderItemPositionPayload {
+  position: string
+  assetId?: string
+  assetUrl?: string
+  designNote?: string
+}
+
 export interface CreateOrderPayload {
   customerEmail: string
   shippingAddress: ShippingAddress
@@ -12,6 +19,7 @@ export interface CreateOrderPayload {
     uploadedAssetUrl?: string
     printPosition?: PrintPosition
     designNote?: string
+    printPositions?: CreateOrderItemPositionPayload[]
   }[]
   notes?: string
 }
@@ -34,5 +42,13 @@ export const ordersApi = {
 
   updateStatus(id: string, newStatus: OrderStatus, reason?: string): Promise<Order> {
     return apiClient.put(`/api/orders/${id}/status`, { newStatus, reason })
+  },
+
+  updateItemDesign(
+    orderId: string,
+    itemId: string,
+    payload: { uploadedAssetId?: string; uploadedAssetUrl?: string; printPositionsJson?: string },
+  ): Promise<import('@/types').OrderItem> {
+    return apiClient.put(`/api/orders/${orderId}/items/${itemId}/design`, payload)
   },
 }

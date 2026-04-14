@@ -26,10 +26,14 @@ public class OrderController : TeeNovaControllerBase
         => await _orderAppService.GetAsync(id);
 
     [HttpGet]
-    public async Task<PagedResultDto<OrderDto>> GetListAsync([FromQuery] PagedResultRequestDto input)
+    public async Task<PagedResultDto<OrderDto>> GetListAsync([FromQuery] GetOrdersInput input)
         => await _orderAppService.GetListAsync(input);
 
     [HttpPut("{id:guid}/status")]
     public async Task<OrderDto> UpdateStatusAsync(Guid id, [FromBody] UpdateOrderStatusDto input)
         => await _orderAppService.UpdateStatusAsync(id, input);
+
+    [HttpPut("{orderId:guid}/items/{itemId:guid}/design")]
+    public async Task<OrderItemDto> UpdateItemDesignAsync(Guid orderId, Guid itemId, [FromBody] UpdateOrderItemDesignDto input)
+        => await _orderAppService.UpdateItemDesignAsync(orderId, itemId, input);
 }
