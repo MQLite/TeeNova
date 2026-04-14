@@ -91,6 +91,14 @@ export interface OrderItemPositionEntry {
   designNote?: string
 }
 
+export interface OrderItemPositionAsset {
+  id: string
+  position: PrintPosition
+  uploadedAssetId: string | null
+  uploadedAssetUrl: string | null
+  designNote: string | null
+}
+
 export interface OrderItem {
   id: string
   productId: string
@@ -105,6 +113,7 @@ export interface OrderItem {
   printPosition: PrintPosition | null
   designNote: string | null
   printPositionsJson: string | null
+  positionAssets: OrderItemPositionAsset[]
 }
 
 export interface Order {

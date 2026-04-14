@@ -39,17 +39,20 @@ public class FileAppService : ApplicationService, IFileAppService
     private readonly IRepository<UploadedAsset, Guid> _assetRepository;
     private readonly IRepository<Order, Guid> _orderRepository;
     private readonly IRepository<OrderItem, Guid> _orderItemRepository;
+    private readonly IRepository<OrderItemPositionAsset, Guid> _orderItemPositionAssetRepository;
 
     public FileAppService(
         IFileStorageService storageService,
         IRepository<UploadedAsset, Guid> assetRepository,
         IRepository<Order, Guid> orderRepository,
-        IRepository<OrderItem, Guid> orderItemRepository)
+        IRepository<OrderItem, Guid> orderItemRepository,
+        IRepository<OrderItemPositionAsset, Guid> orderItemPositionAssetRepository)
     {
         _storageService = storageService;
         _assetRepository = assetRepository;
         _orderRepository = orderRepository;
         _orderItemRepository = orderItemRepository;
+        _orderItemPositionAssetRepository = orderItemPositionAssetRepository;
     }
 
     public async Task<UploadFileOutput> UploadAsync(IFormFile file, CancellationToken cancellationToken = default)
@@ -118,9 +121,23 @@ public class FileAppService : ApplicationService, IFileAppService
 
         // Fetch order items that reference any of these assets
         var itemQuery = await _orderItemRepository.GetQueryableAsync();
-        var matchedItems = await itemQuery
+        var matchedLegacyItems = await itemQuery
             .Where(i => i.UploadedAssetId != null && assetIds.Contains(i.UploadedAssetId.Value))
             .ToListAsync();
+
+        var positionAssetQuery = await _orderItemPositionAssetRepository.GetQueryableAsync();
+        var matchedPositionAssets = await positionAssetQuery
+            .Where(p => p.UploadedAssetId != null && assetIds.Contains(p.UploadedAssetId.Value))
+            .ToListAsync();
+
+        var itemIds = matchedLegacyItems.Select(i => i.Id)
+            .Concat(matchedPositionAssets.Select(p => p.OrderItemId))
+            .Distinct()
+            .ToList();
+
+        var matchedItems = itemIds.Count == 0
+            ? []
+            : await itemQuery.Where(i => itemIds.Contains(i.Id)).ToListAsync();
 
         var orderIds = matchedItems.Select(i => i.OrderId).Distinct().ToList();
 
@@ -132,18 +149,27 @@ public class FileAppService : ApplicationService, IFileAppService
         }
 
         var orderMap = orders.ToDictionary(o => o.Id);
-        var itemsByAssetId = matchedItems.ToLookup(i => i.UploadedAssetId!.Value);
+        var legacyItemsByAssetId = matchedLegacyItems.ToLookup(i => i.UploadedAssetId!.Value);
+        var positionAssetsByAssetId = matchedPositionAssets.ToLookup(p => p.UploadedAssetId!.Value);
+        var itemMap = matchedItems.ToDictionary(i => i.Id);
 
         return assetList.Select(asset =>
         {
-            var item = itemsByAssetId[asset.Id].FirstOrDefault();
+            var positionAsset = positionAssetsByAssetId[asset.Id].FirstOrDefault();
+            var item = positionAsset != null
+                ? itemMap.GetValueOrDefault(positionAsset.OrderItemId)
+                : legacyItemsByAssetId[asset.Id].FirstOrDefault();
             Order? order = item != null && orderMap.TryGetValue(item.OrderId, out var o) ? o : null;
 
-            return MapToDto(asset, item, order);
+            return MapToDto(asset, item, order, positionAsset);
         }).ToList();
     }
 
-    private static AdminAssetDto MapToDto(UploadedAsset asset, OrderItem? item, Order? order)
+    private static AdminAssetDto MapToDto(
+        UploadedAsset asset,
+        OrderItem? item,
+        Order? order,
+        OrderItemPositionAsset? positionAsset)
         => new()
         {
             Id = asset.Id,
@@ -158,7 +184,7 @@ public class FileAppService : ApplicationService, IFileAppService
             LinkedCustomerName = order?.CustomerName,
             LinkedOrderItemId = item?.Id,
             LinkedProductName = item?.ProductName,
-            PrintPosition = item?.PrintPosition?.ToString(),
-            DesignNote = item?.DesignNote,
+            PrintPosition = positionAsset?.Position.ToString() ?? item?.PrintPosition?.ToString(),
+            DesignNote = positionAsset?.DesignNote ?? item?.DesignNote,
         };
 }

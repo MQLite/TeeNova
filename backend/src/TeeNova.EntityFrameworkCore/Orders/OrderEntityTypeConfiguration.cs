@@ -6,7 +6,8 @@ namespace TeeNova.EntityFrameworkCore.Orders;
 
 public class OrderEntityTypeConfiguration :
     IEntityTypeConfiguration<Order>,
-    IEntityTypeConfiguration<OrderItem>
+    IEntityTypeConfiguration<OrderItem>,
+    IEntityTypeConfiguration<OrderItemPositionAsset>
 {
     public void Configure(EntityTypeBuilder<Order> builder)
     {
@@ -67,5 +68,24 @@ public class OrderEntityTypeConfiguration :
 
         builder.Property(i => i.DesignNote).HasMaxLength(2000);
         builder.Property(i => i.PrintPositionsJson).HasColumnType("nvarchar(max)");
+
+        builder.HasMany(i => i.PositionAssets)
+            .WithOne()
+            .HasForeignKey(p => p.OrderItemId)
+            .OnDelete(DeleteBehavior.Cascade);
+    }
+
+    public void Configure(EntityTypeBuilder<OrderItemPositionAsset> builder)
+    {
+        builder.ToTable("OrderItemPositionAssets");
+
+        builder.Property(p => p.Position)
+            .HasConversion<string>()
+            .HasMaxLength(32);
+
+        builder.Property(p => p.UploadedAssetUrl).HasMaxLength(1024);
+        builder.Property(p => p.DesignNote).HasMaxLength(2000);
+
+        builder.HasIndex(p => new { p.OrderItemId, p.Position }).IsUnique();
     }
 }

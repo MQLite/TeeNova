@@ -10,7 +10,7 @@ import { Button } from '@/components/ui/Button'
 import { OrderStatusBadge, STATUS_CONFIG } from '@/components/admin/OrderStatusBadge'
 import { SkeletonBlock } from '@/components/admin/LoadingSkeleton'
 import { DownloadDesignButton } from '@/components/orders/DownloadDesignButton'
-import type { Order, OrderStatus, OrderItemPositionEntry } from '@/types'
+import type { Order, OrderItemPositionAsset, OrderStatus, PrintPosition } from '@/types'
 import clsx from 'clsx'
 
 // ── Status pipeline ───────────────────────────────────────────────────────────
@@ -94,22 +94,26 @@ function ReplaceDesignButton({
 
 // ── Per-position design cards ─────────────────────────────────────────────────
 function PositionCards({
-  json,
+  positions: initialPositions,
   onReplacePosition,
 }: {
-  json: string
+  positions: OrderItemPositionAsset[]
   onReplacePosition?: (position: string, assetId: string, assetUrl: string) => Promise<void>
 }) {
-  const [positions, setPositions] = useState<OrderItemPositionEntry[]>(() => {
-    try { return JSON.parse(json) } catch { return [] }
-  })
+  const [positions, setPositions] = useState<OrderItemPositionAsset[]>(initialPositions)
+
+  useEffect(() => {
+    setPositions(initialPositions)
+  }, [initialPositions])
 
   if (!positions.length) return null
 
   async function handleReplace(position: string, assetId: string, assetUrl: string) {
     await onReplacePosition?.(position, assetId, assetUrl)
     setPositions((prev) =>
-      prev.map((p) => p.position === position ? { ...p, assetUrl, assetId } : p)
+      prev.map((p) => p.position === position
+        ? { ...p, uploadedAssetId: assetId, uploadedAssetUrl: assetUrl }
+        : p)
     )
   }
 
@@ -117,10 +121,10 @@ function PositionCards({
     <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-3">
       {positions.map((p) => (
         <div key={p.position} className="rounded-lg border border-gray-100 bg-gray-50 p-2">
-          {p.assetUrl ? (
+          {p.uploadedAssetUrl ? (
             // eslint-disable-next-line @next/next/no-img-element
             <img
-              src={p.assetUrl}
+              src={p.uploadedAssetUrl}
               alt={`Design for ${formatPosition(p.position)}`}
               className="mb-1.5 h-20 w-full rounded-md object-contain bg-white border border-gray-100 p-0.5"
             />
@@ -136,7 +140,7 @@ function PositionCards({
             <p className="mt-1 text-[10px] text-amber-700 leading-tight line-clamp-2">{p.designNote}</p>
           )}
           <div className="mt-1.5 flex flex-col gap-1">
-            {p.assetUrl && <DownloadDesignButton url={p.assetUrl} />}
+            {p.uploadedAssetUrl && <DownloadDesignButton url={p.uploadedAssetUrl} />}
             {onReplacePosition && (
               <ReplaceDesignButton
                 compact
@@ -208,15 +212,28 @@ export default function AdminOrderDetailPage() {
 
   async function handlePositionDesignUpdate(
     itemId: string,
-    updatedJson: string,
+    position: PrintPosition,
+    assetId: string,
+    assetUrl: string,
   ) {
     if (!order) return
-    await ordersApi.updateItemDesign(order.id, itemId, { printPositionsJson: updatedJson })
+    await ordersApi.updateItemDesign(order.id, itemId, {
+      position,
+      uploadedAssetId: assetId,
+      uploadedAssetUrl: assetUrl,
+    })
     setOrder((prev) =>
       prev ? {
         ...prev,
         items: prev.items.map((i) =>
-          i.id === itemId ? { ...i, printPositionsJson: updatedJson } : i
+          i.id === itemId ? {
+            ...i,
+            positionAssets: i.positionAssets.map((p) =>
+              p.position === position
+                ? { ...p, uploadedAssetId: assetId, uploadedAssetUrl: assetUrl }
+                : p,
+            ),
+          } : i
         ),
       } : prev
     )
@@ -370,7 +387,7 @@ export default function AdminOrderDetailPage() {
             <CardBody className="p-0">
               <div className="divide-y divide-gray-50">
                 {order.items.map((item) => {
-                  const hasPositions = !!item.printPositionsJson
+                  const hasPositions = item.positionAssets.length > 0
                   return (
                   <div key={item.id} className="px-6 py-5">
                     <div className="flex items-start gap-4">
@@ -440,16 +457,10 @@ export default function AdminOrderDetailPage() {
                     {/* Multi-position design cards */}
                     {hasPositions && (
                       <PositionCards
-                        json={item.printPositionsJson!}
-                        onReplacePosition={async (position, assetId, assetUrl) => {
-                          const current: OrderItemPositionEntry[] = (() => {
-                            try { return JSON.parse(item.printPositionsJson!) } catch { return [] }
-                          })()
-                          const updated = current.map((p) =>
-                            p.position === position ? { ...p, assetId, assetUrl } : p
-                          )
-                          await handlePositionDesignUpdate(item.id, JSON.stringify(updated))
-                        }}
+                        positions={item.positionAssets}
+                        onReplacePosition={async (position, assetId, assetUrl) =>
+                          handlePositionDesignUpdate(item.id, position as PrintPosition, assetId, assetUrl)
+                        }
                       />
                     )}
                   </div>

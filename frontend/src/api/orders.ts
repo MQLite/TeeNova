@@ -47,7 +47,13 @@ export const ordersApi = {
   updateItemDesign(
     orderId: string,
     itemId: string,
-    payload: { uploadedAssetId?: string; uploadedAssetUrl?: string; printPositionsJson?: string },
+    payload: {
+      uploadedAssetId?: string
+      uploadedAssetUrl?: string
+      printPositionsJson?: string
+      position?: PrintPosition
+      designNote?: string
+    },
   ): Promise<import('@/types').OrderItem> {
     return apiClient.put(`/api/orders/${orderId}/items/${itemId}/design`, payload)
   },
