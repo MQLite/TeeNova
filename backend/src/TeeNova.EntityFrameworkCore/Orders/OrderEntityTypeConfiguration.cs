@@ -66,5 +66,6 @@ public class OrderEntityTypeConfiguration :
             .HasMaxLength(32);
 
         builder.Property(i => i.DesignNote).HasMaxLength(2000);
+        builder.Property(i => i.PrintPositionsJson).HasColumnType("nvarchar(max)");
     }
 }

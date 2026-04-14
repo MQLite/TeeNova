@@ -23,6 +23,8 @@ public class OrderItem : Entity<Guid>
     public string? UploadedAssetUrl { get; set; }   // denormalized URL for display
     public PrintPosition? PrintPosition { get; set; }
     public string? DesignNote { get; set; }
+    /// <summary>JSON array of all print positions with their uploads (serialized CreateOrderItemPositionDto[]).</summary>
+    public string? PrintPositionsJson { get; set; }
 
     // Future: DesignProjectId, TemplateId, CropFrameData (JSON)
 

@@ -1,11 +1,16 @@
 using System;
+using System.Collections.Generic;
 using System.IO;
+using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.AspNetCore.Http;
+using Microsoft.EntityFrameworkCore;
 using TeeNova.Customization;
 using TeeNova.Files.Dtos;
+using TeeNova.Orders;
 using Volo.Abp;
+using Volo.Abp.Application.Dtos;
 using Volo.Abp.Application.Services;
 using Volo.Abp.Domain.Repositories;
 
@@ -32,13 +37,19 @@ public class FileAppService : ApplicationService, IFileAppService
 
     private readonly IFileStorageService _storageService;
     private readonly IRepository<UploadedAsset, Guid> _assetRepository;
+    private readonly IRepository<Order, Guid> _orderRepository;
+    private readonly IRepository<OrderItem, Guid> _orderItemRepository;
 
     public FileAppService(
         IFileStorageService storageService,
-        IRepository<UploadedAsset, Guid> assetRepository)
+        IRepository<UploadedAsset, Guid> assetRepository,
+        IRepository<Order, Guid> orderRepository,
+        IRepository<OrderItem, Guid> orderItemRepository)
     {
         _storageService = storageService;
         _assetRepository = assetRepository;
+        _orderRepository = orderRepository;
+        _orderItemRepository = orderItemRepository;
     }
 
     public async Task<UploadFileOutput> UploadAsync(IFormFile file, CancellationToken cancellationToken = default)
@@ -77,4 +88,77 @@ public class FileAppService : ApplicationService, IFileAppService
             FileSizeBytes = file.Length
         };
     }
+
+    public async Task<PagedResultDto<AdminAssetDto>> GetAdminAssetListAsync(PagedResultRequestDto input)
+    {
+        var totalCount = await _assetRepository.CountAsync();
+
+        var assets = await _assetRepository.GetPagedListAsync(
+            input.SkipCount, input.MaxResultCount,
+            sorting: "CreationTime DESC");
+
+        var dtos = await EnrichWithOrderDataAsync(assets);
+
+        return new PagedResultDto<AdminAssetDto>(totalCount, dtos);
+    }
+
+    public async Task<AdminAssetDto> GetAdminAssetAsync(Guid id)
+    {
+        var asset = await _assetRepository.GetAsync(id);
+        var dtos = await EnrichWithOrderDataAsync([asset]);
+        return dtos[0];
+    }
+
+    // ── Private helpers ───────────────────────────────────────────────────────
+
+    private async Task<List<AdminAssetDto>> EnrichWithOrderDataAsync(IEnumerable<UploadedAsset> assets)
+    {
+        var assetList = assets.ToList();
+        var assetIds = assetList.Select(a => a.Id).ToList();
+
+        // Fetch order items that reference any of these assets
+        var itemQuery = await _orderItemRepository.GetQueryableAsync();
+        var matchedItems = await itemQuery
+            .Where(i => i.UploadedAssetId != null && assetIds.Contains(i.UploadedAssetId.Value))
+            .ToListAsync();
+
+        var orderIds = matchedItems.Select(i => i.OrderId).Distinct().ToList();
+
+        List<Order> orders = [];
+        if (orderIds.Count > 0)
+        {
+            var orderQuery = await _orderRepository.GetQueryableAsync();
+            orders = await orderQuery.Where(o => orderIds.Contains(o.Id)).ToListAsync();
+        }
+
+        var orderMap = orders.ToDictionary(o => o.Id);
+        var itemsByAssetId = matchedItems.ToLookup(i => i.UploadedAssetId!.Value);
+
+        return assetList.Select(asset =>
+        {
+            var item = itemsByAssetId[asset.Id].FirstOrDefault();
+            Order? order = item != null && orderMap.TryGetValue(item.OrderId, out var o) ? o : null;
+
+            return MapToDto(asset, item, order);
+        }).ToList();
+    }
+
+    private static AdminAssetDto MapToDto(UploadedAsset asset, OrderItem? item, Order? order)
+        => new()
+        {
+            Id = asset.Id,
+            OriginalFileName = asset.OriginalFileName,
+            FileUrl = asset.StoredFileUrl,
+            ContentType = asset.ContentType,
+            FileSizeBytes = asset.FileSizeBytes,
+            CreationTime = asset.CreationTime,
+
+            LinkedOrderId = order?.Id,
+            LinkedOrderNumber = order?.OrderNumber,
+            LinkedCustomerName = order?.CustomerName,
+            LinkedOrderItemId = item?.Id,
+            LinkedProductName = item?.ProductName,
+            PrintPosition = item?.PrintPosition?.ToString(),
+            DesignNote = item?.DesignNote,
+        };
 }
