@@ -319,6 +319,9 @@ namespace TeeNova.Migrations
                         .HasMaxLength(2000)
                         .HasColumnType("nvarchar(2000)");
 
+                    b.Property<string>("PrintPositionsJson")
+                        .HasColumnType("nvarchar(max)");
+
                     b.Property<string>("PrintPosition")
                         .HasMaxLength(32)
                         .HasColumnType("nvarchar(32)");

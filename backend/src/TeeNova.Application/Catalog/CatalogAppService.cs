@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
 using Microsoft.EntityFrameworkCore;
@@ -63,4 +64,29 @@ public class CatalogAppService : ApplicationService, ICatalogAppService
 
         return ObjectMapper.Map<Product, ProductDto>(product);
     }
+
+    // ── Admin: Products ───────────────────────────────────────────────────────
+
+    public Task<ProductDto> CreateAsync(CreateProductDto input)
+        => throw new NotImplementedException("CatalogAppService.CreateAsync is not yet implemented.");
+
+    public Task<ProductDto> UpdateAsync(Guid id, UpdateProductDto input)
+        => throw new NotImplementedException("CatalogAppService.UpdateAsync is not yet implemented.");
+
+    public Task DeleteAsync(Guid id)
+        => throw new NotImplementedException("CatalogAppService.DeleteAsync is not yet implemented.");
+
+    // ── Admin: Variants ───────────────────────────────────────────────────────
+
+    public Task<ProductVariantDto> CreateVariantAsync(Guid productId, CreateProductVariantDto input)
+        => throw new NotImplementedException("CatalogAppService.CreateVariantAsync is not yet implemented.");
+
+    public Task<ProductVariantDto> UpdateVariantAsync(Guid productId, Guid variantId, UpdateProductVariantDto input)
+        => throw new NotImplementedException("CatalogAppService.UpdateVariantAsync is not yet implemented.");
+
+    public Task DeleteVariantAsync(Guid productId, Guid variantId)
+        => throw new NotImplementedException("CatalogAppService.DeleteVariantAsync is not yet implemented.");
+
+    public Task<ProductVariantDto> UpdateStockAsync(Guid productId, Guid variantId, UpdateStockDto input)
+        => throw new NotImplementedException("CatalogAppService.UpdateStockAsync is not yet implemented.");
 }

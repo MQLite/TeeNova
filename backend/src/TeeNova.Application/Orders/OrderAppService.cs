@@ -1,5 +1,6 @@
 using System;
 using System.Linq;
+using System.Text.Json;
 using System.Threading.Tasks;
 using Microsoft.EntityFrameworkCore;
 using TeeNova.Orders.Dtos;
@@ -63,6 +64,10 @@ public class OrderAppService : ApplicationService, IOrderAppService
                 itemDto.UploadedAssetId, itemDto.PrintPosition,
                 itemDto.UploadedAssetUrl, itemDto.DesignNote);
 
+            if (itemDto.PrintPositions is { Count: > 0 })
+                item.PrintPositionsJson = JsonSerializer.Serialize(itemDto.PrintPositions,
+                    new JsonSerializerOptions { PropertyNamingPolicy = JsonNamingPolicy.CamelCase });
+
             order.AddItem(item);
         }
 
@@ -84,10 +89,12 @@ public class OrderAppService : ApplicationService, IOrderAppService
         return ObjectMapper.Map<Order, OrderDto>(order);
     }
 
-    public async Task<PagedResultDto<OrderDto>> GetListAsync(PagedResultRequestDto input)
+    public async Task<PagedResultDto<OrderDto>> GetListAsync(GetOrdersInput input)
     {
         var query = await _orderRepository.GetQueryableAsync();
         query = query.Include(o => o.Items);
+
+        // TODO: apply input.Status, input.Search, input.DateFrom, input.DateTo filters
 
         var totalCount = await query.CountAsync();
         var orders = await query
@@ -102,11 +109,43 @@ public class OrderAppService : ApplicationService, IOrderAppService
         );
     }
 
+    public async Task<OrderItemDto> UpdateItemDesignAsync(Guid orderId, Guid itemId, UpdateOrderItemDesignDto input)
+    {
+        var query = await _orderRepository.GetQueryableAsync();
+        var order = await query
+            .Include(o => o.Items)
+            .FirstOrDefaultAsync(o => o.Id == orderId)
+            ?? throw new Volo.Abp.Domain.Entities.EntityNotFoundException(typeof(Order), orderId);
+
+        var item = order.Items.FirstOrDefault(i => i.Id == itemId)
+            ?? throw new Volo.Abp.Domain.Entities.EntityNotFoundException(typeof(OrderItem), itemId);
+
+        if (input.UploadedAssetId.HasValue)
+            item.UploadedAssetId = input.UploadedAssetId;
+
+        if (input.UploadedAssetUrl != null)
+            item.UploadedAssetUrl = input.UploadedAssetUrl;
+
+        if (input.PrintPositionsJson != null)
+            item.PrintPositionsJson = input.PrintPositionsJson;
+
+        await _orderRepository.UpdateAsync(order, autoSave: true);
+
+        return ObjectMapper.Map<OrderItem, OrderItemDto>(item);
+    }
+
     public async Task<OrderDto> UpdateStatusAsync(Guid id, UpdateOrderStatusDto input)
     {
         var order = await _orderRepository.GetAsync(id);
         order.UpdateStatus(input.NewStatus);
         await _orderRepository.UpdateAsync(order, autoSave: true);
-        return ObjectMapper.Map<Order, OrderDto>(order);
+
+        // Re-fetch with Items included so the returned DTO is complete
+        var query = await _orderRepository.GetQueryableAsync();
+        var full = await query
+            .Include(o => o.Items)
+            .FirstOrDefaultAsync(o => o.Id == id);
+
+        return ObjectMapper.Map<Order, OrderDto>(full ?? order);
     }
 }

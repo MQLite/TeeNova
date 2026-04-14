@@ -14,6 +14,7 @@ public class OrderDto
     public decimal TotalAmount { get; set; }
     public ShippingAddressDto ShippingAddress { get; set; } = default!;
     public List<OrderItemDto> Items { get; set; } = new();
+    public string? Notes { get; set; }
     public DateTime CreationTime { get; set; }
 }
 

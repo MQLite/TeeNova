@@ -17,4 +17,6 @@ public class OrderItemDto
     public string? UploadedAssetUrl { get; set; }
     public PrintPosition? PrintPosition { get; set; }
     public string? DesignNote { get; set; }
+    /// <summary>JSON array of all print positions with their uploads. Null for legacy orders.</summary>
+    public string? PrintPositionsJson { get; set; }
 }
