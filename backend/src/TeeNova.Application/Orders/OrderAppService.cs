@@ -1,8 +1,10 @@
 using System;
+using System.Collections.Generic;
 using System.Linq;
 using System.Text.Json;
 using System.Threading.Tasks;
 using Microsoft.EntityFrameworkCore;
+using TeeNova.Customization;
 using TeeNova.Orders.Dtos;
 using Volo.Abp.Application.Dtos;
 using Volo.Abp.Application.Services;
@@ -65,8 +67,10 @@ public class OrderAppService : ApplicationService, IOrderAppService
                 itemDto.UploadedAssetUrl, itemDto.DesignNote);
 
             if (itemDto.PrintPositions is { Count: > 0 })
-                item.PrintPositionsJson = JsonSerializer.Serialize(itemDto.PrintPositions,
-                    new JsonSerializerOptions { PropertyNamingPolicy = JsonNamingPolicy.CamelCase });
+            {
+                SyncPositionAssets(item, itemDto.PrintPositions);
+                item.PrintPositionsJson = SerializePrintPositions(item.PositionAssets);
+            }
 
             order.AddItem(item);
         }
@@ -81,6 +85,7 @@ public class OrderAppService : ApplicationService, IOrderAppService
         var query = await _orderRepository.GetQueryableAsync();
         var order = await query
             .Include(o => o.Items)
+            .ThenInclude(i => i.PositionAssets)
             .FirstOrDefaultAsync(o => o.Id == id);
 
         if (order == null)
@@ -92,7 +97,9 @@ public class OrderAppService : ApplicationService, IOrderAppService
     public async Task<PagedResultDto<OrderDto>> GetListAsync(GetOrdersInput input)
     {
         var query = await _orderRepository.GetQueryableAsync();
-        query = query.Include(o => o.Items);
+        query = query
+            .Include(o => o.Items)
+            .ThenInclude(i => i.PositionAssets);
 
         // TODO: apply input.Status, input.Search, input.DateFrom, input.DateTo filters
 
@@ -114,6 +121,7 @@ public class OrderAppService : ApplicationService, IOrderAppService
         var query = await _orderRepository.GetQueryableAsync();
         var order = await query
             .Include(o => o.Items)
+            .ThenInclude(i => i.PositionAssets)
             .FirstOrDefaultAsync(o => o.Id == orderId)
             ?? throw new Volo.Abp.Domain.Entities.EntityNotFoundException(typeof(Order), orderId);
 
@@ -127,7 +135,21 @@ public class OrderAppService : ApplicationService, IOrderAppService
             item.UploadedAssetUrl = input.UploadedAssetUrl;
 
         if (input.PrintPositionsJson != null)
+        {
             item.PrintPositionsJson = input.PrintPositionsJson;
+            SyncPositionAssets(item, DeserializePrintPositions(input.PrintPositionsJson));
+        }
+
+        if (input.Position.HasValue)
+        {
+            item.UpsertPositionAsset(
+                GuidGenerator.Create(),
+                input.Position.Value,
+                input.UploadedAssetId,
+                input.UploadedAssetUrl,
+                input.DesignNote);
+            item.PrintPositionsJson = SerializePrintPositions(item.PositionAssets);
+        }
 
         await _orderRepository.UpdateAsync(order, autoSave: true);
 
@@ -144,8 +166,47 @@ public class OrderAppService : ApplicationService, IOrderAppService
         var query = await _orderRepository.GetQueryableAsync();
         var full = await query
             .Include(o => o.Items)
+            .ThenInclude(i => i.PositionAssets)
             .FirstOrDefaultAsync(o => o.Id == id);
 
         return ObjectMapper.Map<Order, OrderDto>(full ?? order);
+    }
+
+    private static void SyncPositionAssets(OrderItem item, IEnumerable<CreateOrderItemPositionDto> positions)
+    {
+        item.SetPositionAssets(
+            positions.Select(position => new OrderItemPositionAsset(
+                Guid.NewGuid(),
+                item.Id,
+                ParsePosition(position.Position),
+                position.AssetId,
+                position.AssetUrl,
+                position.DesignNote)));
+    }
+
+    private static List<CreateOrderItemPositionDto> DeserializePrintPositions(string json)
+        => JsonSerializer.Deserialize<List<CreateOrderItemPositionDto>>(
+               json,
+               new JsonSerializerOptions { PropertyNameCaseInsensitive = true })
+           ?? [];
+
+    private static string SerializePrintPositions(IEnumerable<OrderItemPositionAsset> positions)
+        => JsonSerializer.Serialize(
+            positions.Select(position => new CreateOrderItemPositionDto
+            {
+                Position = position.Position.ToString(),
+                AssetId = position.UploadedAssetId,
+                AssetUrl = position.UploadedAssetUrl,
+                DesignNote = position.DesignNote,
+            }),
+            new JsonSerializerOptions { PropertyNamingPolicy = JsonNamingPolicy.CamelCase });
+
+    private static PrintPosition ParsePosition(string rawPosition)
+    {
+        if (Enum.TryParse<PrintPosition>(rawPosition, ignoreCase: true, out var position))
+            return position;
+
+        throw new Volo.Abp.BusinessException("TeeNova:Order:InvalidPrintPosition")
+            .WithData("Position", rawPosition);
     }
 }
