@@ -27,7 +27,9 @@ public class TeeNovaApplicationAutoMapperProfile : Profile
         // Orders
         CreateMap<Order, OrderDto>()
             .ForMember(d => d.Items, o => o.MapFrom(s => s.Items));
-        CreateMap<OrderItem, OrderItemDto>();
+        CreateMap<OrderItem, OrderItemDto>()
+            .ForMember(d => d.PositionAssets, o => o.MapFrom(s => s.PositionAssets));
+        CreateMap<OrderItemPositionAsset, OrderItemPositionAssetDto>();
         CreateMap<ShippingAddress, ShippingAddressDto>();
 
         // UploadedAsset

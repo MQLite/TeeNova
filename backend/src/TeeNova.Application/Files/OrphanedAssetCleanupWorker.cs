@@ -41,6 +41,8 @@ public class OrphanedAssetCleanupWorker : AsyncPeriodicBackgroundWorkerBase
             .GetRequiredService<IRepository<UploadedAsset, Guid>>();
         var orderItemRepository = workerContext.ServiceProvider
             .GetRequiredService<IRepository<OrderItem, Guid>>();
+        var orderItemPositionAssetRepository = workerContext.ServiceProvider
+            .GetRequiredService<IRepository<OrderItemPositionAsset, Guid>>();
         var storageService = workerContext.ServiceProvider
             .GetRequiredService<IFileStorageService>();
 
@@ -60,6 +62,9 @@ public class OrphanedAssetCleanupWorker : AsyncPeriodicBackgroundWorkerBase
         var referencedIds = (await orderItemRepository.GetListAsync(
                 oi => oi.UploadedAssetId != null && candidateIds.Contains(oi.UploadedAssetId!.Value)))
             .Select(oi => oi.UploadedAssetId!.Value)
+            .Concat((await orderItemPositionAssetRepository.GetListAsync(
+                    p => p.UploadedAssetId != null && candidateIds.Contains(p.UploadedAssetId!.Value)))
+                .Select(p => p.UploadedAssetId!.Value))
             .ToHashSet();
 
         var orphans = candidates.Where(a => !referencedIds.Contains(a.Id)).ToList();

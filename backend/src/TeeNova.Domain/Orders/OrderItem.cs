@@ -1,6 +1,8 @@
 using System;
 using TeeNova.Customization;
 using Volo.Abp.Domain.Entities;
+using System.Collections.Generic;
+using System.Linq;
 
 namespace TeeNova.Orders;
 
@@ -25,6 +27,7 @@ public class OrderItem : Entity<Guid>
     public string? DesignNote { get; set; }
     /// <summary>JSON array of all print positions with their uploads (serialized CreateOrderItemPositionDto[]).</summary>
     public string? PrintPositionsJson { get; set; }
+    public List<OrderItemPositionAsset> PositionAssets { get; private set; } = [];
 
     // Future: DesignProjectId, TemplateId, CropFrameData (JSON)
 
@@ -50,5 +53,34 @@ public class OrderItem : Entity<Guid>
         UploadedAssetUrl = uploadedAssetUrl;
         PrintPosition = printPosition;
         DesignNote = designNote;
+    }
+
+    public void SetPositionAssets(IEnumerable<OrderItemPositionAsset> positionAssets)
+    {
+        PositionAssets.Clear();
+        PositionAssets.AddRange(positionAssets);
+    }
+
+    public void UpsertPositionAsset(
+        Guid id,
+        PrintPosition position,
+        Guid? uploadedAssetId = null,
+        string? uploadedAssetUrl = null,
+        string? designNote = null)
+    {
+        var existing = PositionAssets.FirstOrDefault(p => p.Position == position);
+        if (existing == null)
+        {
+            PositionAssets.Add(new OrderItemPositionAsset(
+                id,
+                Id,
+                position,
+                uploadedAssetId,
+                uploadedAssetUrl,
+                designNote));
+            return;
+        }
+
+        existing.Update(uploadedAssetId, uploadedAssetUrl, designNote);
     }
 }
