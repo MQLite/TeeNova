@@ -1,8 +1,7 @@
 import { type ButtonHTMLAttributes, cloneElement, forwardRef, isValidElement } from 'react'
-import clsx from 'clsx'
 
-type Variant = 'primary' | 'secondary' | 'ghost' | 'danger' | 'outline-white'
-type Size = 'sm' | 'md' | 'lg' | 'xl'
+type Variant = 'black' | 'white' | 'glass' | 'danger' | 'ghost'
+type Size    = 'sm' | 'md' | 'lg'
 
 interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
   variant?: Variant
@@ -11,49 +10,63 @@ interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
   asChild?: boolean
 }
 
+const base = 'inline-flex items-center justify-center gap-1.5 whitespace-nowrap rounded-[50px] cursor-pointer transition-all duration-150 disabled:opacity-40 disabled:cursor-not-allowed'
+
 const variantClasses: Record<Variant, string> = {
-  primary:
-    'bg-brand-600 text-white hover:bg-brand-700 active:bg-brand-800 shadow-sm hover:shadow-md focus-visible:ring-brand-500',
-  secondary:
-    'bg-white text-gray-900 border border-gray-200 hover:bg-gray-50 hover:border-gray-300 shadow-sm focus-visible:ring-gray-400',
-  ghost:
-    'text-gray-700 hover:bg-gray-100 hover:text-gray-900 focus-visible:ring-gray-400',
-  danger:
-    'bg-red-600 text-white hover:bg-red-700 shadow-sm focus-visible:ring-red-500',
-  'outline-white':
-    'border-2 border-white/70 text-white hover:bg-white/10 hover:border-white focus-visible:ring-white',
+  black: [
+    base,
+    'bg-black text-white shadow-sm',
+    'hover:opacity-[0.82] active:opacity-70',
+    'focus-visible:outline-dashed focus-visible:outline-2 focus-visible:outline-black focus-visible:outline-offset-2',
+  ].join(' '),
+  white: [
+    base,
+    'border border-black/10 bg-white text-black shadow-sm',
+    'hover:opacity-[0.88] active:opacity-75',
+    'focus-visible:outline-dashed focus-visible:outline-2 focus-visible:outline-black focus-visible:outline-offset-2',
+  ].join(' '),
+  glass: [
+    base,
+    'bg-black/[0.08] text-black',
+    'hover:bg-black/[0.13] active:bg-black/[0.18]',
+    'focus-visible:outline-dashed focus-visible:outline-2 focus-visible:outline-black focus-visible:outline-offset-2',
+  ].join(' '),
+  danger: [
+    base,
+    'bg-red-600 text-white shadow-sm',
+    'hover:opacity-80 active:opacity-70',
+    'focus-visible:outline-dashed focus-visible:outline-2 focus-visible:outline-red-600 focus-visible:outline-offset-2',
+  ].join(' '),
+  ghost: [
+    base,
+    'border border-transparent bg-transparent text-black/55',
+    'hover:border-black/10 hover:bg-black/[0.04] hover:text-black active:bg-black/[0.08]',
+    'focus-visible:outline-dashed focus-visible:outline-2 focus-visible:outline-black focus-visible:outline-offset-2',
+  ].join(' '),
 }
 
 const sizeClasses: Record<Size, string> = {
-  sm:  'px-3 py-1.5 text-sm gap-1.5',
-  md:  'px-4 py-2.5 text-sm gap-2',
-  lg:  'px-6 py-3 text-base gap-2',
-  xl:  'px-8 py-4 text-lg gap-2.5',
+  sm: 'px-[14px] py-[6px] text-sm tracking-[-0.14px]',
+  md: 'px-[22px] py-[10px] text-base tracking-[-0.14px]',
+  lg: 'px-[28px] py-[12px] text-base tracking-[-0.14px]',
 }
 
 export const Button = forwardRef<HTMLButtonElement, ButtonProps>(
-  ({ variant = 'primary', size = 'md', loading, className, children, disabled, asChild, ...props }, ref) => {
-    const classes = clsx(
-      'inline-flex items-center justify-center font-semibold rounded-xl',
-      'transition-all duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2',
-      'disabled:pointer-events-none disabled:opacity-50',
-      variantClasses[variant],
-      sizeClasses[size],
-      className,
-    )
+  ({ variant = 'black', size = 'md', loading, className = '', children, disabled, asChild, ...props }, ref) => {
+    const classes = `${variantClasses[variant]} ${sizeClasses[size]} ${className}`
 
     if (asChild && isValidElement(children)) {
       return cloneElement(children as React.ReactElement<{ className?: string }>, {
-        className: clsx(classes, (children as React.ReactElement<{ className?: string }>).props.className),
+        className: `${classes} ${(children as React.ReactElement<{ className?: string }>).props.className ?? ''}`,
       })
     }
 
     return (
       <button ref={ref} disabled={disabled || loading} className={classes} {...props}>
         {loading && (
-          <svg className="h-4 w-4 animate-spin" fill="none" viewBox="0 0 24 24">
+          <svg className="h-3.5 w-3.5 animate-spin shrink-0" fill="none" viewBox="0 0 24 24">
             <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z" />
+            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 100 8v4a8 8 0 01-8-8z" />
           </svg>
         )}
         {children}
@@ -61,5 +74,4 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(
     )
   },
 )
-
 Button.displayName = 'Button'

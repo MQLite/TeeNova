@@ -38,7 +38,7 @@ export default async function AdminAssetDetailPage({ params }: Props) {
         action={
           <Link
             href="/admin/assets"
-            className="rounded-lg border border-gray-200 bg-white px-3 py-1.5 text-xs font-medium text-gray-600 shadow-sm transition-colors hover:border-gray-300 hover:text-gray-800"
+            className="rounded-[50px] border border-black/[0.10] bg-white px-4 py-1.5 font-mono text-[11px] uppercase tracking-[0.54px] text-black/50 transition-colors hover:border-black/25 hover:text-black"
           >
             ← Back to Assets
           </Link>
@@ -47,7 +47,7 @@ export default async function AdminAssetDetailPage({ params }: Props) {
 
       <div className="grid gap-6 lg:grid-cols-[1fr_340px]">
         {/* Preview panel */}
-        <div className="flex min-h-[320px] items-center justify-center overflow-hidden rounded-xl border border-gray-200 bg-gray-50">
+        <div className="card shadow-card flex min-h-[360px] items-center justify-center overflow-hidden rounded-lg bg-gradient-to-br from-black/[0.02] via-white to-black/[0.04]">
           {previewed ? (
             // eslint-disable-next-line @next/next/no-img-element
             <img
@@ -56,7 +56,7 @@ export default async function AdminAssetDetailPage({ params }: Props) {
               className="max-h-[480px] w-full object-contain p-6"
             />
           ) : (
-            <div className="flex flex-col items-center gap-3 text-gray-400">
+            <div className="flex flex-col items-center gap-3 text-black/25">
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.5} className="h-16 w-16">
                 <path
                   strokeLinecap="round"
@@ -64,13 +64,13 @@ export default async function AdminAssetDetailPage({ params }: Props) {
                   d="M19.5 14.25v-2.625a3.375 3.375 0 00-3.375-3.375h-1.5A1.125 1.125 0 0113.5 7.125v-1.5a3.375 3.375 0 00-3.375-3.375H8.25m2.25 0H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 00-9-9z"
                 />
               </svg>
-              <p className="text-sm font-medium">{fileTypeLabel(asset.contentType)} file</p>
-              <p className="text-xs">No preview available</p>
+              <p className="font-mono text-sm uppercase tracking-[0.54px]">{fileTypeLabel(asset.contentType)} file</p>
+              <p className="font-mono text-[11px] uppercase tracking-[0.54px]">No preview available</p>
               <a
                 href={asset.fileUrl}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="mt-1 rounded-lg border border-gray-200 bg-white px-3 py-1.5 text-xs font-medium text-gray-600 shadow-sm hover:border-gray-300"
+                className="mt-1 rounded-[50px] border border-black/[0.10] bg-white px-4 py-1.5 font-mono text-[11px] uppercase tracking-[0.54px] text-black/50 hover:border-black/25 hover:text-black transition-colors"
               >
                 Open file ↗
               </a>
@@ -81,8 +81,8 @@ export default async function AdminAssetDetailPage({ params }: Props) {
         {/* Sidebar */}
         <div className="flex flex-col gap-4">
           {/* Metadata card */}
-          <div className="rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
-            <h2 className="mb-3 text-sm font-semibold text-gray-900">File details</h2>
+          <div className="card p-5 shadow-card">
+            <h2 className="mb-3 font-mono text-[11px] uppercase tracking-[0.54px] text-black/55">File Details</h2>
             <dl className="space-y-2.5 text-sm">
               <MetaRow label="File name" value={asset.originalFileName} />
               <MetaRow label="Type" value={fileTypeLabel(asset.contentType)} />
@@ -91,12 +91,13 @@ export default async function AdminAssetDetailPage({ params }: Props) {
               <MetaRow label="Asset ID" value={asset.id} mono />
             </dl>
 
-            <div className="mt-4 border-t border-gray-100 pt-4">
+            <div className="mt-4 border-t border-black/[0.08] pt-4">
               <a
                 href={asset.fileUrl}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="flex w-full items-center justify-center gap-1.5 rounded-lg border border-gray-200 bg-gray-50 py-2 text-xs font-medium text-gray-600 transition-colors hover:border-gray-300 hover:bg-gray-100"
+                className="flex w-full items-center justify-center gap-1.5 rounded-[50px] border border-black/[0.10] bg-black/[0.02] py-2 text-sm text-black/50 transition-colors hover:border-black/25 hover:text-black"
+                style={{ letterSpacing: '-0.14px' }}
               >
                 <svg viewBox="0 0 20 20" fill="currentColor" className="h-3.5 w-3.5">
                   <path
@@ -111,8 +112,8 @@ export default async function AdminAssetDetailPage({ params }: Props) {
           </div>
 
           {/* Linked order card */}
-          <div className="rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
-            <h2 className="mb-3 text-sm font-semibold text-gray-900">Order linkage</h2>
+          <div className="card p-5 shadow-card">
+            <h2 className="mb-3 font-mono text-[11px] uppercase tracking-[0.54px] text-black/55">Order Linkage</h2>
 
             {asset.linkedOrderId ? (
               <div className="space-y-2.5 text-sm">
@@ -124,8 +125,8 @@ export default async function AdminAssetDetailPage({ params }: Props) {
                 )}
                 {asset.designNote && (
                   <div>
-                    <dt className="mb-0.5 text-xs text-gray-500">Design note</dt>
-                    <dd className="rounded-md bg-gray-50 p-2 text-xs text-gray-700 italic">
+                    <dt className="mb-0.5 font-mono text-[10px] uppercase tracking-[0.54px] text-black/50">Design note</dt>
+                    <dd className="rounded-lg border border-black/[0.08] bg-black/[0.02] p-2 text-xs italic text-black/60">
                       &ldquo;{asset.designNote}&rdquo;
                     </dd>
                   </div>
@@ -134,14 +135,15 @@ export default async function AdminAssetDetailPage({ params }: Props) {
                 <div className="pt-1">
                   <Link
                     href={`/admin/orders/${asset.linkedOrderId}`}
-                    className="flex w-full items-center justify-center gap-1.5 rounded-lg border border-brand-200 bg-brand-50 py-2 text-xs font-medium text-brand-700 transition-colors hover:bg-brand-100"
+                    className="flex w-full items-center justify-center gap-1.5 rounded-[50px] bg-black py-2 text-sm text-white transition-opacity hover:opacity-80"
+                    style={{ letterSpacing: '-0.14px' }}
                   >
                     View order {asset.linkedOrderNumber} →
                   </Link>
                 </div>
               </div>
             ) : (
-              <div className="flex flex-col items-center gap-2 py-4 text-center text-gray-400">
+              <div className="flex flex-col items-center gap-2 py-4 text-center text-black/25">
                 <svg viewBox="0 0 20 20" fill="currentColor" className="h-6 w-6">
                   <path
                     fillRule="evenodd"
@@ -149,8 +151,10 @@ export default async function AdminAssetDetailPage({ params }: Props) {
                     clipRule="evenodd"
                   />
                 </svg>
-                <p className="text-xs">Not linked to any order</p>
-                <p className="text-[11px] text-gray-400">This asset was uploaded but not yet used in an order.</p>
+                <p className="font-mono text-[11px] uppercase tracking-[0.54px]">Not linked to any order</p>
+                <p className="font-mono text-[10px] uppercase tracking-[0.54px] text-black/20">
+                  This asset was uploaded but not yet used in an order.
+                </p>
               </div>
             )}
           </div>
@@ -171,8 +175,11 @@ function MetaRow({
 }) {
   return (
     <div className="flex items-start gap-2">
-      <dt className="w-28 shrink-0 text-xs text-gray-500">{label}</dt>
-      <dd className={`break-all text-gray-800 ${mono ? 'font-mono text-[10px]' : ''}`}>{value}</dd>
+      <dt className="w-28 shrink-0 font-mono text-[10px] uppercase tracking-[0.54px] text-black/50">{label}</dt>
+      <dd className={`break-all text-black/70 ${mono ? 'font-mono text-[10px] tracking-[0.54px]' : ''}`}
+          style={mono ? {} : { letterSpacing: '-0.14px' }}>
+        {value}
+      </dd>
     </div>
   )
 }

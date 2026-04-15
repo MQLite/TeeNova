@@ -9,6 +9,7 @@ public class ProductListItemDto
     public string Name { get; set; } = default!;
     public decimal BasePrice { get; set; }
     public string ProductType { get; set; } = default!;
+    public string? ThumbnailUrl { get; set; }
     public string? PrimaryImageUrl { get; set; }
     public int VariantCount { get; set; }
 }

@@ -22,59 +22,62 @@ export default async function ProductsPage({ searchParams }: PageProps) {
 
   return (
     <>
-      {/* Page hero */}
-      <section className="bg-gradient-to-br from-brand-950 via-brand-800 to-brand-600 py-14">
-        <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
-          <nav className="mb-4 flex items-center gap-2 text-xs text-brand-300">
-            <Link href="/" className="hover:text-white transition-colors">Home</Link>
-            <span>›</span>
-            <span className="text-white">Products</span>
+      {/* Page header */}
+      <section className="border-b border-black/[0.08] py-14">
+        <div className="section-container">
+          <nav className="mb-4 flex items-center gap-2 font-mono text-[11px] uppercase tracking-[0.54px] text-black/50">
+            <Link href="/" className="hover:text-black transition-colors">Home</Link>
+            <span className="opacity-40">›</span>
+            <span className="text-black">Products</span>
           </nav>
-          <h1 className="text-4xl font-extrabold tracking-tight text-white sm:text-5xl">
-            Our Collection
-          </h1>
-          <p className="mt-3 max-w-xl text-lg text-brand-200">
-            Premium custom T-shirts ready for your design. All garments available in multiple colours and sizes.
+          <h1 className="display-section mb-4">Our Collection</h1>
+          <p className="text-base text-black/50" style={{ letterSpacing: '-0.14px', fontWeight: 400 }}>
+            Premium custom garments ready for your design.
+            <span className="ml-2 rounded-full border border-black/[0.08] px-2.5 py-0.5 font-mono text-[11px] uppercase tracking-[0.54px] text-black/55">
+              {totalCount} product{totalCount !== 1 ? 's' : ''}
+            </span>
           </p>
-          <div className="mt-5 inline-flex items-center rounded-full bg-white/10 px-3 py-1.5 text-sm text-brand-200 backdrop-blur-sm">
-            {totalCount} product{totalCount !== 1 ? 's' : ''} available
-          </div>
         </div>
       </section>
 
-      {/* Product grid */}
-      <section className="bg-gray-50 py-12">
-        <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
+      {/* Grid */}
+      <section className="py-12">
+        <div className="section-container">
 
-          {/* Filter bar placeholder */}
+          {/* Filter bar */}
           <div className="mb-8 flex flex-wrap items-center justify-between gap-4">
             <div className="flex flex-wrap gap-2">
               {['All', 'T-Shirts', 'Hoodies', 'Polo Shirts'].map((f) => (
                 <button
                   key={f}
-                  className={`rounded-full px-4 py-1.5 text-sm font-medium transition-colors ${
+                  className={`rounded-[50px] border px-4 py-1.5 text-sm transition-colors ${
                     f === 'All'
-                      ? 'bg-brand-600 text-white shadow-sm'
-                      : 'bg-white text-gray-600 border border-gray-200 hover:border-brand-300 hover:text-brand-600'
+                      ? 'border-black bg-black text-white'
+                      : 'border-black/[0.12] bg-white text-black/50 hover:border-black/30 hover:text-black'
                   }`}
+                  style={{ letterSpacing: '-0.14px' }}
                 >
                   {f}
                 </button>
               ))}
             </div>
-            <p className="text-sm text-gray-500">
-              Showing <strong className="text-gray-900">{items.length}</strong> of {totalCount} products
+            <p className="text-xs text-black/55" style={{ letterSpacing: '0.02em' }}>
+              Showing <strong className="font-medium text-black">{items.length}</strong> of {totalCount}
             </p>
           </div>
 
           {items.length === 0 ? (
-            <div className="flex flex-col items-center justify-center rounded-2xl border-2 border-dashed border-gray-200 py-28 text-center">
-              <span className="text-5xl">👕</span>
-              <h3 className="mt-4 text-lg font-semibold text-gray-900">No products found</h3>
-              <p className="mt-2 text-sm text-gray-500">Try a different filter or check back later.</p>
+            <div className="flex flex-col items-center justify-center rounded-lg border border-dashed border-black/[0.12] py-24 text-center">
+              <span className="text-4xl">👕</span>
+              <h3 className="mt-4 text-base text-black" style={{ fontWeight: 480, letterSpacing: '-0.26px' }}>
+                No products found
+              </h3>
+              <p className="mt-1 text-sm text-black/55" style={{ letterSpacing: '-0.14px' }}>
+                Try a different filter or check back later.
+              </p>
             </div>
           ) : (
-            <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-3">
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
               {items.map((product) => (
                 <ProductCard key={product.id} product={product} />
               ))}
@@ -84,23 +87,22 @@ export default async function ProductsPage({ searchParams }: PageProps) {
       </section>
 
       {/* Bottom CTA */}
-      <section className="bg-white py-14 text-center">
-        <div className="mx-auto max-w-xl px-4">
-          <h2 className="text-2xl font-bold text-gray-900">Can&apos;t find what you need?</h2>
-          <p className="mt-2 text-gray-500">
-            Contact us directly for bulk orders, custom product types, or special requests.
+      <section className="border-t border-black/[0.08] py-16 text-center">
+        <div className="section-container max-w-lg">
+          <h2
+            className="mb-2 text-xl text-black"
+            style={{ fontWeight: 540, letterSpacing: '-0.26px' }}
+          >
+            Can&apos;t find what you need?
+          </h2>
+          <p className="mb-6 text-sm text-black/50" style={{ letterSpacing: '-0.14px', fontWeight: 400 }}>
+            Contact us for bulk orders, custom product types, or special requests.
           </p>
-          <div className="mt-6 flex flex-wrap justify-center gap-3">
-            <a
-              href="mailto:hello@otahuhuprinting.co.nz"
-              className="inline-flex items-center gap-2 rounded-xl bg-brand-600 px-6 py-3 text-sm font-semibold text-white hover:bg-brand-700 transition-colors shadow-sm"
-            >
+          <div className="flex flex-wrap justify-center gap-3">
+            <a href="mailto:hello@otahuhuprinting.co.nz" className="btn-black">
               Contact Us
             </a>
-            <Link
-              href="/"
-              className="inline-flex items-center gap-2 rounded-xl border border-gray-200 bg-white px-6 py-3 text-sm font-semibold text-gray-700 hover:bg-gray-50 transition-colors"
-            >
+            <Link href="/" className="btn-glass">
               Back to Home
             </Link>
           </div>
