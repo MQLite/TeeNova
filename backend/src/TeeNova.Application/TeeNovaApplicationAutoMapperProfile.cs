@@ -15,6 +15,12 @@ public class TeeNovaApplicationAutoMapperProfile : Profile
         CreateMap<Product, ProductDto>();
         CreateMap<Product, ProductListItemDto>()
             .ForMember(d => d.VariantCount, o => o.MapFrom(s => s.Variants.Count))
+            .ForMember(d => d.ThumbnailUrl,
+                o => o.MapFrom(s => s.Images
+                    .OrderByDescending(i => i.IsPrimary)
+                    .ThenBy(i => i.SortOrder)
+                    .Select(i => i.Url)
+                    .FirstOrDefault()))
             .ForMember(d => d.PrimaryImageUrl,
                 o => o.MapFrom(s => s.Images
                     .OrderByDescending(i => i.IsPrimary)

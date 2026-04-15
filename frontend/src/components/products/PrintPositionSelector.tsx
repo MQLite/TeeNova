@@ -27,8 +27,10 @@ export function PrintPositionSelector({ positions, selected, onChange }: PrintPo
   return (
     <div className="space-y-2.5">
       <div className="flex items-center justify-between">
-        <p className="text-sm font-semibold text-gray-800">Print Positions</p>
-        <span className="text-xs text-gray-400">
+        <p className="text-sm text-black" style={{ fontWeight: 480, letterSpacing: '-0.14px' }}>
+          Print Positions
+        </p>
+        <span className="font-mono text-[11px] uppercase tracking-[0.54px] text-black/50">
           {selected.length === 0 ? 'Select one or more' : `${selected.length} selected`}
         </span>
       </div>
@@ -42,19 +44,19 @@ export function PrintPositionSelector({ positions, selected, onChange }: PrintPo
               onClick={() => toggle(pos.value)}
               title={pos.displayLabel}
               className={clsx(
-                'relative flex flex-col items-center gap-1 rounded-xl border py-2.5 px-2 text-center transition-all duration-150',
+                'relative flex flex-col items-center gap-1 rounded-lg border py-2.5 px-2 text-center transition-all duration-150 focus-visible:outline-dashed focus-visible:outline-2 focus-visible:outline-black focus-visible:outline-offset-2',
                 isSelected
-                  ? 'border-brand-600 bg-brand-50 text-brand-700 shadow-sm ring-2 ring-brand-100'
-                  : 'border-gray-200 bg-white text-gray-500 hover:border-brand-300 hover:bg-brand-50/50 hover:text-brand-600',
+                  ? 'border-black bg-black text-white'
+                  : 'border-black/[0.10] bg-white text-black/55 hover:border-black/25 hover:text-black',
               )}
             >
               {isSelected && (
-                <span className="absolute -right-1 -top-1 flex h-4 w-4 items-center justify-center rounded-full bg-brand-600 text-[9px] font-bold text-white shadow">
+                <span className="absolute -right-1 -top-1 flex h-4 w-4 items-center justify-center rounded-full bg-black text-[9px] font-medium text-white">
                   ✓
                 </span>
               )}
               <span className="text-base leading-none">{positionIcons[pos.name] ?? '◼'}</span>
-              <span className="text-[10px] font-medium leading-tight">{pos.displayLabel}</span>
+              <span className="font-mono text-[10px] uppercase tracking-[0.54px] leading-tight">{pos.displayLabel}</span>
             </button>
           )
         })}

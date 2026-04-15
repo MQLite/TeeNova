@@ -1,20 +1,22 @@
 import type { ReactNode } from 'react'
 
-interface AdminPageHeaderProps {
+interface ProductHeaderProps {
   title: string
   subtitle?: string
+  eyebrow?: string
   action?: ReactNode
 }
 
-export function AdminPageHeader({ title, subtitle, action }: AdminPageHeaderProps) {
+export function ProductHeader({ title, subtitle, eyebrow, action }: ProductHeaderProps) {
   return (
     <div className="mb-6 flex items-start justify-between gap-4">
       <div>
-        <p className="font-mono text-[11px] uppercase tracking-[0.54px] text-black/45">Admin Workspace</p>
-        <h1
-          className="mt-1 text-2xl text-black"
-          style={{ fontWeight: 540, letterSpacing: '-0.96px' }}
-        >
+        {eyebrow && (
+          <p className="font-mono text-[11px] uppercase tracking-[0.54px] text-black/45">
+            {eyebrow}
+          </p>
+        )}
+        <h1 className="mt-1 text-2xl text-black" style={{ fontWeight: 540, letterSpacing: '-0.96px' }}>
           {title}
         </h1>
         {subtitle && (

@@ -1,71 +1,56 @@
 import { catalogApi } from '@/api/catalog'
-import { Badge } from '@/components/ui/Badge'
-import { AdminPageHeader } from '@/components/admin/AdminPageHeader'
-import { EmptyState } from '@/components/admin/EmptyState'
+import { EditPlaceholderButton } from '@/components/admin/products/EditPlaceholderButton'
+import { EmptyState } from '@/components/admin/products/EmptyState'
+import { ProductGrid } from '@/components/admin/products/ProductGrid'
+import { ProductHeader } from '@/components/admin/products/ProductHeader'
 
 export const metadata = { title: 'Products' }
+export const dynamic = 'force-dynamic'
 
 export default async function AdminProductsPage() {
   const { items: products, totalCount } = await catalogApi.getProducts({ isActive: undefined, maxResultCount: 100 })
 
   return (
-    <div>
-      <AdminPageHeader
+    <div className="admin-page admin-stack">
+      <ProductHeader
         title="Products"
         subtitle={`${totalCount} product${totalCount !== 1 ? 's' : ''} in catalogue`}
+        eyebrow="Admin Catalogue"
         action={
-          <button
-            disabled
-            className="inline-flex items-center gap-1.5 rounded-lg border border-gray-200 bg-white px-3 py-1.5 text-xs font-medium text-gray-400 shadow-sm"
-            title="Coming in next phase"
-          >
-            <svg viewBox="0 0 20 20" fill="currentColor" className="h-3.5 w-3.5">
-              <path fillRule="evenodd" d="M10 3a1 1 0 011 1v5h5a1 1 0 110 2h-5v5a1 1 0 11-2 0v-5H4a1 1 0 110-2h5V4a1 1 0 011-1z" clipRule="evenodd" />
-            </svg>
-            Add Product
-          </button>
+          <EditPlaceholderButton label="Add Product" variant="primary" />
         }
       />
 
+      <div className="admin-toolbar mb-6 rounded-[24px] shadow-card">
+        <div className="relative max-w-md flex-1">
+          <svg className="pointer-events-none absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-black/25" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+            <path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-4.35-4.35m1.85-5.15a7 7 0 11-14 0 7 7 0 0114 0z" />
+          </svg>
+          <input
+            readOnly
+            value=""
+            placeholder="Search products, colors, or sizes"
+            className="w-full rounded-full border border-black/[0.10] bg-black/[0.02] px-11 py-2.5 text-sm text-black placeholder:text-black/35"
+            aria-label="Search products placeholder"
+          />
+        </div>
+        <div className="flex items-center gap-2">
+          <span className="rounded-full border border-black/[0.08] bg-black/[0.02] px-3 py-2 font-mono text-[11px] uppercase tracking-[0.54px] text-black/50">
+            Demo View
+          </span>
+          <span className="rounded-full border border-black/[0.08] bg-white px-3 py-2 font-mono text-[11px] uppercase tracking-[0.54px] text-black/55">
+            {totalCount} live products
+          </span>
+        </div>
+      </div>
+
       {products.length === 0 ? (
         <EmptyState
-          icon={
-            <svg viewBox="0 0 20 20" fill="currentColor" className="h-7 w-7 text-gray-400">
-              <path fillRule="evenodd" d="M10 2a4 4 0 00-4 4v1H5a1 1 0 00-.994.89l-1 9A1 1 0 004 18h12a1 1 0 00.994-1.11l-1-9A1 1 0 0015 7h-1V6a4 4 0 00-4-4zm2 5V6a2 2 0 10-4 0v1h4z" clipRule="evenodd" />
-            </svg>
-          }
           title="No products to display"
-          description="Add products via the seeder or connect the product management API to manage your catalogue here."
+          description="Products will appear here once the catalogue is seeded or connected to the product management workflow."
         />
       ) : (
-        <div className="overflow-hidden rounded-xl border border-gray-200 bg-white shadow-sm">
-          <table className="min-w-full divide-y divide-gray-100 text-sm">
-            <thead>
-              <tr className="bg-gray-50">
-                {['Name', 'Type', 'Base Price', 'Variants', 'Status'].map((h) => (
-                  <th key={h} className="px-4 py-3 text-left text-[11px] font-semibold uppercase tracking-wide text-gray-400">
-                    {h}
-                  </th>
-                ))}
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-gray-50">
-              {products.map((p) => (
-                <tr key={p.id} className="transition-colors hover:bg-gray-50">
-                  <td className="px-4 py-3 font-medium text-gray-900">{p.name}</td>
-                  <td className="px-4 py-3">
-                    <Badge color="purple">{p.productType}</Badge>
-                  </td>
-                  <td className="px-4 py-3 font-semibold text-gray-900">${p.basePrice.toFixed(2)}</td>
-                  <td className="px-4 py-3 text-gray-500">{p.variantCount}</td>
-                  <td className="px-4 py-3">
-                    <Badge color="green">Active</Badge>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+        <ProductGrid products={products} />
       )}
     </div>
   )

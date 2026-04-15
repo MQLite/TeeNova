@@ -11,6 +11,7 @@ public class ProductDto
     public decimal BasePrice { get; set; }
     public string ProductType { get; set; } = default!;
     public bool IsActive { get; set; }
+    public DateTime CreationTime { get; set; }
     public List<ProductVariantDto> Variants { get; set; } = new();
     public List<ProductImageDto> Images { get; set; } = new();
 }

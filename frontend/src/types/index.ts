@@ -5,6 +5,7 @@ export interface ProductListItem {
   name: string
   basePrice: number
   productType: string
+  thumbnailUrl: string | null
   primaryImageUrl: string | null
   variantCount: number
 }
@@ -33,6 +34,7 @@ export interface Product {
   basePrice: number
   productType: string
   isActive: boolean
+  creationTime: string
   variants: ProductVariant[]
   images: ProductImage[]
 }
