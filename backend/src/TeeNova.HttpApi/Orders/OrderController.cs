@@ -33,6 +33,18 @@ public class OrderController : TeeNovaControllerBase
     public async Task<OrderDto> UpdateStatusAsync(Guid id, [FromBody] UpdateOrderStatusDto input)
         => await _orderAppService.UpdateStatusAsync(id, input);
 
+    [HttpPost("{id:guid}/mark-paid")]
+    public async Task<OrderDto> MarkPaidAsync(Guid id)
+        => await _orderAppService.MarkPaidAsync(id);
+
+    [HttpPost("{id:guid}/start-review")]
+    public async Task<OrderDto> StartReviewAsync(Guid id)
+        => await _orderAppService.StartReviewAsync(id);
+
+    [HttpPost("{id:guid}/reopen")]
+    public async Task<OrderDto> ReopenAsync(Guid id)
+        => await _orderAppService.ReopenAsync(id);
+
     [HttpPut("{orderId:guid}/items/{itemId:guid}/design")]
     public async Task<OrderItemDto> UpdateItemDesignAsync(Guid orderId, Guid itemId, [FromBody] UpdateOrderItemDesignDto input)
         => await _orderAppService.UpdateItemDesignAsync(orderId, itemId, input);

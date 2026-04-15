@@ -7,7 +7,9 @@ import type { OrderItem, OrderStatus } from '@/types'
 export const metadata = { title: 'Order Details' }
 
 const statusColors: Record<OrderStatus, 'gray' | 'blue' | 'yellow' | 'green' | 'purple' | 'red'> = {
-  Pending: 'yellow',
+  Pending: 'gray',
+  Paid: 'green',
+  Reviewing: 'blue',
   Confirmed: 'blue',
   InProduction: 'purple',
   Shipped: 'blue',
@@ -16,7 +18,9 @@ const statusColors: Record<OrderStatus, 'gray' | 'blue' | 'yellow' | 'green' | '
 }
 
 const statusMessages: Record<OrderStatus, { title: string; desc: string }> = {
-  Pending: { title: 'Order received', desc: 'We have received your order and will confirm it shortly.' },
+  Pending: { title: 'Order received', desc: 'We have received your order and are waiting for payment confirmation.' },
+  Paid: { title: 'Payment received', desc: 'Your payment has been recorded and your order is ready for review.' },
+  Reviewing: { title: 'Under review', desc: 'Our team is reviewing your artwork and print setup before production.' },
   Confirmed: { title: 'Order confirmed', desc: 'Your order has been confirmed and will enter production soon.' },
   InProduction: { title: 'Being printed', desc: 'Your custom T-shirt is currently being printed.' },
   Shipped: { title: 'On its way', desc: 'Your order has shipped and is heading to you.' },
@@ -45,7 +49,7 @@ export default async function OrderDetailPage({ params }: PageProps) {
   const order = await ordersApi.getById(id)
 
   const status = (typeof order.status === 'number'
-    ? (['Pending', 'Confirmed', 'InProduction', 'Shipped', 'Delivered', 'Cancelled'] as const)[order.status as unknown as number]
+    ? (['Pending', 'Confirmed', 'InProduction', 'Shipped', 'Delivered', 'Cancelled', 'Paid', 'Reviewing'] as const)[order.status as unknown as number]
     : order.status) ?? 'Pending'
   const safeOrder = { ...order, status }
 
@@ -206,7 +210,8 @@ export default async function OrderDetailPage({ params }: PageProps) {
               <h3 className="mb-4 font-mono text-[11px] uppercase tracking-[0.54px] text-black/55">What happens next</h3>
               <div className="space-y-2">
                 {[
-                  { done: ['Confirmed', 'InProduction', 'Shipped', 'Delivered'].includes(safeOrder.status), text: 'Order confirmed by our team' },
+                  { done: ['Paid', 'Reviewing', 'Confirmed', 'InProduction', 'Shipped', 'Delivered'].includes(safeOrder.status), text: 'Payment is confirmed' },
+                  { done: ['Reviewing', 'Confirmed', 'InProduction', 'Shipped', 'Delivered'].includes(safeOrder.status), text: 'Artwork is reviewed by our team' },
                   { done: ['InProduction', 'Shipped', 'Delivered'].includes(safeOrder.status), text: 'Your T-shirt enters production' },
                   { done: ['Shipped', 'Delivered'].includes(safeOrder.status), text: 'Shipped via NZ Post' },
                   { done: safeOrder.status === 'Delivered', text: 'Delivered to your door' },

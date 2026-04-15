@@ -9,7 +9,9 @@ interface StatusConfig {
 }
 
 const STATUS_CONFIG: Record<OrderStatus, StatusConfig> = {
-  Pending:      { bg: 'bg-amber-50',  text: 'text-amber-700',  dot: 'bg-amber-400',  label: 'Pending' },
+  Pending:      { bg: 'bg-zinc-100',  text: 'text-zinc-700',   dot: 'bg-zinc-400',   label: 'Pending' },
+  Paid:         { bg: 'bg-green-50',  text: 'text-green-700',  dot: 'bg-green-500',  label: 'Paid' },
+  Reviewing:    { bg: 'bg-blue-50',   text: 'text-blue-700',   dot: 'bg-blue-500',   label: 'Reviewing' },
   Confirmed:    { bg: 'bg-blue-50',   text: 'text-blue-700',   dot: 'bg-blue-500',   label: 'Confirmed' },
   InProduction: { bg: 'bg-violet-50', text: 'text-violet-700', dot: 'bg-violet-500', label: 'In Production' },
   Shipped:      { bg: 'bg-sky-50',    text: 'text-sky-700',    dot: 'bg-sky-500',    label: 'Shipped' },
