@@ -40,6 +40,18 @@ export const ordersApi = {
     return apiClient.put(`/api/orders/${id}/status`, { newStatus, reason })
   },
 
+  markPaid(id: string): Promise<Order> {
+    return apiClient.post(`/api/orders/${id}/mark-paid`)
+  },
+
+  startReview(id: string): Promise<Order> {
+    return apiClient.post(`/api/orders/${id}/start-review`)
+  },
+
+  reopen(id: string): Promise<Order> {
+    return apiClient.post(`/api/orders/${id}/reopen`)
+  },
+
   updateItemDesign(
     orderId: string,
     itemId: string,

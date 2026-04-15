@@ -136,18 +136,7 @@ public class OrderAppService : ApplicationService, IOrderAppService
 
     public async Task<OrderDto> UpdateStatusAsync(Guid id, UpdateOrderStatusDto input)
     {
-        var order = await _orderRepository.GetAsync(id);
-        order.UpdateStatus(input.NewStatus);
-        await _orderRepository.UpdateAsync(order, autoSave: true);
-
-        // Re-fetch with Items included so the returned DTO is complete
-        var query = await _orderRepository.GetQueryableAsync();
-        var full = await query
-            .Include(o => o.Items)
-            .ThenInclude(i => i.PositionAssets)
-            .FirstOrDefaultAsync(o => o.Id == id);
-
-        return ObjectMapper.Map<Order, OrderDto>(full ?? order);
+        return await ChangeStatusAsync(id, input.NewStatus);
     }
 
     private static void SyncPositionAssets(OrderItem item, IEnumerable<CreateOrderItemPositionDto> positions)
@@ -169,5 +158,41 @@ public class OrderAppService : ApplicationService, IOrderAppService
 
         throw new Volo.Abp.BusinessException("TeeNova:Order:InvalidPrintPosition")
             .WithData("Position", rawPosition);
+    }
+
+    public async Task<OrderDto> MarkPaidAsync(Guid id)
+        => await ChangeStatusAsync(id, OrderStatus.Paid);
+
+    public async Task<OrderDto> StartReviewAsync(Guid id)
+        => await ChangeStatusAsync(id, OrderStatus.Reviewing);
+
+    public async Task<OrderDto> ReopenAsync(Guid id)
+    {
+        var order = await _orderRepository.GetAsync(id);
+        order.Reopen(Clock.Now);
+        await _orderRepository.UpdateAsync(order, autoSave: true);
+
+        var query = await _orderRepository.GetQueryableAsync();
+        var full = await query
+            .Include(o => o.Items)
+            .ThenInclude(i => i.PositionAssets)
+            .FirstOrDefaultAsync(o => o.Id == id);
+
+        return ObjectMapper.Map<Order, OrderDto>(full ?? order);
+    }
+
+    private async Task<OrderDto> ChangeStatusAsync(Guid id, OrderStatus newStatus)
+    {
+        var order = await _orderRepository.GetAsync(id);
+        order.UpdateStatus(newStatus);
+        await _orderRepository.UpdateAsync(order, autoSave: true);
+
+        var query = await _orderRepository.GetQueryableAsync();
+        var full = await query
+            .Include(o => o.Items)
+            .ThenInclude(i => i.PositionAssets)
+            .FirstOrDefaultAsync(o => o.Id == id);
+
+        return ObjectMapper.Map<Order, OrderDto>(full ?? order);
     }
 }

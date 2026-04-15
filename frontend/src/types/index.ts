@@ -69,6 +69,8 @@ export interface UploadedAsset {
 
 export type OrderStatus =
   | 'Pending'
+  | 'Paid'
+  | 'Reviewing'
   | 'Confirmed'
   | 'InProduction'
   | 'Shipped'

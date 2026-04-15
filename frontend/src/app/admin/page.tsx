@@ -113,14 +113,16 @@ function QuickLinkCard({ href, label, description, icon }: {
 }
 
 const BAR_COLORS: Record<string, string> = {
-  Pending:      'bg-amber-400',
+  Pending:      'bg-zinc-400',
+  Paid:         'bg-green-500',
+  Reviewing:    'bg-blue-500',
   Confirmed:    'bg-blue-400',
   InProduction: 'bg-violet-500',
   Shipped:      'bg-sky-400',
   Delivered:    'bg-green-400',
   Cancelled:    'bg-red-400',
 }
-const STATUS_ORDER = ['Pending', 'Confirmed', 'InProduction', 'Shipped', 'Delivered', 'Cancelled']
+const STATUS_ORDER = ['Pending', 'Paid', 'Reviewing', 'Confirmed', 'InProduction', 'Shipped', 'Delivered', 'Cancelled']
 
 function StatusDistributionChart({ ordersByStatus }: { ordersByStatus: Record<string, number> }) {
   const total = Object.values(ordersByStatus).reduce((a, b) => a + b, 0)
@@ -212,7 +214,9 @@ export default async function AdminDashboardPage() {
   }
 
   const pendingCount =
-    (stats?.ordersByStatus['Pending'] ?? 0) + (stats?.ordersByStatus['Confirmed'] ?? 0)
+    (stats?.ordersByStatus['Pending'] ?? 0) +
+    (stats?.ordersByStatus['Paid'] ?? 0) +
+    (stats?.ordersByStatus['Reviewing'] ?? 0)
 
   const today = new Date().toLocaleDateString('en-NZ', {
     weekday: 'short', day: 'numeric', month: 'short', year: 'numeric',
@@ -247,7 +251,7 @@ export default async function AdminDashboardPage() {
         <SummaryCard
           label="Needs Attention"
           value={stats ? pendingCount : <SkeletonBlock className="mt-1 h-7 w-14" />}
-          sub={stats ? 'Pending or confirmed' : undefined}
+          sub={stats ? 'Pending, paid, or reviewing' : undefined}
           icon={<svg viewBox="0 0 20 20" fill="currentColor" className="h-4 w-4">
             <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm1-12a1 1 0 10-2 0v4a1 1 0 00.293.707l2.828 2.829a1 1 0 101.415-1.415L11 9.586V6z" clipRule="evenodd" />
           </svg>}

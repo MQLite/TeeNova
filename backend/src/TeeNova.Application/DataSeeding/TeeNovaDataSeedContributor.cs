@@ -25,9 +25,9 @@ public class TeeNovaDataSeedContributor : IDataSeedContributor, ITransientDepend
     // 鈹€鈹€ Order GUIDs (fixed, idempotent) 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
     private static readonly Guid Order1Id = new("a0000001-0000-0000-0000-000000000001"); // Delivered
     private static readonly Guid Order2Id = new("a0000002-0000-0000-0000-000000000002"); // InProduction
-    private static readonly Guid Order3Id = new("a0000003-0000-0000-0000-000000000003"); // Confirmed
+    private static readonly Guid Order3Id = new("a0000003-0000-0000-0000-000000000003"); // Reviewing
     private static readonly Guid Order4Id = new("a0000004-0000-0000-0000-000000000004"); // Shipped
-    private static readonly Guid Order5Id = new("a0000005-0000-0000-0000-000000000005"); // Pending
+    private static readonly Guid Order5Id = new("a0000005-0000-0000-0000-000000000005"); // Paid
     private static readonly Guid Order6Id = new("a0000006-0000-0000-0000-000000000006"); // Pending
 
     // 鈹€鈹€ Order item GUIDs (fixed so assets can reference them) 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
@@ -271,7 +271,8 @@ public class TeeNovaDataSeedContributor : IDataSeedContributor, ITransientDepend
                 25, classic.BasePrice + variant.PriceAdjustment);
             item.UpsertPositionAsset(Guid.NewGuid(), PrintPosition.FrontCenter);
             order.AddItem(item);
-            order.UpdateStatus(OrderStatus.Confirmed);
+            order.UpdateStatus(OrderStatus.Paid);
+            order.UpdateStatus(OrderStatus.Reviewing);
             await _orderRepository.InsertAsync(order, autoSave: true);
         }
 
@@ -303,6 +304,7 @@ public class TeeNovaDataSeedContributor : IDataSeedContributor, ITransientDepend
                 2, premium.BasePrice + variant.PriceAdjustment);
             item.UpsertPositionAsset(Guid.NewGuid(), PrintPosition.LeftChest, Asset3Id, baseUrl + "/images/products/premium-tee.svg", "Company logo 鈥?left chest, ~8cm wide");
             order.AddItem(item);
+            order.UpdateStatus(OrderStatus.Paid);
             await _orderRepository.InsertAsync(order, autoSave: true);
         }
 
@@ -335,4 +337,3 @@ public class TeeNovaDataSeedContributor : IDataSeedContributor, ITransientDepend
         => product.Variants.FirstOrDefault(v => v.Color == color && v.Size == size)
            ?? product.Variants.First();
 }
-

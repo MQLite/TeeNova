@@ -7,16 +7,20 @@ import { ordersApi } from '@/api/orders'
 import { filesApi } from '@/api/files'
 import { Card, CardBody, CardHeader } from '@/components/ui/Card'
 import { Button } from '@/components/ui/Button'
+import { OrderActionPanel } from '@/components/admin/OrderActionPanel'
 import { OrderStatusBadge, STATUS_CONFIG } from '@/components/admin/OrderStatusBadge'
 import { SkeletonBlock } from '@/components/admin/LoadingSkeleton'
 import { DownloadDesignButton } from '@/components/orders/DownloadDesignButton'
 import type { Order, OrderItemPositionAsset, OrderStatus, PrintPosition } from '@/types'
 import clsx from 'clsx'
 
-const PIPELINE: OrderStatus[] = ['Pending', 'Confirmed', 'InProduction', 'Shipped', 'Delivered']
+const PIPELINE: OrderStatus[] = ['Pending', 'Paid', 'Reviewing', 'InProduction', 'Shipped', 'Delivered']
 
 const TRANSITIONS: Record<OrderStatus, OrderStatus[]> = {
-  Pending: ['Confirmed', 'Cancelled'],
+  Pending: ['Paid', 'Cancelled'],
+  Paid: ['Reviewing', 'Cancelled'],
+  Reviewing: ['InProduction', 'Cancelled'],
+  // Legacy path kept for existing seeded/demo orders
   Confirmed: ['InProduction', 'Cancelled'],
   InProduction: ['Shipped'],
   Shipped: ['Delivered'],
@@ -185,6 +189,7 @@ export default function AdminOrderDetailPage() {
   const [loading, setLoading] = useState(true)
   const [updating, setUpdating] = useState(false)
   const [toast, setToast] = useState<string | null>(null)
+  const [toastTone, setToastTone] = useState<'success' | 'error'>('success')
 
   useEffect(() => {
     ordersApi.getById(id).then(setOrder).finally(() => setLoading(false))
@@ -232,7 +237,46 @@ export default function AdminOrderDetailPage() {
     }
   }
 
-  function showToast(msg: string) {
+  async function handleMarkPaid() {
+    if (!order) return
+    setUpdating(true)
+    try {
+      const updated = await ordersApi.markPaid(order.id)
+      setOrder(updated)
+      showToast('Payment recorded')
+    } finally {
+      setUpdating(false)
+    }
+  }
+
+  async function handleStartReview() {
+    if (!order) return
+    setUpdating(true)
+    try {
+      const updated = await ordersApi.startReview(order.id)
+      setOrder(updated)
+      showToast('Review started')
+    } finally {
+      setUpdating(false)
+    }
+  }
+
+  async function handleReopen() {
+    if (!order) return
+    setUpdating(true)
+    try {
+      const updated = await ordersApi.reopen(order.id)
+      setOrder(updated)
+      showToast('Order reopened and returned to pending')
+    } catch {
+      showToast('This order can no longer be reopened', 'error')
+    } finally {
+      setUpdating(false)
+    }
+  }
+
+  function showToast(msg: string, tone: 'success' | 'error' = 'success') {
+    setToastTone(tone)
     setToast(msg)
     setTimeout(() => setToast(null), 3000)
   }
@@ -257,13 +301,19 @@ export default function AdminOrderDetailPage() {
   const advanceNext = nextStatuses.filter((s) => s !== 'Cancelled')
   const isCancelled = order.status === 'Cancelled'
   const isTerminal = order.status === 'Delivered' || isCancelled
-  const pipelineIdx = PIPELINE.indexOf(order.status)
+  const progressStatus = order.status === 'Confirmed' ? 'Reviewing' : order.status
+  const pipelineIdx = PIPELINE.indexOf(progressStatus)
+  const showLifecycleActions = !['Pending', 'Paid'].includes(order.status)
 
   return (
     <div className="admin-page admin-stack">
       {toast && (
-        <div className="fixed bottom-6 right-6 z-50 rounded-[50px] bg-black px-5 py-2.5 text-sm text-white shadow-elevated">
-          Success: {toast}
+        <div className={clsx(
+          'fixed bottom-6 right-6 z-50 rounded-[50px] px-5 py-2.5 text-sm text-white shadow-elevated',
+          toastTone === 'success' ? 'bg-black' : 'bg-red-600',
+        )}>
+          {toastTone === 'success' ? 'Success: ' : 'Error: '}
+          {toast}
         </div>
       )}
 
@@ -287,6 +337,15 @@ export default function AdminOrderDetailPage() {
           </p>
         </div>
       </div>
+
+      {!isCancelled && (
+        <OrderActionPanel
+          status={order.status}
+          loading={updating}
+          onMarkPaid={handleMarkPaid}
+          onStartReview={handleStartReview}
+        />
+      )}
 
       {!isCancelled && (
         <div className="card p-5">
@@ -320,7 +379,7 @@ export default function AdminOrderDetailPage() {
             })}
           </div>
 
-          {!isTerminal && (
+          {!isTerminal && showLifecycleActions && (
             <div className="mt-5 flex flex-wrap items-center gap-2 border-t border-black/[0.08] pt-4">
               {advanceNext.map((s) => (
                 <Button key={s} size="sm" loading={updating} onClick={() => handleStatusChange(s)}>
@@ -451,7 +510,14 @@ export default function AdminOrderDetailPage() {
           {isCancelled && (
             <div className="card border-red-200 bg-red-50 p-4 text-sm text-red-700">
               <p style={{ fontWeight: 480 }}>Order Cancelled</p>
-              <p className="mt-0.5 text-xs text-red-500">This order has been cancelled and cannot be updated further.</p>
+              <p className="mt-0.5 text-xs text-red-500">
+                This order can be reopened within 24 hours and will return to pending.
+              </p>
+              <div className="mt-3">
+                <Button size="sm" variant="white" loading={updating} onClick={handleReopen}>
+                  Re-open Order
+                </Button>
+              </div>
             </div>
           )}
 

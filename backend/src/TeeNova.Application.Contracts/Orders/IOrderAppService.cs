@@ -12,5 +12,8 @@ public interface IOrderAppService : IApplicationService
     Task<OrderDto> GetAsync(Guid id);
     Task<PagedResultDto<OrderDto>> GetListAsync(GetOrdersInput input);
     Task<OrderDto> UpdateStatusAsync(Guid id, UpdateOrderStatusDto input);
+    Task<OrderDto> MarkPaidAsync(Guid id);
+    Task<OrderDto> StartReviewAsync(Guid id);
+    Task<OrderDto> ReopenAsync(Guid id);
     Task<OrderItemDto> UpdateItemDesignAsync(Guid orderId, Guid itemId, UpdateOrderItemDesignDto input);
 }
