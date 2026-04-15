@@ -1,4 +1,4 @@
-'use client'
+﻿'use client'
 
 import Link from 'next/link'
 import { useCartStore } from '@/features/cart/cart-store'
@@ -30,13 +30,12 @@ export default function CartPage() {
 
   return (
     <div className="bg-gray-50 min-h-screen">
-      {/* Header */}
       <div className="bg-white border-b border-gray-100">
         <div className="mx-auto max-w-7xl px-4 py-4 sm:px-6 lg:px-8">
-          <nav className="flex items-center gap-2 text-xs text-gray-500 mb-1">
+          <nav className="mb-1 flex items-center gap-2 text-xs text-gray-500">
             <Link href="/" className="hover:text-brand-600">Home</Link>
-            <span>›</span>
-            <span className="text-gray-900 font-medium">Cart</span>
+            <span>/</span>
+            <span className="font-medium text-gray-900">Cart</span>
           </nav>
           <h1 className="text-2xl font-bold text-gray-900">
             Your Cart
@@ -47,18 +46,15 @@ export default function CartPage() {
 
       <div className="mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8">
         <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
-
-          {/* Items list */}
           <div className="space-y-4 lg:col-span-2">
             {items.map((item, idx) => (
-              <div key={item.productVariantId} className="rounded-2xl border border-gray-100 bg-white shadow-sm overflow-hidden">
+              <div key={item.productVariantId} className="overflow-hidden rounded-2xl border border-gray-100 bg-white shadow-sm">
                 <div className="flex gap-4 p-5">
-                  {/* Thumbnail */}
-                  <div className="flex-shrink-0 h-20 w-20 rounded-xl overflow-hidden bg-gradient-to-br from-brand-50 to-purple-50 flex items-center justify-center">
-                    {(item.printPositions?.[0]?.uploadedAssetUrl ?? item.uploadedAssetUrl) ? (
+                  <div className="flex h-20 w-20 flex-shrink-0 items-center justify-center overflow-hidden rounded-xl bg-gradient-to-br from-brand-50 to-purple-50">
+                    {item.printPositions?.[0]?.uploadedAssetUrl ? (
                       // eslint-disable-next-line @next/next/no-img-element
                       <img
-                        src={item.printPositions?.[0]?.uploadedAssetUrl ?? item.uploadedAssetUrl ?? ''}
+                        src={item.printPositions[0].uploadedAssetUrl}
                         alt="design"
                         className="h-full w-full object-contain p-1"
                       />
@@ -69,29 +65,24 @@ export default function CartPage() {
                     )}
                   </div>
 
-                  {/* Details */}
-                  <div className="flex-1 min-w-0">
+                  <div className="min-w-0 flex-1">
                     <div className="flex items-start justify-between gap-2">
                       <div>
-                        <h3 className="font-semibold text-gray-900 truncate">{item.productName}</h3>
+                        <h3 className="truncate font-semibold text-gray-900">{item.productName}</h3>
                         <p className="mt-0.5 text-sm text-gray-500">{item.variantLabel}</p>
-                        {(item.printPositions && item.printPositions.length > 0) ? (
+                        {item.printPositions && item.printPositions.length > 0 ? (
                           <div className="mt-1 flex flex-wrap gap-1">
                             {item.printPositions.map((pp) => (
                               <span key={pp.position} className="inline-flex items-center rounded-full bg-brand-50 px-2 py-0.5 text-[10px] font-semibold text-brand-700">
-                                📍 {pp.position.replace(/([A-Z])/g, ' $1').trim()}
+                                Position {pp.position.replace(/([A-Z])/g, ' $1').trim()}
                               </span>
                             ))}
                           </div>
-                        ) : item.printPosition ? (
-                          <span className="mt-1 inline-flex items-center rounded-full bg-brand-50 px-2 py-0.5 text-[10px] font-semibold text-brand-700">
-                            📍 {item.printPosition.replace(/([A-Z])/g, ' $1').trim()}
-                          </span>
                         ) : null}
                       </div>
                       <button
                         onClick={() => removeItem(item.productVariantId)}
-                        className="flex-shrink-0 rounded-lg p-1.5 text-gray-300 hover:bg-red-50 hover:text-red-500 transition-colors"
+                        className="flex-shrink-0 rounded-lg p-1.5 text-gray-300 transition-colors hover:bg-red-50 hover:text-red-500"
                         title="Remove"
                       >
                         <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
@@ -100,16 +91,15 @@ export default function CartPage() {
                       </button>
                     </div>
 
-                    {/* Quantity + price */}
                     <div className="mt-3 flex items-center justify-between">
                       <div className="flex items-center gap-1 rounded-xl border border-gray-200 bg-gray-50">
                         <button
-                          className="px-3 py-1.5 text-gray-600 hover:text-gray-900 transition-colors text-base font-bold"
+                          className="px-3 py-1.5 text-base font-bold text-gray-600 transition-colors hover:text-gray-900"
                           onClick={() => updateQuantity(item.productVariantId, item.quantity - 1)}
-                        >−</button>
+                        >-</button>
                         <span className="min-w-[2rem] text-center text-sm font-semibold text-gray-900">{item.quantity}</span>
                         <button
-                          className="px-3 py-1.5 text-gray-600 hover:text-gray-900 transition-colors text-base font-bold"
+                          className="px-3 py-1.5 text-base font-bold text-gray-600 transition-colors hover:text-gray-900"
                           onClick={() => updateQuantity(item.productVariantId, item.quantity + 1)}
                         >+</button>
                       </div>
@@ -120,8 +110,7 @@ export default function CartPage() {
                   </div>
                 </div>
 
-                {/* Item number strip */}
-                <div className="border-t border-gray-50 bg-gray-50 px-5 py-2 flex items-center justify-between">
+                <div className="flex items-center justify-between border-t border-gray-50 bg-gray-50 px-5 py-2">
                   <span className="text-xs text-gray-400">Item {idx + 1} of {items.length}</span>
                   <span className="text-xs text-gray-500">${item.unitPrice.toFixed(2)} each</span>
                 </div>
@@ -129,19 +118,18 @@ export default function CartPage() {
             ))}
 
             <div className="flex items-center justify-between pt-2">
-              <Link href="/products" className="text-sm font-medium text-brand-600 hover:text-brand-700 flex items-center gap-1">
-                ← Continue Shopping
+              <Link href="/products" className="flex items-center gap-1 text-sm font-medium text-brand-600 hover:text-brand-700">
+                Back to products
               </Link>
             </div>
           </div>
 
-          {/* Order summary */}
           <div className="lg:col-span-1">
-            <div className="sticky top-24 rounded-2xl border border-gray-100 bg-white shadow-sm overflow-hidden">
+            <div className="sticky top-24 overflow-hidden rounded-2xl border border-gray-100 bg-white shadow-sm">
               <div className="border-b border-gray-100 px-6 py-4">
                 <h2 className="text-base font-bold text-gray-900">Order Summary</h2>
               </div>
-              <div className="p-6 space-y-3">
+              <div className="space-y-3 p-6">
                 <div className="flex justify-between text-sm">
                   <span className="text-gray-600">Subtotal ({items.length} item{items.length !== 1 ? 's' : ''})</span>
                   <span className="font-semibold">${subtotal.toFixed(2)}</span>
@@ -167,12 +155,12 @@ export default function CartPage() {
 
               <div className="px-6 pb-6">
                 <Button className="w-full" size="lg" asChild>
-                  <Link href="/checkout">Proceed to Checkout →</Link>
+                  <Link href="/checkout">Proceed to Checkout</Link>
                 </Button>
                 <div className="mt-4 flex items-center justify-center gap-3 text-xs text-gray-400">
-                  <span>🔒 Secure checkout</span>
-                  <span>·</span>
-                  <span>🚚 NZ wide shipping</span>
+                  <span>Secure checkout</span>
+                  <span>|</span>
+                  <span>NZ wide shipping</span>
                 </div>
               </div>
             </div>

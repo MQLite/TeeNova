@@ -6,7 +6,7 @@ import Link from 'next/link'
 import { useCartStore } from '@/features/cart/cart-store'
 import { ordersApi } from '@/api/orders'
 import { Button } from '@/components/ui/Button'
-import type { PrintPosition, ShippingAddress } from '@/types'
+import type { ShippingAddress } from '@/types'
 
 export default function CheckoutPage() {
   const router = useRouter()
@@ -52,13 +52,7 @@ export default function CheckoutPage() {
           productId: item.productId,
           productVariantId: item.productVariantId,
           quantity: item.quantity,
-          // Legacy single-position fields (kept for backward compat)
-          uploadedAssetId: item.uploadedAssetId ?? item.printPositions?.[0]?.uploadedAssetId,
-          uploadedAssetUrl: item.uploadedAssetUrl ?? item.printPositions?.[0]?.uploadedAssetUrl,
-          printPosition: (item.printPosition ?? item.printPositions?.[0]?.position) as PrintPosition | undefined,
-          designNote: item.printPositions?.[0]?.designNote,
-          // Multi-position data
-          printPositions: item.printPositions?.map((p) => ({
+          printPositions: (item.printPositions ?? []).map((p) => ({
             position: p.position,
             assetId: p.uploadedAssetId,
             assetUrl: p.uploadedAssetUrl,
@@ -173,10 +167,10 @@ export default function CheckoutPage() {
                 <div className="max-h-56 overflow-y-auto divide-y divide-gray-50">
                   {items.map((item) => (
                     <div key={item.productVariantId} className="flex gap-3 px-5 py-3">
-                      <div className="h-11 w-11 flex-shrink-0 rounded-lg overflow-hidden bg-brand-50 flex items-center justify-center">
-                        {item.uploadedAssetUrl ? (
+                    <div className="h-11 w-11 flex-shrink-0 rounded-lg overflow-hidden bg-brand-50 flex items-center justify-center">
+                        {item.printPositions?.[0]?.uploadedAssetUrl ? (
                           // eslint-disable-next-line @next/next/no-img-element
-                          <img src={item.uploadedAssetUrl} alt="" className="h-full w-full object-contain p-0.5" />
+                          <img src={item.printPositions[0]?.uploadedAssetUrl ?? ''} alt="" className="h-full w-full object-contain p-0.5" />
                         ) : (
                           <svg viewBox="0 0 200 220" className="h-6 w-6 text-brand-200" fill="currentColor">
                             <path d="M 59 36 L 30 48 L 14 85 L 41 94 L 44 85 L 44 185 L 156 185 L 156 85 L 159 94 L 186 85 L 170 48 L 141 36 C 134 54 118 61 100 61 C 82 61 66 54 59 36 Z" />

@@ -15,4 +15,8 @@ export const filesApi = {
   getAdminAssetById(id: string): Promise<AdminAsset> {
     return apiClient.get(`/api/files/assets/${id}`)
   },
+
+  cleanOrphanedAssets(): Promise<{ deletedCount: number; failedCount: number }> {
+    return apiClient.post('/api/files/assets/clean-orphans', {})
+  },
 }

@@ -15,11 +15,7 @@ export interface CreateOrderPayload {
     productId: string
     productVariantId: string
     quantity: number
-    uploadedAssetId?: string
-    uploadedAssetUrl?: string
-    printPosition?: PrintPosition
-    designNote?: string
-    printPositions?: CreateOrderItemPositionPayload[]
+    printPositions: CreateOrderItemPositionPayload[]
   }[]
   notes?: string
 }
@@ -48,10 +44,9 @@ export const ordersApi = {
     orderId: string,
     itemId: string,
     payload: {
+      position: PrintPosition
       uploadedAssetId?: string
       uploadedAssetUrl?: string
-      printPositionsJson?: string
-      position?: PrintPosition
       designNote?: string
     },
   ): Promise<import('@/types').OrderItem> {
