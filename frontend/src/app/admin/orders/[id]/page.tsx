@@ -1,4 +1,4 @@
-﻿'use client'
+'use client'
 
 import { useEffect, useRef, useState } from 'react'
 import Link from 'next/link'
@@ -63,11 +63,11 @@ function ReplaceDesignButton({
         disabled={uploading}
         onClick={() => inputRef.current?.click()}
         className={clsx(
-          'inline-flex items-center gap-1 rounded-lg border border-dashed transition-colors',
+          'inline-flex items-center gap-1 rounded-[50px] border border-dashed transition-colors',
           compact ? 'w-full justify-center px-2 py-1 text-[10px]' : 'px-2.5 py-1 text-xs',
           uploading
-            ? 'cursor-not-allowed border-gray-200 bg-gray-50 text-gray-400'
-            : 'border-brand-200 bg-brand-50 text-brand-600 hover:bg-brand-100',
+            ? 'cursor-not-allowed border-black/[0.10] bg-black/[0.03] text-black/45'
+            : 'border-black/[0.15] text-black/50 hover:border-black/30 hover:text-black',
         )}
       >
         {uploading ? (
@@ -116,25 +116,27 @@ function PositionCards({
   return (
     <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-3">
       {!positions.length && (
-        <div className="col-span-full rounded-xl border border-dashed border-gray-200 bg-gray-50 px-4 py-5 text-center text-sm text-gray-400">
-          No position assets have been attached to this item yet.
+        <div className="col-span-full rounded-lg border border-dashed border-black/[0.12] bg-black/[0.02] px-4 py-5 text-center font-mono text-[11px] uppercase tracking-[0.54px] text-black/45">
+          No position assets attached yet.
         </div>
       )}
       {positions.map((p) => (
-        <div key={p.position} className="rounded-lg border border-gray-100 bg-gray-50 p-2">
+        <div key={p.position} className="rounded-lg border border-black/[0.08] bg-black/[0.02] p-2">
           {p.uploadedAssetUrl ? (
             // eslint-disable-next-line @next/next/no-img-element
             <img
               src={p.uploadedAssetUrl}
               alt={`Design for ${formatPosition(p.position)}`}
-              className="mb-1.5 h-20 w-full rounded-md border border-gray-100 bg-white object-contain p-0.5"
+              className="mb-1.5 h-20 w-full rounded border border-black/[0.08] bg-white object-contain p-0.5"
             />
           ) : (
-            <div className="mb-1.5 flex h-20 w-full items-center justify-center rounded-md border border-dashed border-gray-200 bg-white text-2xl">
-              馃柤锔?
+            <div className="mb-1.5 flex h-20 w-full items-center justify-center rounded border border-dashed border-black/[0.10] bg-white text-black/20">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.5} className="h-6 w-6">
+                <path strokeLinecap="round" strokeLinejoin="round" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+              </svg>
             </div>
           )}
-          <p className="text-center text-[10px] font-semibold text-brand-700">
+          <p className="text-center font-mono text-[10px] uppercase tracking-[0.54px] text-black/50">
             {formatPosition(p.position)}
           </p>
           {p.designNote && (
@@ -165,12 +167,12 @@ function DetailSkeleton() {
       </div>
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
         <div className="space-y-6 lg:col-span-2">
-          <SkeletonBlock className="h-48 rounded-xl" />
-          <SkeletonBlock className="h-24 rounded-xl" />
+          <SkeletonBlock className="h-48 rounded-lg" />
+          <SkeletonBlock className="h-24 rounded-lg" />
         </div>
         <div className="space-y-4">
-          <SkeletonBlock className="h-32 rounded-xl" />
-          <SkeletonBlock className="h-36 rounded-xl" />
+          <SkeletonBlock className="h-32 rounded-lg" />
+          <SkeletonBlock className="h-36 rounded-lg" />
         </div>
       </div>
     </div>
@@ -240,10 +242,11 @@ export default function AdminOrderDetailPage() {
   if (!order) {
     return (
       <div className="flex flex-col items-center justify-center py-20 text-center">
-        <p className="text-2xl font-bold text-gray-300">404</p>
-        <p className="mt-1 text-sm text-gray-500">Order not found.</p>
-        <Link href="/admin/orders" className="mt-4 text-sm text-brand-600 hover:underline">
-          鈫?Back to Orders
+        <p className="text-4xl text-black/15" style={{ fontWeight: 320, letterSpacing: '-1.72px' }}>404</p>
+        <p className="mt-1 text-sm text-black/55" style={{ letterSpacing: '-0.14px' }}>Order not found.</p>
+        <Link href="/admin/orders" className="mt-4 text-sm text-black/50 underline underline-offset-2 hover:text-black transition-colors"
+              style={{ letterSpacing: '-0.14px' }}>
+          Back to Orders
         </Link>
       </div>
     )
@@ -257,15 +260,16 @@ export default function AdminOrderDetailPage() {
   const pipelineIdx = PIPELINE.indexOf(order.status)
 
   return (
-    <div className="space-y-6">
+    <div className="admin-page admin-stack">
       {toast && (
-        <div className="fixed bottom-6 right-6 z-50 rounded-xl bg-gray-900 px-4 py-2.5 text-sm font-medium text-white shadow-xl">
-          鉁?{toast}
+        <div className="fixed bottom-6 right-6 z-50 rounded-[50px] bg-black px-5 py-2.5 text-sm text-white shadow-elevated">
+          Success: {toast}
         </div>
       )}
 
       <div className="flex flex-wrap items-start gap-3">
-        <Link href="/admin/orders" className="mt-0.5 flex items-center gap-1 text-xs text-gray-400 hover:text-gray-700">
+        <Link href="/admin/orders"
+          className="mt-0.5 flex items-center gap-1 font-mono text-[11px] uppercase tracking-[0.54px] text-black/50 hover:text-black transition-colors">
           <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
             <path strokeLinecap="round" strokeLinejoin="round" d="M10 19l-7-7m0 0l7-7m-7 7h18" />
           </svg>
@@ -273,18 +277,20 @@ export default function AdminOrderDetailPage() {
         </Link>
         <div className="flex-1">
           <div className="flex flex-wrap items-center gap-2.5">
-            <h1 className="text-xl font-bold text-gray-900">{order.orderNumber}</h1>
+            <h1 className="text-xl text-black" style={{ fontWeight: 540, letterSpacing: '-0.96px' }}>
+              {order.orderNumber}
+            </h1>
             <OrderStatusBadge status={order.status} />
           </div>
-          <p className="mt-0.5 text-xs text-gray-400">
+          <p className="mt-0.5 font-mono text-[11px] uppercase tracking-[0.54px] text-black/45">
             Placed {new Date(order.creationTime).toLocaleString('en-NZ', { dateStyle: 'medium', timeStyle: 'short' })}
           </p>
         </div>
       </div>
 
       {!isCancelled && (
-        <div className="rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
-          <p className="mb-4 text-xs font-semibold uppercase tracking-wide text-gray-400">Order Progress</p>
+        <div className="card p-5">
+          <p className="mb-4 font-mono text-[11px] uppercase tracking-[0.54px] text-black/50">Order Progress</p>
           <div className="flex items-center">
             {PIPELINE.map((step, i) => {
               const done = i < pipelineIdx
@@ -294,20 +300,20 @@ export default function AdminOrderDetailPage() {
                 <div key={step} className="flex flex-1 items-center">
                   <div className="flex flex-col items-center gap-1.5">
                     <div className={clsx(
-                      'flex h-7 w-7 items-center justify-center rounded-full text-xs font-bold transition-colors',
-                      done ? 'bg-brand-600 text-white' : active ? 'bg-brand-100 text-brand-700 ring-2 ring-brand-500' : 'bg-gray-100 text-gray-400',
+                      'flex h-7 w-7 items-center justify-center rounded-full text-xs font-medium transition-colors',
+                      done ? 'bg-black text-white' : active ? 'border-2 border-black bg-white text-black' : 'bg-black/[0.06] text-black/45',
                     )}>
-                      {done ? '鉁?' : i + 1}
+                      {done ? 'OK' : i + 1}
                     </div>
                     <span className={clsx(
-                      'whitespace-nowrap text-[10px] font-medium',
-                      active ? 'text-brand-700' : done ? 'text-gray-600' : 'text-gray-400',
+                      'whitespace-nowrap font-mono text-[9px] uppercase tracking-[0.54px]',
+                      active ? 'text-black' : done ? 'text-black/50' : 'text-black/25',
                     )}>
                       {cfg.label}
                     </span>
                   </div>
                   {i < PIPELINE.length - 1 && (
-                    <div className={clsx('mx-1 mb-5 h-px flex-1', i < pipelineIdx ? 'bg-brand-400' : 'bg-gray-200')} />
+                    <div className={clsx('mx-1 mb-5 h-px flex-1', i < pipelineIdx ? 'bg-black' : 'bg-black/[0.10]')} />
                   )}
                 </div>
               )
@@ -315,14 +321,14 @@ export default function AdminOrderDetailPage() {
           </div>
 
           {!isTerminal && (
-            <div className="mt-5 flex flex-wrap items-center gap-2 border-t border-gray-100 pt-4">
+            <div className="mt-5 flex flex-wrap items-center gap-2 border-t border-black/[0.08] pt-4">
               {advanceNext.map((s) => (
                 <Button key={s} size="sm" loading={updating} onClick={() => handleStatusChange(s)}>
-                  Mark as {STATUS_CONFIG[s]?.label ?? s} 鈫?
+                  Mark as {STATUS_CONFIG[s]?.label ?? s}
                 </Button>
               ))}
               {cancelNext && (
-                <Button size="sm" variant="secondary" loading={updating} onClick={() => handleStatusChange('Cancelled')}>
+                <Button size="sm" variant="glass" loading={updating} onClick={() => handleStatusChange('Cancelled')}>
                   Cancel Order
                 </Button>
               )}
@@ -335,30 +341,34 @@ export default function AdminOrderDetailPage() {
         <div className="space-y-6 lg:col-span-2">
           <Card>
             <CardHeader className="flex items-center justify-between">
-              <h2 className="font-semibold text-gray-900">Items</h2>
-              <span className="text-xs text-gray-400">{order.items.length} item{order.items.length !== 1 ? 's' : ''}</span>
+              <h2 className="text-sm text-black" style={{ fontWeight: 540, letterSpacing: '-0.26px' }}>Items</h2>
+              <span className="font-mono text-[11px] uppercase tracking-[0.54px] text-black/50">
+                {order.items.length} item{order.items.length !== 1 ? 's' : ''}
+              </span>
             </CardHeader>
             <CardBody className="p-0">
-              <div className="divide-y divide-gray-50">
+              <div className="divide-y divide-black/[0.06]">
                 {order.items.map((item) => (
                   <div key={item.id} className="px-6 py-5">
                     <div className="flex items-start gap-4">
                       <div className="min-w-0 flex-1">
-                        <p className="font-semibold text-gray-900">{item.productName}</p>
-                        <p className="mt-0.5 text-sm text-gray-500">{item.variantLabel}</p>
+                        <p className="text-sm text-black" style={{ fontWeight: 480, letterSpacing: '-0.14px' }}>
+                          {item.productName}
+                        </p>
+                        <p className="mt-0.5 text-sm text-black/55" style={{ letterSpacing: '-0.14px' }}>
+                          {item.variantLabel}
+                        </p>
                         <div className="mt-2 flex flex-wrap gap-1.5">
-                          <span className="inline-flex items-center rounded-md bg-gray-100 px-2 py-0.5 text-[11px] font-medium text-gray-600">
+                          <span className="inline-flex items-center rounded-full border border-black/[0.08] px-2 py-0.5 font-mono text-[10px] uppercase tracking-[0.54px] text-black/55">
                             Qty {item.quantity}
                           </span>
                         </div>
                       </div>
-
                       <div className="flex-shrink-0 text-right">
-                        <p className="font-bold text-gray-900">${(item.unitPrice * item.quantity).toFixed(2)}</p>
-                        <p className="text-xs text-gray-400">${item.unitPrice.toFixed(2)} each</p>
+                        <p className="text-sm text-black" style={{ fontWeight: 540 }}>${(item.unitPrice * item.quantity).toFixed(2)}</p>
+                        <p className="font-mono text-[10px] uppercase tracking-[0.54px] text-black/45">${item.unitPrice.toFixed(2)} each</p>
                       </div>
                     </div>
-
                     <PositionCards
                       positions={item.positionAssets}
                       onReplacePosition={async (position, assetId, assetUrl) =>
@@ -368,10 +378,11 @@ export default function AdminOrderDetailPage() {
                   </div>
                 ))}
               </div>
-
-              <div className="flex items-center justify-between border-t border-gray-100 bg-gray-50 px-6 py-4">
-                <span className="font-semibold text-gray-900">Order Total</span>
-                <span className="text-lg font-bold text-gray-900">${order.totalAmount.toFixed(2)}</span>
+              <div className="flex items-center justify-between border-t border-black/[0.08] bg-black/[0.02] px-6 py-4">
+                <span className="text-sm text-black" style={{ fontWeight: 540, letterSpacing: '-0.26px' }}>Order Total</span>
+                <span className="text-lg text-black" style={{ fontWeight: 540, letterSpacing: '-0.96px' }}>
+                  ${order.totalAmount.toFixed(2)}
+                </span>
               </div>
             </CardBody>
           </Card>
@@ -379,10 +390,10 @@ export default function AdminOrderDetailPage() {
           {order.notes && (
             <Card>
               <CardHeader>
-                <h2 className="font-semibold text-gray-900">Order Notes</h2>
+                <h2 className="text-sm text-black" style={{ fontWeight: 540, letterSpacing: '-0.26px' }}>Order Notes</h2>
               </CardHeader>
               <CardBody>
-                <p className="text-sm leading-relaxed text-gray-700">{order.notes}</p>
+                <p className="text-sm leading-relaxed text-black/60" style={{ letterSpacing: '-0.14px' }}>{order.notes}</p>
               </CardBody>
             </Card>
           )}
@@ -391,21 +402,25 @@ export default function AdminOrderDetailPage() {
         <div className="space-y-4">
           <Card>
             <CardHeader>
-              <h2 className="text-sm font-semibold text-gray-900">Customer</h2>
+              <h2 className="font-mono text-[11px] uppercase tracking-[0.54px] text-black/55">Customer</h2>
             </CardHeader>
             <CardBody className="space-y-3">
               <div className="flex items-center gap-2.5">
-                <div className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full bg-brand-100 text-sm font-bold text-brand-700">
+                <div className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full bg-black text-sm font-medium text-white">
                   {order.customerName.charAt(0).toUpperCase()}
                 </div>
                 <div className="min-w-0">
-                  <p className="truncate text-sm font-semibold text-gray-900">{order.customerName}</p>
-                  <p className="truncate text-xs text-gray-500">{order.customerEmail}</p>
+                  <p className="truncate text-sm text-black" style={{ fontWeight: 480, letterSpacing: '-0.14px' }}>
+                    {order.customerName}
+                  </p>
+                  <p className="truncate text-xs text-black/55" style={{ letterSpacing: '-0.14px' }}>
+                    {order.customerEmail}
+                  </p>
                 </div>
               </div>
               {order.shippingAddress.phone && (
-                <div className="flex items-center gap-1.5 text-xs text-gray-500">
-                  <svg className="h-3.5 w-3.5 flex-shrink-0 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                <div className="flex items-center gap-1.5 text-xs text-black/55" style={{ letterSpacing: '-0.14px' }}>
+                  <svg className="h-3.5 w-3.5 flex-shrink-0 text-black/25" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                     <path strokeLinecap="round" strokeLinejoin="round" d="M3 5a2 2 0 012-2h3.28a1 1 0 01.948.684l1.498 4.493a1 1 0 01-.502 1.21l-2.257 1.13a11.042 11.042 0 005.516 5.516l1.13-2.257a1 1 0 011.21-.502l4.493 1.498a1 1 0 01.684.949V19a2 2 0 01-2 2h-1C9.716 21 3 14.284 3 6V5z" />
                   </svg>
                   {order.shippingAddress.phone}
@@ -416,11 +431,11 @@ export default function AdminOrderDetailPage() {
 
           <Card>
             <CardHeader>
-              <h2 className="text-sm font-semibold text-gray-900">Shipping Address</h2>
+              <h2 className="font-mono text-[11px] uppercase tracking-[0.54px] text-black/55">Shipping Address</h2>
             </CardHeader>
             <CardBody>
-              <address className="not-italic space-y-0.5 text-sm text-gray-700">
-                <p className="font-medium text-gray-900">{order.shippingAddress.fullName}</p>
+              <address className="not-italic space-y-0.5 text-sm text-black/60" style={{ letterSpacing: '-0.14px' }}>
+                <p className="text-black" style={{ fontWeight: 480 }}>{order.shippingAddress.fullName}</p>
                 <p>{order.shippingAddress.addressLine1}</p>
                 {order.shippingAddress.addressLine2 && <p>{order.shippingAddress.addressLine2}</p>}
                 <p>
@@ -428,21 +443,21 @@ export default function AdminOrderDetailPage() {
                   {order.shippingAddress.state ? `, ${order.shippingAddress.state}` : ''}
                   {order.shippingAddress.postalCode ? ` ${order.shippingAddress.postalCode}` : ''}
                 </p>
-                <p className="text-gray-500">{order.shippingAddress.country}</p>
+                <p className="text-black/50">{order.shippingAddress.country}</p>
               </address>
             </CardBody>
           </Card>
 
           {isCancelled && (
-            <div className="rounded-xl border border-red-100 bg-red-50 p-4 text-sm text-red-700">
-              <p className="font-semibold">Order Cancelled</p>
+            <div className="card border-red-200 bg-red-50 p-4 text-sm text-red-700">
+              <p style={{ fontWeight: 480 }}>Order Cancelled</p>
               <p className="mt-0.5 text-xs text-red-500">This order has been cancelled and cannot be updated further.</p>
             </div>
           )}
 
           {order.status === 'Delivered' && (
-            <div className="rounded-xl border border-green-100 bg-green-50 p-4 text-sm text-green-700">
-              <p className="font-semibold">鉁?Delivered</p>
+            <div className="card border-green-200 bg-green-50 p-4 text-sm text-green-700">
+              <p style={{ fontWeight: 480 }}>Delivered</p>
               <p className="mt-0.5 text-xs text-green-600">Order has been delivered successfully.</p>
             </div>
           )}
@@ -451,3 +466,4 @@ export default function AdminOrderDetailPage() {
     </div>
   )
 }
+
