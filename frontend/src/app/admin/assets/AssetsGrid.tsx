@@ -10,6 +10,7 @@ import {
   fileSizeLabel,
   isPreviewable,
 } from '@/lib/file-utils'
+import { filesApi } from '@/api/files'
 
 const FILTERS = ['All', 'Images', 'PDFs', 'AI / Vector'] as const
 type Filter = (typeof FILTERS)[number]
@@ -20,34 +21,72 @@ interface Props {
 
 export function AssetsGrid({ assets }: Props) {
   const [filter, setFilter] = useState<Filter>('All')
+  const [cleaning, setCleaning] = useState(false)
+  const [cleanResult, setCleanResult] = useState<{ deletedCount: number; failedCount: number } | null>(null)
 
   const visible =
     filter === 'All'
       ? assets
       : assets.filter((a) => fileTypeCategory(a.contentType) === filter)
 
+  async function handleCleanOrphans() {
+    if (!confirm('Delete all uploaded assets that are not linked to any order? This cannot be undone.')) return
+    setCleaning(true)
+    setCleanResult(null)
+    try {
+      const result = await filesApi.cleanOrphanedAssets()
+      setCleanResult(result)
+      window.location.reload()
+    } catch {
+      setCleanResult({ deletedCount: 0, failedCount: -1 })
+      setCleaning(false)
+    }
+  }
+
   return (
     <>
-      {/* Filter tabs */}
-      <div className="mb-6 flex items-center gap-2">
-        {FILTERS.map((f) => {
-          const count = f === 'All' ? assets.length : assets.filter((a) => fileTypeCategory(a.contentType) === f).length
-          return (
-            <button
-              key={f}
-              onClick={() => setFilter(f)}
-              className={`rounded-lg border px-3 py-1.5 text-xs font-medium transition-colors ${
-                filter === f
-                  ? 'border-brand-200 bg-brand-50 text-brand-700'
-                  : 'border-gray-200 bg-white text-gray-500 hover:border-gray-300 hover:text-gray-700'
-              }`}
-            >
-              {f}
-              <span className="ml-1.5 text-[10px] tabular-nums opacity-60">{count}</span>
-            </button>
-          )
-        })}
+      {/* Toolbar: filter tabs + clean button */}
+      <div className="mb-6 flex flex-wrap items-center gap-2">
+        <div className="flex flex-1 flex-wrap items-center gap-2">
+          {FILTERS.map((f) => {
+            const count =
+              f === 'All'
+                ? assets.length
+                : assets.filter((a) => fileTypeCategory(a.contentType) === f).length
+            return (
+              <button
+                key={f}
+                onClick={() => setFilter(f)}
+                className={`rounded-lg border px-3 py-1.5 text-xs font-medium transition-colors ${
+                  filter === f
+                    ? 'border-brand-200 bg-brand-50 text-brand-700'
+                    : 'border-gray-200 bg-white text-gray-500 hover:border-gray-300 hover:text-gray-700'
+                }`}
+              >
+                {f}
+                <span className="ml-1.5 text-[10px] tabular-nums opacity-60">{count}</span>
+              </button>
+            )
+          })}
+        </div>
+
+        <button
+          onClick={handleCleanOrphans}
+          disabled={cleaning}
+          className="flex items-center gap-1.5 rounded-lg border border-red-200 bg-white px-3 py-1.5 text-xs font-medium text-red-600 transition-colors hover:bg-red-50 disabled:opacity-50"
+        >
+          <svg viewBox="0 0 20 20" fill="currentColor" className="h-3.5 w-3.5">
+            <path fillRule="evenodd" d="M8.75 1A2.75 2.75 0 006 3.75v.443c-.795.077-1.584.176-2.365.298a.75.75 0 10.23 1.482l.149-.022.841 10.518A2.75 2.75 0 007.596 19h4.807a2.75 2.75 0 002.742-2.53l.841-10.519.149.023a.75.75 0 00.23-1.482A41.03 41.03 0 0014 4.193v-.443A2.75 2.75 0 0011.25 1h-2.5zM10 4c.84 0 1.673.025 2.5.075V3.75c0-.69-.56-1.25-1.25-1.25h-2.5c-.69 0-1.25.56-1.25 1.25v.325C8.327 4.025 9.16 4 10 4zM8.58 7.72a.75.75 0 00-1.5.06l.3 7.5a.75.75 0 101.5-.06l-.3-7.5zm4.34.06a.75.75 0 10-1.5-.06l-.3 7.5a.75.75 0 101.5.06l.3-7.5z" clipRule="evenodd" />
+          </svg>
+          {cleaning ? 'Cleaning…' : 'Clean Orphaned'}
+        </button>
       </div>
+
+      {cleanResult && cleanResult.failedCount === -1 && (
+        <p className="mb-4 rounded-lg border border-red-200 bg-red-50 px-4 py-2.5 text-sm text-red-700">
+          Cleanup failed. Please try again.
+        </p>
+      )}
 
       {/* Grid */}
       {visible.length === 0 ? (

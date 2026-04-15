@@ -1,4 +1,4 @@
-'use client'
+﻿'use client'
 
 import { useEffect, useRef, useState } from 'react'
 import Link from 'next/link'
@@ -13,24 +13,25 @@ import { DownloadDesignButton } from '@/components/orders/DownloadDesignButton'
 import type { Order, OrderItemPositionAsset, OrderStatus, PrintPosition } from '@/types'
 import clsx from 'clsx'
 
-// ── Status pipeline ───────────────────────────────────────────────────────────
 const PIPELINE: OrderStatus[] = ['Pending', 'Confirmed', 'InProduction', 'Shipped', 'Delivered']
 
 const TRANSITIONS: Record<OrderStatus, OrderStatus[]> = {
-  Pending:      ['Confirmed', 'Cancelled'],
-  Confirmed:    ['InProduction', 'Cancelled'],
+  Pending: ['Confirmed', 'Cancelled'],
+  Confirmed: ['InProduction', 'Cancelled'],
   InProduction: ['Shipped'],
-  Shipped:      ['Delivered'],
-  Delivered:    [],
-  Cancelled:    [],
+  Shipped: ['Delivered'],
+  Delivered: [],
+  Cancelled: [],
 }
 
-// ── Print position label ──────────────────────────────────────────────────────
 function formatPosition(pos: string) {
   return pos.replace(/([A-Z])/g, ' $1').trim()
 }
 
-// ── Replace design button ─────────────────────────────────────────────────────
+function getPositionAssets(positions?: OrderItemPositionAsset[]) {
+  return positions ?? []
+}
+
 function ReplaceDesignButton({
   onUploaded,
   compact = false,
@@ -63,11 +64,9 @@ function ReplaceDesignButton({
         onClick={() => inputRef.current?.click()}
         className={clsx(
           'inline-flex items-center gap-1 rounded-lg border border-dashed transition-colors',
-          compact
-            ? 'w-full justify-center px-2 py-1 text-[10px]'
-            : 'px-2.5 py-1 text-xs',
+          compact ? 'w-full justify-center px-2 py-1 text-[10px]' : 'px-2.5 py-1 text-xs',
           uploading
-            ? 'border-gray-200 bg-gray-50 text-gray-400 cursor-not-allowed'
+            ? 'cursor-not-allowed border-gray-200 bg-gray-50 text-gray-400'
             : 'border-brand-200 bg-brand-50 text-brand-600 hover:bg-brand-100',
         )}
       >
@@ -77,7 +76,7 @@ function ReplaceDesignButton({
               <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
               <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z" />
             </svg>
-            Uploading…
+            Uploading...
           </>
         ) : (
           <>
@@ -92,7 +91,6 @@ function ReplaceDesignButton({
   )
 }
 
-// ── Per-position design cards ─────────────────────────────────────────────────
 function PositionCards({
   positions: initialPositions,
   onReplacePosition,
@@ -100,25 +98,28 @@ function PositionCards({
   positions: OrderItemPositionAsset[]
   onReplacePosition?: (position: string, assetId: string, assetUrl: string) => Promise<void>
 }) {
-  const [positions, setPositions] = useState<OrderItemPositionAsset[]>(initialPositions)
+  const [positions, setPositions] = useState<OrderItemPositionAsset[]>(getPositionAssets(initialPositions))
 
   useEffect(() => {
-    setPositions(initialPositions)
+    setPositions(getPositionAssets(initialPositions))
   }, [initialPositions])
-
-  if (!positions.length) return null
 
   async function handleReplace(position: string, assetId: string, assetUrl: string) {
     await onReplacePosition?.(position, assetId, assetUrl)
     setPositions((prev) =>
       prev.map((p) => p.position === position
         ? { ...p, uploadedAssetId: assetId, uploadedAssetUrl: assetUrl }
-        : p)
+        : p),
     )
   }
 
   return (
     <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-3">
+      {!positions.length && (
+        <div className="col-span-full rounded-xl border border-dashed border-gray-200 bg-gray-50 px-4 py-5 text-center text-sm text-gray-400">
+          No position assets have been attached to this item yet.
+        </div>
+      )}
       {positions.map((p) => (
         <div key={p.position} className="rounded-lg border border-gray-100 bg-gray-50 p-2">
           {p.uploadedAssetUrl ? (
@@ -126,18 +127,18 @@ function PositionCards({
             <img
               src={p.uploadedAssetUrl}
               alt={`Design for ${formatPosition(p.position)}`}
-              className="mb-1.5 h-20 w-full rounded-md object-contain bg-white border border-gray-100 p-0.5"
+              className="mb-1.5 h-20 w-full rounded-md border border-gray-100 bg-white object-contain p-0.5"
             />
           ) : (
             <div className="mb-1.5 flex h-20 w-full items-center justify-center rounded-md border border-dashed border-gray-200 bg-white text-2xl">
-              🖼️
+              馃柤锔?
             </div>
           )}
           <p className="text-center text-[10px] font-semibold text-brand-700">
             {formatPosition(p.position)}
           </p>
           {p.designNote && (
-            <p className="mt-1 text-[10px] text-amber-700 leading-tight line-clamp-2">{p.designNote}</p>
+            <p className="mt-1 line-clamp-2 text-[10px] leading-tight text-amber-700">{p.designNote}</p>
           )}
           <div className="mt-1.5 flex flex-col gap-1">
             {p.uploadedAssetUrl && <DownloadDesignButton url={p.uploadedAssetUrl} />}
@@ -154,10 +155,9 @@ function PositionCards({
   )
 }
 
-// ── Loading skeleton ──────────────────────────────────────────────────────────
 function DetailSkeleton() {
   return (
-    <div className="space-y-6 animate-pulse">
+    <div className="animate-pulse space-y-6">
       <div className="flex items-center gap-3">
         <SkeletonBlock className="h-4 w-20" />
         <SkeletonBlock className="h-7 w-48" />
@@ -177,7 +177,6 @@ function DetailSkeleton() {
   )
 }
 
-// ── Main page ─────────────────────────────────────────────────────────────────
 export default function AdminOrderDetailPage() {
   const { id } = useParams<{ id: string }>()
   const [order, setOrder] = useState<Order | null>(null)
@@ -188,27 +187,6 @@ export default function AdminOrderDetailPage() {
   useEffect(() => {
     ordersApi.getById(id).then(setOrder).finally(() => setLoading(false))
   }, [id])
-
-  async function handleItemDesignUpdate(
-    itemId: string,
-    assetId: string,
-    assetUrl: string,
-  ) {
-    if (!order) return
-    await ordersApi.updateItemDesign(order.id, itemId, {
-      uploadedAssetId: assetId,
-      uploadedAssetUrl: assetUrl,
-    })
-    setOrder((prev) =>
-      prev ? {
-        ...prev,
-        items: prev.items.map((i) =>
-          i.id === itemId ? { ...i, uploadedAssetId: assetId, uploadedAssetUrl: assetUrl } : i
-        ),
-      } : prev
-    )
-    showToast('Design updated')
-  }
 
   async function handlePositionDesignUpdate(
     itemId: string,
@@ -228,14 +206,14 @@ export default function AdminOrderDetailPage() {
         items: prev.items.map((i) =>
           i.id === itemId ? {
             ...i,
-            positionAssets: i.positionAssets.map((p) =>
+            positionAssets: getPositionAssets(i.positionAssets).map((p) =>
               p.position === position
                 ? { ...p, uploadedAssetId: assetId, uploadedAssetUrl: assetUrl }
                 : p,
             ),
-          } : i
+          } : i,
         ),
-      } : prev
+      } : prev,
     )
     showToast('Design updated')
   }
@@ -245,7 +223,6 @@ export default function AdminOrderDetailPage() {
     setUpdating(true)
     try {
       await ordersApi.updateStatus(order.id, newStatus)
-      // Patch only the status — keeps items and all other fields intact
       setOrder((prev) => prev ? { ...prev, status: newStatus } : prev)
       showToast(`Status updated to ${STATUS_CONFIG[newStatus]?.label ?? newStatus}`)
     } finally {
@@ -266,7 +243,7 @@ export default function AdminOrderDetailPage() {
         <p className="text-2xl font-bold text-gray-300">404</p>
         <p className="mt-1 text-sm text-gray-500">Order not found.</p>
         <Link href="/admin/orders" className="mt-4 text-sm text-brand-600 hover:underline">
-          ← Back to Orders
+          鈫?Back to Orders
         </Link>
       </div>
     )
@@ -281,20 +258,14 @@ export default function AdminOrderDetailPage() {
 
   return (
     <div className="space-y-6">
-
-      {/* Toast */}
       {toast && (
         <div className="fixed bottom-6 right-6 z-50 rounded-xl bg-gray-900 px-4 py-2.5 text-sm font-medium text-white shadow-xl">
-          ✓ {toast}
+          鉁?{toast}
         </div>
       )}
 
-      {/* ── Header ── */}
       <div className="flex flex-wrap items-start gap-3">
-        <Link
-          href="/admin/orders"
-          className="mt-0.5 flex items-center gap-1 text-xs text-gray-400 hover:text-gray-700"
-        >
+        <Link href="/admin/orders" className="mt-0.5 flex items-center gap-1 text-xs text-gray-400 hover:text-gray-700">
           <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
             <path strokeLinecap="round" strokeLinejoin="round" d="M10 19l-7-7m0 0l7-7m-7 7h18" />
           </svg>
@@ -306,14 +277,11 @@ export default function AdminOrderDetailPage() {
             <OrderStatusBadge status={order.status} />
           </div>
           <p className="mt-0.5 text-xs text-gray-400">
-            Placed {new Date(order.creationTime).toLocaleString('en-NZ', {
-              dateStyle: 'medium', timeStyle: 'short',
-            })}
+            Placed {new Date(order.creationTime).toLocaleString('en-NZ', { dateStyle: 'medium', timeStyle: 'short' })}
           </p>
         </div>
       </div>
 
-      {/* ── Status pipeline ── */}
       {!isCancelled && (
         <div className="rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
           <p className="mb-4 text-xs font-semibold uppercase tracking-wide text-gray-400">Order Progress</p>
@@ -327,11 +295,9 @@ export default function AdminOrderDetailPage() {
                   <div className="flex flex-col items-center gap-1.5">
                     <div className={clsx(
                       'flex h-7 w-7 items-center justify-center rounded-full text-xs font-bold transition-colors',
-                      done   ? 'bg-brand-600 text-white' :
-                      active ? 'bg-brand-100 text-brand-700 ring-2 ring-brand-500' :
-                               'bg-gray-100 text-gray-400',
+                      done ? 'bg-brand-600 text-white' : active ? 'bg-brand-100 text-brand-700 ring-2 ring-brand-500' : 'bg-gray-100 text-gray-400',
                     )}>
-                      {done ? '✓' : i + 1}
+                      {done ? '鉁?' : i + 1}
                     </div>
                     <span className={clsx(
                       'whitespace-nowrap text-[10px] font-medium',
@@ -341,27 +307,22 @@ export default function AdminOrderDetailPage() {
                     </span>
                   </div>
                   {i < PIPELINE.length - 1 && (
-                    <div className={clsx(
-                      'mx-1 mb-5 h-px flex-1',
-                      i < pipelineIdx ? 'bg-brand-400' : 'bg-gray-200',
-                    )} />
+                    <div className={clsx('mx-1 mb-5 h-px flex-1', i < pipelineIdx ? 'bg-brand-400' : 'bg-gray-200')} />
                   )}
                 </div>
               )
             })}
           </div>
 
-          {/* Advance / Cancel buttons */}
           {!isTerminal && (
             <div className="mt-5 flex flex-wrap items-center gap-2 border-t border-gray-100 pt-4">
               {advanceNext.map((s) => (
                 <Button key={s} size="sm" loading={updating} onClick={() => handleStatusChange(s)}>
-                  Mark as {STATUS_CONFIG[s]?.label ?? s} →
+                  Mark as {STATUS_CONFIG[s]?.label ?? s} 鈫?
                 </Button>
               ))}
               {cancelNext && (
-                <Button key="Cancelled" size="sm" variant="secondary" loading={updating}
-                  onClick={() => handleStatusChange('Cancelled')}>
+                <Button size="sm" variant="secondary" loading={updating} onClick={() => handleStatusChange('Cancelled')}>
                   Cancel Order
                 </Button>
               )}
@@ -370,105 +331,44 @@ export default function AdminOrderDetailPage() {
         </div>
       )}
 
-      {/* ── Grid ── */}
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
-
-        {/* Left column */}
         <div className="space-y-6 lg:col-span-2">
-
-          {/* Order items */}
           <Card>
             <CardHeader className="flex items-center justify-between">
               <h2 className="font-semibold text-gray-900">Items</h2>
-              <span className="text-xs text-gray-400">
-                {order.items.length} item{order.items.length !== 1 ? 's' : ''}
-              </span>
+              <span className="text-xs text-gray-400">{order.items.length} item{order.items.length !== 1 ? 's' : ''}</span>
             </CardHeader>
             <CardBody className="p-0">
               <div className="divide-y divide-gray-50">
-                {order.items.map((item) => {
-                  const hasPositions = item.positionAssets.length > 0
-                  return (
+                {order.items.map((item) => (
                   <div key={item.id} className="px-6 py-5">
                     <div className="flex items-start gap-4">
-
-                      {/* Design thumbnail — only shown for legacy single-position items */}
-                      {!hasPositions && (
-                        <div className="flex-shrink-0">
-                          {item.uploadedAssetUrl ? (
-                            // eslint-disable-next-line @next/next/no-img-element
-                            <img
-                              src={item.uploadedAssetUrl}
-                              alt="Customer design"
-                              className="h-20 w-20 rounded-xl border border-gray-100 bg-gray-50 object-contain p-1"
-                            />
-                          ) : (
-                            <div className="flex h-20 w-20 items-center justify-center rounded-xl border border-dashed border-gray-200 bg-gray-50 text-3xl">
-                              👕
-                            </div>
-                          )}
-                        </div>
-                      )}
-
-                      {/* Details */}
-                      <div className="flex-1 min-w-0">
+                      <div className="min-w-0 flex-1">
                         <p className="font-semibold text-gray-900">{item.productName}</p>
                         <p className="mt-0.5 text-sm text-gray-500">{item.variantLabel}</p>
-
                         <div className="mt-2 flex flex-wrap gap-1.5">
-                          {!hasPositions && item.printPosition && (
-                            <span className="inline-flex items-center gap-1 rounded-md bg-brand-50 px-2 py-0.5 text-[11px] font-semibold text-brand-700">
-                              <svg viewBox="0 0 16 16" fill="currentColor" className="h-3 w-3">
-                                <path fillRule="evenodd" d="M8 1.5a.5.5 0 01.5.5v5h5a.5.5 0 010 1h-5v5a.5.5 0 01-1 0v-5h-5a.5.5 0 010-1h5V2a.5.5 0 01.5-.5z" clipRule="evenodd"/>
-                              </svg>
-                              {formatPosition(item.printPosition)}
-                            </span>
-                          )}
                           <span className="inline-flex items-center rounded-md bg-gray-100 px-2 py-0.5 text-[11px] font-medium text-gray-600">
                             Qty {item.quantity}
                           </span>
                         </div>
-
-                        {!hasPositions && item.designNote && (
-                          <div className="mt-2.5 rounded-lg bg-amber-50 border border-amber-100 px-3 py-2 text-xs text-amber-800">
-                            <span className="font-semibold">Note: </span>{item.designNote}
-                          </div>
-                        )}
-
-                        {!hasPositions && (
-                          <div className="mt-2 flex flex-wrap gap-1.5">
-                            {item.uploadedAssetUrl && <DownloadDesignButton url={item.uploadedAssetUrl} />}
-                            <ReplaceDesignButton
-                              onUploaded={(assetId, assetUrl) =>
-                                handleItemDesignUpdate(item.id, assetId, assetUrl)
-                              }
-                            />
-                          </div>
-                        )}
                       </div>
 
-                      {/* Price */}
                       <div className="flex-shrink-0 text-right">
                         <p className="font-bold text-gray-900">${(item.unitPrice * item.quantity).toFixed(2)}</p>
                         <p className="text-xs text-gray-400">${item.unitPrice.toFixed(2)} each</p>
                       </div>
                     </div>
 
-                    {/* Multi-position design cards */}
-                    {hasPositions && (
-                      <PositionCards
-                        positions={item.positionAssets}
-                        onReplacePosition={async (position, assetId, assetUrl) =>
-                          handlePositionDesignUpdate(item.id, position as PrintPosition, assetId, assetUrl)
-                        }
-                      />
-                    )}
+                    <PositionCards
+                      positions={item.positionAssets}
+                      onReplacePosition={async (position, assetId, assetUrl) =>
+                        handlePositionDesignUpdate(item.id, position as PrintPosition, assetId, assetUrl)
+                      }
+                    />
                   </div>
-                  )
-                })}
+                ))}
               </div>
 
-              {/* Order total */}
               <div className="flex items-center justify-between border-t border-gray-100 bg-gray-50 px-6 py-4">
                 <span className="font-semibold text-gray-900">Order Total</span>
                 <span className="text-lg font-bold text-gray-900">${order.totalAmount.toFixed(2)}</span>
@@ -476,23 +376,19 @@ export default function AdminOrderDetailPage() {
             </CardBody>
           </Card>
 
-          {/* Notes */}
           {order.notes && (
             <Card>
               <CardHeader>
                 <h2 className="font-semibold text-gray-900">Order Notes</h2>
               </CardHeader>
               <CardBody>
-                <p className="text-sm text-gray-700 leading-relaxed">{order.notes}</p>
+                <p className="text-sm leading-relaxed text-gray-700">{order.notes}</p>
               </CardBody>
             </Card>
           )}
         </div>
 
-        {/* Right column */}
         <div className="space-y-4">
-
-          {/* Customer */}
           <Card>
             <CardHeader>
               <h2 className="text-sm font-semibold text-gray-900">Customer</h2>
@@ -518,7 +414,6 @@ export default function AdminOrderDetailPage() {
             </CardBody>
           </Card>
 
-          {/* Shipping address */}
           <Card>
             <CardHeader>
               <h2 className="text-sm font-semibold text-gray-900">Shipping Address</h2>
@@ -538,7 +433,6 @@ export default function AdminOrderDetailPage() {
             </CardBody>
           </Card>
 
-          {/* Cancelled banner */}
           {isCancelled && (
             <div className="rounded-xl border border-red-100 bg-red-50 p-4 text-sm text-red-700">
               <p className="font-semibold">Order Cancelled</p>
@@ -546,10 +440,9 @@ export default function AdminOrderDetailPage() {
             </div>
           )}
 
-          {/* Delivered banner */}
           {order.status === 'Delivered' && (
             <div className="rounded-xl border border-green-100 bg-green-50 p-4 text-sm text-green-700">
-              <p className="font-semibold">✓ Delivered</p>
+              <p className="font-semibold">鉁?Delivered</p>
               <p className="mt-0.5 text-xs text-green-600">Order has been delivered successfully.</p>
             </div>
           )}

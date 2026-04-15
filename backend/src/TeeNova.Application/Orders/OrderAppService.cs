@@ -1,7 +1,6 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
-using System.Text.Json;
 using System.Threading.Tasks;
 using Microsoft.EntityFrameworkCore;
 using TeeNova.Customization;
@@ -62,15 +61,10 @@ public class OrderAppService : ApplicationService, IOrderAppService
                 GuidGenerator.Create(), order.Id,
                 product.Id, variant.Id,
                 product.Name, variantLabel,
-                itemDto.Quantity, effectivePrice,
-                itemDto.UploadedAssetId, itemDto.PrintPosition,
-                itemDto.UploadedAssetUrl, itemDto.DesignNote);
+                itemDto.Quantity, effectivePrice);
 
-            if (itemDto.PrintPositions is { Count: > 0 })
-            {
+            if (itemDto.PrintPositions?.Count > 0)
                 SyncPositionAssets(item, itemDto.PrintPositions);
-                item.PrintPositionsJson = SerializePrintPositions(item.PositionAssets);
-            }
 
             order.AddItem(item);
         }
@@ -128,28 +122,12 @@ public class OrderAppService : ApplicationService, IOrderAppService
         var item = order.Items.FirstOrDefault(i => i.Id == itemId)
             ?? throw new Volo.Abp.Domain.Entities.EntityNotFoundException(typeof(OrderItem), itemId);
 
-        if (input.UploadedAssetId.HasValue)
-            item.UploadedAssetId = input.UploadedAssetId;
-
-        if (input.UploadedAssetUrl != null)
-            item.UploadedAssetUrl = input.UploadedAssetUrl;
-
-        if (input.PrintPositionsJson != null)
-        {
-            item.PrintPositionsJson = input.PrintPositionsJson;
-            SyncPositionAssets(item, DeserializePrintPositions(input.PrintPositionsJson));
-        }
-
-        if (input.Position.HasValue)
-        {
-            item.UpsertPositionAsset(
-                GuidGenerator.Create(),
-                input.Position.Value,
-                input.UploadedAssetId,
-                input.UploadedAssetUrl,
-                input.DesignNote);
-            item.PrintPositionsJson = SerializePrintPositions(item.PositionAssets);
-        }
+        item.UpsertPositionAsset(
+            GuidGenerator.Create(),
+            input.Position,
+            input.UploadedAssetId,
+            input.UploadedAssetUrl,
+            input.DesignNote);
 
         await _orderRepository.UpdateAsync(order, autoSave: true);
 
@@ -183,23 +161,6 @@ public class OrderAppService : ApplicationService, IOrderAppService
                 position.AssetUrl,
                 position.DesignNote)));
     }
-
-    private static List<CreateOrderItemPositionDto> DeserializePrintPositions(string json)
-        => JsonSerializer.Deserialize<List<CreateOrderItemPositionDto>>(
-               json,
-               new JsonSerializerOptions { PropertyNameCaseInsensitive = true })
-           ?? [];
-
-    private static string SerializePrintPositions(IEnumerable<OrderItemPositionAsset> positions)
-        => JsonSerializer.Serialize(
-            positions.Select(position => new CreateOrderItemPositionDto
-            {
-                Position = position.Position.ToString(),
-                AssetId = position.UploadedAssetId,
-                AssetUrl = position.UploadedAssetUrl,
-                DesignNote = position.DesignNote,
-            }),
-            new JsonSerializerOptions { PropertyNamingPolicy = JsonNamingPolicy.CamelCase });
 
     private static PrintPosition ParsePosition(string rawPosition)
     {

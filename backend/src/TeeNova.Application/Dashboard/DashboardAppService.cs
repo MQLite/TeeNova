@@ -6,6 +6,7 @@ using TeeNova.Catalog;
 using TeeNova.Dashboard.Dtos;
 using Volo.Abp.Application.Services;
 using Volo.Abp.Domain.Repositories;
+using Volo.Abp.Timing;
 
 namespace TeeNova.Dashboard;
 
@@ -13,18 +14,21 @@ public class DashboardAppService : ApplicationService, IDashboardAppService
 {
     private readonly IRepository<Orders.Order, Guid> _orderRepository;
     private readonly IRepository<Product, Guid> _productRepository;
+    private readonly IClock _clock;
 
     public DashboardAppService(
         IRepository<Orders.Order, Guid> orderRepository,
-        IRepository<Product, Guid> productRepository)
+        IRepository<Product, Guid> productRepository,
+        IClock clock)
     {
         _orderRepository = orderRepository;
         _productRepository = productRepository;
+        _clock = clock;
     }
 
     public async Task<DashboardStatsDto> GetStatsAsync()
     {
-        var today = DateTime.UtcNow.Date;
+        var today = _clock.Now.Date;
         var monthStart = new DateTime(today.Year, today.Month, 1);
         var sevenDaysAgo = today.AddDays(-6);
 

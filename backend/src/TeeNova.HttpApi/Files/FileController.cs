@@ -45,4 +45,9 @@ public class FileController : TeeNovaControllerBase
     [HttpGet("assets/{id:guid}")]
     public async Task<AdminAssetDto> GetAssetAsync(Guid id)
         => await _fileAppService.GetAdminAssetAsync(id);
+
+    /// <summary>Deletes all uploaded assets that are not referenced by any order item.</summary>
+    [HttpPost("assets/clean-orphans")]
+    public async Task<CleanOrphanedAssetsResultDto> CleanOrphansAsync()
+        => await _fileAppService.CleanOrphanedAssetsAsync();
 }

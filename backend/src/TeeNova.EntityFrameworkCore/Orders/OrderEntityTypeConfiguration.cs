@@ -60,15 +60,6 @@ public class OrderEntityTypeConfiguration :
         builder.Property(i => i.VariantLabel).IsRequired().HasMaxLength(128);
         builder.Property(i => i.UnitPrice).HasColumnType("decimal(18,4)");
 
-        builder.Property(i => i.UploadedAssetUrl).HasMaxLength(1024);
-
-        builder.Property(i => i.PrintPosition)
-            .HasConversion<string>()
-            .HasMaxLength(32);
-
-        builder.Property(i => i.DesignNote).HasMaxLength(2000);
-        builder.Property(i => i.PrintPositionsJson).HasColumnType("nvarchar(max)");
-
         builder.HasMany(i => i.PositionAssets)
             .WithOne()
             .HasForeignKey(p => p.OrderItemId)
