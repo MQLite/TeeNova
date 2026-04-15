@@ -13,4 +13,5 @@ public interface IFileAppService : IApplicationService
     Task<UploadFileOutput> UploadAsync(IFormFile file, CancellationToken cancellationToken = default);
     Task<PagedResultDto<AdminAssetDto>> GetAdminAssetListAsync(PagedResultRequestDto input);
     Task<AdminAssetDto> GetAdminAssetAsync(Guid id);
+    Task<CleanOrphanedAssetsResultDto> CleanOrphanedAssetsAsync();
 }

@@ -108,11 +108,6 @@ export interface OrderItem {
   quantity: number
   unitPrice: number
   lineTotal: number
-  uploadedAssetId: string | null
-  uploadedAssetUrl: string | null
-  printPosition: PrintPosition | null
-  designNote: string | null
-  printPositionsJson: string | null
   positionAssets: OrderItemPositionAsset[]
 }
 
@@ -146,10 +141,6 @@ export interface CartItem {
   unitPrice: number
   quantity: number
   printPositions?: PrintPositionUpload[]
-  // legacy single-position fields kept for checkout API compatibility
-  uploadedAssetId?: string
-  uploadedAssetUrl?: string
-  printPosition?: PrintPosition
 }
 
 // ─── Dashboard ────────────────────────────────────────────────────────────────

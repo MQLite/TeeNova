@@ -81,8 +81,6 @@ export default function ProductDetailPage() {
       })
       .filter((x): x is NonNullable<typeof x> => x !== null)
 
-    const first = printPositions[0]
-
     Object.entries(variantQtys).forEach(([variantId, qty]) => {
       if (qty <= 0) return
       const variant = product.variants.find((v) => v.id === variantId)
@@ -95,9 +93,6 @@ export default function ProductDetailPage() {
         unitPrice: product.basePrice + variant.priceAdjustment,
         quantity: qty,
         printPositions,
-        uploadedAssetId: first?.uploadedAssetId,
-        uploadedAssetUrl: first?.uploadedAssetUrl,
-        printPosition: first?.position,
       })
     })
 

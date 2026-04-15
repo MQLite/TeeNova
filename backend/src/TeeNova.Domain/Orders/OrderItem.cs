@@ -20,13 +20,6 @@ public class OrderItem : Entity<Guid>
     public int Quantity { get; set; }
     public decimal UnitPrice { get; set; }
 
-    // Customization snapshot
-    public Guid? UploadedAssetId { get; set; }
-    public string? UploadedAssetUrl { get; set; }   // denormalized URL for display
-    public PrintPosition? PrintPosition { get; set; }
-    public string? DesignNote { get; set; }
-    /// <summary>JSON array of all print positions with their uploads (serialized CreateOrderItemPositionDto[]).</summary>
-    public string? PrintPositionsJson { get; set; }
     public List<OrderItemPositionAsset> PositionAssets { get; private set; } = [];
 
     // Future: DesignProjectId, TemplateId, CropFrameData (JSON)
@@ -37,9 +30,7 @@ public class OrderItem : Entity<Guid>
         Guid id, Guid orderId,
         Guid productId, Guid productVariantId,
         string productName, string variantLabel,
-        int quantity, decimal unitPrice,
-        Guid? uploadedAssetId = null, PrintPosition? printPosition = null,
-        string? uploadedAssetUrl = null, string? designNote = null)
+        int quantity, decimal unitPrice)
         : base(id)
     {
         OrderId = orderId;
@@ -49,10 +40,6 @@ public class OrderItem : Entity<Guid>
         VariantLabel = variantLabel;
         Quantity = quantity;
         UnitPrice = unitPrice;
-        UploadedAssetId = uploadedAssetId;
-        UploadedAssetUrl = uploadedAssetUrl;
-        PrintPosition = printPosition;
-        DesignNote = designNote;
     }
 
     public void SetPositionAssets(IEnumerable<OrderItemPositionAsset> positionAssets)
