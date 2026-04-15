@@ -3,9 +3,11 @@ namespace TeeNova.Orders;
 public enum OrderStatus
 {
     Pending = 0,        // Created, awaiting payment confirmation
-    Confirmed = 1,      // Payment confirmed, sent to production
+    Confirmed = 1,      // Legacy status kept for compatibility
     InProduction = 2,   // Production job active
     Shipped = 3,        // Dispatched to customer
     Delivered = 4,      // Delivery confirmed
-    Cancelled = 5       // Cancelled before production
+    Cancelled = 5,      // Cancelled before production
+    Paid = 6,           // Payment has been confirmed
+    Reviewing = 7       // Admin is reviewing artwork before production
 }

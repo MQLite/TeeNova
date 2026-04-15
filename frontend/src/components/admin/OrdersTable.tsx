@@ -8,6 +8,8 @@ import type { Order, OrderStatus } from '@/types'
 const STATUS_TABS: { label: string; value: OrderStatus | 'All' }[] = [
   { label: 'All', value: 'All' },
   { label: 'Pending', value: 'Pending' },
+  { label: 'Paid', value: 'Paid' },
+  { label: 'Reviewing', value: 'Reviewing' },
   { label: 'Confirmed', value: 'Confirmed' },
   { label: 'In Production', value: 'InProduction' },
   { label: 'Shipped', value: 'Shipped' },
@@ -72,7 +74,7 @@ export function OrdersTable({ orders }: Props) {
           </svg>
           <input
             type="text"
-            placeholder="Search orders…"
+            placeholder="Search orders..."
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             className="w-full rounded-[50px] border border-black/[0.12] bg-white py-1.5 pl-9 pr-3 text-sm text-black placeholder:text-black/45 focus:border-black focus:outline-none"
@@ -148,7 +150,7 @@ export function OrdersTable({ orders }: Props) {
                       className="rounded-[50px] border border-black/[0.10] bg-white px-3 py-1 text-xs text-black/50 opacity-0 transition-opacity hover:border-black/25 hover:text-black group-hover:opacity-100"
                       style={{ letterSpacing: '-0.14px' }}
                     >
-                      View →
+                      View
                     </Link>
                   </td>
                 </tr>
@@ -160,3 +162,4 @@ export function OrdersTable({ orders }: Props) {
     </div>
   )
 }
+

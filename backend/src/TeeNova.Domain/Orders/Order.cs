@@ -8,10 +8,24 @@ namespace TeeNova.Orders;
 
 /// <summary>
 /// Aggregate root for an order. Manages the lifecycle from pending to delivered.
-/// OrderItems are owned — changes must go through the Order aggregate.
+/// OrderItems are owned and changes must go through the Order aggregate.
 /// </summary>
 public class Order : FullAuditedAggregateRoot<Guid>
 {
+    public static readonly TimeSpan ReopenWindow = TimeSpan.FromHours(24);
+
+    private static readonly Dictionary<OrderStatus, OrderStatus[]> AllowedTransitions = new()
+    {
+        [OrderStatus.Pending] = [OrderStatus.Paid, OrderStatus.Cancelled],
+        [OrderStatus.Paid] = [OrderStatus.Reviewing, OrderStatus.Cancelled],
+        [OrderStatus.Reviewing] = [OrderStatus.InProduction, OrderStatus.Cancelled],
+        [OrderStatus.Confirmed] = [OrderStatus.InProduction, OrderStatus.Cancelled],
+        [OrderStatus.InProduction] = [OrderStatus.Shipped],
+        [OrderStatus.Shipped] = [OrderStatus.Delivered],
+        [OrderStatus.Delivered] = [],
+        [OrderStatus.Cancelled] = [],
+    };
+
     public string OrderNumber { get; private set; } = default!;
     public OrderStatus Status { get; private set; } = OrderStatus.Pending;
     public Guid? CustomerId { get; set; }
@@ -43,10 +57,14 @@ public class Order : FullAuditedAggregateRoot<Guid>
 
     public void UpdateStatus(OrderStatus newStatus)
     {
-        // Basic guard — extend with a proper state machine as business rules grow
-        if (Status == OrderStatus.Delivered || Status == OrderStatus.Cancelled)
+        if (Status == newStatus)
         {
-            throw new BusinessException("TeeNova:Order:CannotChangeStatus")
+            return;
+        }
+
+        if (!AllowedTransitions.TryGetValue(Status, out var allowedStatuses) || !allowedStatuses.Contains(newStatus))
+        {
+            throw new BusinessException("TeeNova:Order:InvalidStatusTransition")
                 .WithData("CurrentStatus", Status)
                 .WithData("RequestedStatus", newStatus);
         }
@@ -54,9 +72,46 @@ public class Order : FullAuditedAggregateRoot<Guid>
         Status = newStatus;
     }
 
+    public void Reopen(DateTime now)
+    {
+        if (Status != OrderStatus.Cancelled)
+        {
+            throw new BusinessException("TeeNova:Order:CannotReopen")
+                .WithData("CurrentStatus", Status);
+        }
+
+        var cancelledAt = NormalizeToUtc(LastModificationTime ?? CreationTime);
+        var currentTime = NormalizeToUtc(now);
+        var elapsed = currentTime - cancelledAt;
+
+        if (elapsed < TimeSpan.Zero)
+        {
+            elapsed = TimeSpan.Zero;
+        }
+
+        if (elapsed > ReopenWindow)
+        {
+            throw new BusinessException("TeeNova:Order:ReopenWindowExpired")
+                .WithData("CancelledAt", cancelledAt)
+                .WithData("ReopenWindowHours", ReopenWindow.TotalHours);
+        }
+
+        Status = OrderStatus.Pending;
+    }
+
     private void RecalculateTotal()
     {
         TotalAmount = _items.Sum(i => i.UnitPrice * i.Quantity);
+    }
+
+    private static DateTime NormalizeToUtc(DateTime value)
+    {
+        return value.Kind switch
+        {
+            DateTimeKind.Utc => value,
+            DateTimeKind.Local => value.ToUniversalTime(),
+            _ => DateTime.SpecifyKind(value, DateTimeKind.Utc),
+        };
     }
 
     private static string GenerateOrderNumber(Guid id) =>
