@@ -11,7 +11,7 @@ public class ShippingAddress : ValueObject
     public string AddressLine1 { get; init; } = default!;
     public string? AddressLine2 { get; init; }
     public string City { get; init; } = default!;
-    public string State { get; init; } = default!;
+    public string? State { get; init; }
     public string PostalCode { get; init; } = default!;
     public string Country { get; init; } = "US";
     public string? Phone { get; init; }
@@ -20,7 +20,7 @@ public class ShippingAddress : ValueObject
 
     public ShippingAddress(
         string fullName, string addressLine1, string city,
-        string state, string postalCode, string country = "US",
+        string? state, string postalCode, string country = "US",
         string? addressLine2 = null, string? phone = null)
     {
         FullName = fullName;

@@ -32,10 +32,16 @@ public class TeeNovaApplicationAutoMapperProfile : Profile
 
         // Orders
         CreateMap<Order, OrderDto>()
-            .ForMember(d => d.Items, o => o.MapFrom(s => s.Items));
+            .ForMember(d => d.Items, o => o.MapFrom(s => s.Items))
+            .ForMember(d => d.DisplayStatus, o => o.Ignore())
+            .ForMember(d => d.Timeline, o => o.Ignore());
+        CreateMap<OrderTimelineEntry, OrderTimelineEntryDto>();
         CreateMap<OrderItem, OrderItemDto>()
             .ForMember(d => d.PositionAssets, o => o.MapFrom(s => s.PositionAssets));
-        CreateMap<OrderItemPositionAsset, OrderItemPositionAssetDto>();
+        CreateMap<OrderItemPositionAsset, OrderItemPositionAssetDto>()
+            .ForMember(d => d.OriginalFileName, o => o.Ignore())
+            .ForMember(d => d.FileName, o => o.Ignore())
+            .ForMember(d => d.FileSizeBytes, o => o.Ignore());
         CreateMap<ShippingAddress, ShippingAddressDto>();
 
         // UploadedAsset

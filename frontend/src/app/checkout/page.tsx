@@ -126,7 +126,7 @@ export default function CheckoutPage() {
                   <Field label="Address Line 1" name="addressLine1" value={form.addressLine1} onChange={handleChange} required placeholder="123 Main Street" className="sm:col-span-2" />
                   <Field label="Address Line 2 (optional)" name="addressLine2" value={form.addressLine2 ?? ''} onChange={handleChange} placeholder="Apt, suite, unit…" className="sm:col-span-2" />
                   <Field label="City" name="city" value={form.city} onChange={handleChange} required placeholder="Auckland" />
-                  <Field label="Region / State" name="state" value={form.state} onChange={handleChange} required placeholder="Auckland" />
+                  <Field label="Region / State (optional)" name="state" value={form.state} onChange={handleChange} placeholder="Auckland" />
                   <Field label="Postcode" name="postalCode" value={form.postalCode} onChange={handleChange} required placeholder="1010" />
                   <Field label="Country" name="country" value={form.country} onChange={handleChange} required placeholder="NZ" />
                   <Field label="Phone (optional)" name="phone" type="tel" value={form.phone ?? ''} onChange={handleChange} placeholder="+64 21 000 0000" className="sm:col-span-2" />

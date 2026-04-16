@@ -15,5 +15,12 @@ public interface IOrderAppService : IApplicationService
     Task<OrderDto> MarkPaidAsync(Guid id);
     Task<OrderDto> StartReviewAsync(Guid id);
     Task<OrderDto> ReopenAsync(Guid id);
+    Task<OrderDto> UpdateChecklistAsync(Guid id, UpdateOrderChecklistDto input);
+    Task<OrderDto> RecordNotificationAsync(Guid id);
     Task<OrderItemDto> UpdateItemDesignAsync(Guid orderId, Guid itemId, UpdateOrderItemDesignDto input);
+    Task<OrderDto> UpdateAdminNotesAsync(Guid id, UpdateAdminNotesDto input);
+    Task<OrderDto> ApproveForPrintingAsync(Guid id);
+    Task<OrderDto> StartPrintingAsync(Guid id);
+    Task<OrderDto> MarkReadyAsync(Guid id);
+    Task<OrderDto> CompleteAsync(Guid id);
 }

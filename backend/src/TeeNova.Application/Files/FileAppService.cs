@@ -55,6 +55,29 @@ public class FileAppService : ApplicationService, IFileAppService
         _orderItemPositionAssetRepository = orderItemPositionAssetRepository;
     }
 
+    /// <summary>
+    /// Handles customer-side design file uploads (checkout flow).
+    /// Files are stored under uploads/designs/ and tracked as <see cref="TeeNova.Files.AssetType.CustomerDesign"/>.
+    /// Orphan cleanup applies to these records.
+    ///
+    /// To add product image upload for admin, create a separate method:
+    /// <code>
+    /// public async Task&lt;UploadFileOutput&gt; UploadProductImageAsync(IFormFile file, ...)
+    /// {
+    ///     var fileUrl = await _storageService.SaveAsync(
+    ///         stream, file.FileName, file.ContentType,
+    ///         folder: "products",               // stored under uploads/products/
+    ///         cancellationToken: cancellationToken);
+    ///
+    ///     var asset = new UploadedAsset(
+    ///         GuidGenerator.Create(), file.FileName, fileUrl, file.ContentType, file.Length,
+    ///         assetType: AssetType.ProductImage  // excluded from orphan cleanup
+    ///     );
+    ///     ...
+    /// }
+    /// </code>
+    /// Then expose it via a dedicated endpoint, e.g. POST /api/files/product-image.
+    /// </summary>
     public async Task<UploadFileOutput> UploadAsync(IFormFile file, CancellationToken cancellationToken = default)
     {
         if (file == null || file.Length == 0)
@@ -71,14 +94,19 @@ public class FileAppService : ApplicationService, IFileAppService
             throw new UserFriendlyException("Only PNG, JPEG, SVG, WebP, PDF, and AI files are accepted.");
 
         await using var stream = file.OpenReadStream();
-        var fileUrl = await _storageService.SaveAsync(stream, file.FileName, file.ContentType, cancellationToken);
+        var fileUrl = await _storageService.SaveAsync(
+            stream, file.FileName, file.ContentType,
+            folder: "designs",
+            fileNamePrefix: "order-unassigned_item-unassigned",
+            cancellationToken: cancellationToken);
 
         var asset = new UploadedAsset(
             GuidGenerator.Create(),
             file.FileName,
             fileUrl,
             file.ContentType,
-            file.Length
+            file.Length,
+            assetType: TeeNova.Files.AssetType.CustomerDesign
         );
 
         await _assetRepository.InsertAsync(asset, autoSave: true);
@@ -114,7 +142,9 @@ public class FileAppService : ApplicationService, IFileAppService
 
     public async Task<CleanOrphanedAssetsResultDto> CleanOrphanedAssetsAsync()
     {
-        var allAssets = await _assetRepository.GetListAsync();
+        // Only inspect customer design uploads — product images are never auto-deleted.
+        var allAssets = await _assetRepository.GetListAsync(
+            a => a.AssetType == TeeNova.Files.AssetType.CustomerDesign);
         if (allAssets.Count == 0)
             return new CleanOrphanedAssetsResultDto();
 

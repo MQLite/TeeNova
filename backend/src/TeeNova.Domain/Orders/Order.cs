@@ -7,7 +7,7 @@ using Volo.Abp.Domain.Entities.Auditing;
 namespace TeeNova.Orders;
 
 /// <summary>
-/// Aggregate root for an order. Manages the lifecycle from pending to delivered.
+/// Aggregate root for an order. Manages the lifecycle from pending to completed.
 /// OrderItems are owned and changes must go through the Order aggregate.
 /// </summary>
 public class Order : FullAuditedAggregateRoot<Guid>
@@ -16,14 +16,19 @@ public class Order : FullAuditedAggregateRoot<Guid>
 
     private static readonly Dictionary<OrderStatus, OrderStatus[]> AllowedTransitions = new()
     {
-        [OrderStatus.Pending] = [OrderStatus.Paid, OrderStatus.Cancelled],
-        [OrderStatus.Paid] = [OrderStatus.Reviewing, OrderStatus.Cancelled],
-        [OrderStatus.Reviewing] = [OrderStatus.InProduction, OrderStatus.Cancelled],
-        [OrderStatus.Confirmed] = [OrderStatus.InProduction, OrderStatus.Cancelled],
+        [OrderStatus.Pending]      = [OrderStatus.Paid,         OrderStatus.Cancelled],
+        [OrderStatus.Paid]         = [OrderStatus.Reviewing,    OrderStatus.Cancelled],
+        [OrderStatus.Reviewing]    = [OrderStatus.Printing,     OrderStatus.Cancelled],
+        [OrderStatus.Printing]     = [OrderStatus.Ready,        OrderStatus.Cancelled],
+        [OrderStatus.Ready]        = [OrderStatus.Completed],
+        [OrderStatus.Completed]    = [],
+        // ── Legacy paths kept for compatibility ──────────────────────────────
+        [OrderStatus.Confirmed]    = [OrderStatus.InProduction, OrderStatus.Cancelled],
         [OrderStatus.InProduction] = [OrderStatus.Shipped],
-        [OrderStatus.Shipped] = [OrderStatus.Delivered],
-        [OrderStatus.Delivered] = [],
-        [OrderStatus.Cancelled] = [],
+        [OrderStatus.Shipped]      = [OrderStatus.Delivered],
+        [OrderStatus.Delivered]    = [],
+        // ── Terminal ─────────────────────────────────────────────────────────
+        [OrderStatus.Cancelled]    = [],
     };
 
     public string OrderNumber { get; private set; } = default!;
@@ -34,6 +39,14 @@ public class Order : FullAuditedAggregateRoot<Guid>
     public ShippingAddress ShippingAddress { get; set; } = default!;
     public decimal TotalAmount { get; private set; }
     public string? Notes { get; set; }
+    public string? AdminNotes { get; set; }
+    public bool IsApprovedForPrinting { get; private set; }
+    public bool IsDesignReviewed { get; private set; }
+    public bool IsPrintPositionConfirmed { get; private set; }
+    public bool IsFileDownloaded { get; private set; }
+    public bool IsGarmentConfirmed { get; private set; }
+    public bool IsReadyToPrint { get; private set; }
+    public DeliveryMethod? DeliveryMethod { get; set; }
 
     private readonly List<OrderItem> _items = new();
     public IReadOnlyList<OrderItem> Items => _items.AsReadOnly();
@@ -70,6 +83,65 @@ public class Order : FullAuditedAggregateRoot<Guid>
         }
 
         Status = newStatus;
+    }
+
+    public void ApproveForPrinting()
+    {
+        if (Status != OrderStatus.Reviewing)
+        {
+            throw new BusinessException("TeeNova:Order:CannotApproveForPrinting")
+                .WithData("CurrentStatus", Status);
+        }
+
+        IsApprovedForPrinting = true;
+    }
+
+    public void StartPrinting()
+    {
+        if (Status != OrderStatus.Reviewing || !IsApprovedForPrinting)
+        {
+            throw new BusinessException("TeeNova:Order:CannotStartPrinting")
+                .WithData("CurrentStatus", Status)
+                .WithData("IsApprovedForPrinting", IsApprovedForPrinting);
+        }
+
+        Status = OrderStatus.Printing;
+    }
+
+    public void MarkReady()
+    {
+        if (Status != OrderStatus.Printing)
+        {
+            throw new BusinessException("TeeNova:Order:CannotMarkReady")
+                .WithData("CurrentStatus", Status);
+        }
+
+        Status = OrderStatus.Ready;
+    }
+
+    public void Complete()
+    {
+        if (Status != OrderStatus.Ready)
+        {
+            throw new BusinessException("TeeNova:Order:CannotComplete")
+                .WithData("CurrentStatus", Status);
+        }
+
+        Status = OrderStatus.Completed;
+    }
+
+    public void UpdatePreparationChecklist(
+        bool isDesignReviewed,
+        bool isPrintPositionConfirmed,
+        bool isFileDownloaded,
+        bool isGarmentConfirmed,
+        bool isReadyToPrint)
+    {
+        IsDesignReviewed = isDesignReviewed;
+        IsPrintPositionConfirmed = isPrintPositionConfirmed;
+        IsFileDownloaded = isFileDownloaded;
+        IsGarmentConfirmed = isGarmentConfirmed;
+        IsReadyToPrint = isReadyToPrint;
     }
 
     public void Reopen(DateTime now)

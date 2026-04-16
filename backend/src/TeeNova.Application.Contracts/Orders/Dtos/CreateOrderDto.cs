@@ -16,6 +16,7 @@ public class CreateOrderDto
     public List<CreateOrderItemDto> Items { get; set; } = new();
 
     public string? Notes { get; set; }
+    public DeliveryMethod? DeliveryMethod { get; set; }
 }
 
 public class CreateOrderItemDto
