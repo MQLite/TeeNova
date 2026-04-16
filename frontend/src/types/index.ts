@@ -5,6 +5,7 @@ export interface ProductListItem {
   name: string
   basePrice: number
   productType: string
+  isActive: boolean
   thumbnailUrl: string | null
   primaryImageUrl: string | null
   variantCount: number
@@ -69,16 +70,12 @@ export interface UploadedAsset {
 
 export type OrderStatus =
   | 'Pending'
+  | 'Cancelled'
   | 'Paid'
   | 'Reviewing'
   | 'Printing'
   | 'Ready'
   | 'Completed'
-  | 'Confirmed'
-  | 'InProduction'
-  | 'Shipped'
-  | 'Delivered'
-  | 'Cancelled'
 
 export type DeliveryMethod = 'Pickup' | 'Shipping'
 

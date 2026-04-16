@@ -92,9 +92,7 @@ public class LocalFileStorageService : IFileStorageService
 
     private static string BuildStandardizedFileName(string? fileNamePrefix, string originalFileName)
     {
-        var prefix = string.IsNullOrWhiteSpace(fileNamePrefix)
-            ? "order-unassigned_item-unassigned"
-            : fileNamePrefix.Trim();
+        var prefix = ResolvePrefix(fileNamePrefix);
 
         var extension = Path.GetExtension(originalFileName);
         var safeExtension = string.IsNullOrWhiteSpace(extension)
@@ -103,9 +101,26 @@ public class LocalFileStorageService : IFileStorageService
 
         var baseName = Path.GetFileNameWithoutExtension(originalFileName);
         var sanitizedName = SanitizeFileNameSegment(baseName);
+        var dateStamp = DateTime.UtcNow.ToString("yyyyMMdd");
         var uniqueSuffix = Guid.NewGuid().ToString("N")[..6];
 
-        return $"{prefix}_{sanitizedName}_{uniqueSuffix}{safeExtension}";
+        return $"{prefix}_{dateStamp}_{uniqueSuffix}_{sanitizedName}{safeExtension}";
+    }
+
+    private static string ResolvePrefix(string? fileNamePrefix)
+    {
+        if (string.IsNullOrWhiteSpace(fileNamePrefix))
+        {
+            return "design";
+        }
+
+        var normalized = fileNamePrefix.Trim().ToLowerInvariant();
+        return normalized switch
+        {
+            "designs" => "design",
+            "products" => "product",
+            _ => SanitizeFileNameSegment(normalized),
+        };
     }
 
     private static string SanitizeFileNameSegment(string value)

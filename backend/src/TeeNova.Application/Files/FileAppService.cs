@@ -97,7 +97,7 @@ public class FileAppService : ApplicationService, IFileAppService
         var fileUrl = await _storageService.SaveAsync(
             stream, file.FileName, file.ContentType,
             folder: "designs",
-            fileNamePrefix: "order-unassigned_item-unassigned",
+            fileNamePrefix: "designs",
             cancellationToken: cancellationToken);
 
         var asset = new UploadedAsset(

@@ -15,6 +15,7 @@ public interface ICatalogAppService : IApplicationService
     // ── Admin: Products ───────────────────────────────────────────────────────
     Task<ProductDto> CreateAsync(CreateProductDto input);
     Task<ProductDto> UpdateAsync(Guid id, UpdateProductDto input);
+    Task<ProductDto> UpdateStatusAsync(Guid id, UpdateProductStatusDto input);
     Task DeleteAsync(Guid id);
 
     // ── Admin: Variants ───────────────────────────────────────────────────────

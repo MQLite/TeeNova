@@ -8,30 +8,22 @@ export const metadata = { title: 'Order Details' }
 
 const statusColors: Record<OrderStatus, 'gray' | 'blue' | 'yellow' | 'green' | 'purple' | 'red'> = {
   Pending: 'gray',
+  Cancelled: 'red',
   Paid: 'green',
   Reviewing: 'blue',
   Printing: 'purple',
   Ready: 'green',
   Completed: 'green',
-  Confirmed: 'blue',
-  InProduction: 'purple',
-  Shipped: 'blue',
-  Delivered: 'green',
-  Cancelled: 'red',
 }
 
 const statusMessages: Record<OrderStatus, { title: string; desc: string }> = {
   Pending: { title: 'Order received', desc: 'We have received your order and are waiting for payment confirmation.' },
+  Cancelled: { title: 'Order cancelled', desc: 'This order has been cancelled.' },
   Paid: { title: 'Payment received', desc: 'Your payment has been recorded and your order is ready for review.' },
   Reviewing: { title: 'Under review', desc: 'Our team is reviewing your artwork and print setup before production.' },
   Printing: { title: 'In production', desc: 'Your order is currently in the printing phase.' },
   Ready: { title: 'Ready for pickup', desc: 'Your order is ready and waiting for collection or final handoff.' },
   Completed: { title: 'Order completed', desc: 'This order has been completed successfully.' },
-  Confirmed: { title: 'Order confirmed', desc: 'Your order has been confirmed and will enter production soon.' },
-  InProduction: { title: 'Being printed', desc: 'Your custom T-shirt is currently being printed.' },
-  Shipped: { title: 'On its way', desc: 'Your order has shipped and is heading to you.' },
-  Delivered: { title: 'Delivered', desc: 'Your order has been delivered. Enjoy your custom tee!' },
-  Cancelled: { title: 'Order cancelled', desc: 'This order has been cancelled.' },
 }
 
 interface PageProps {
@@ -54,13 +46,8 @@ export default async function OrderDetailPage({ params }: PageProps) {
   const { id } = await params
   const order = await ordersApi.getById(id)
 
-  const status = (typeof order.status === 'number'
-    ? (['Pending', 'Confirmed', 'InProduction', 'Shipped', 'Delivered', 'Cancelled', 'Paid', 'Reviewing'] as const)[order.status as unknown as number]
-    : order.status) ?? 'Pending'
-  const safeOrder = { ...order, status }
-
-  const msg = statusMessages[safeOrder.status] ?? statusMessages.Pending
-  const isCancelled = safeOrder.status === 'Cancelled'
+  const msg = statusMessages[order.status] ?? statusMessages.Pending
+  const isCancelled = order.status === 'Cancelled'
 
   return (
     <div className="min-h-screen bg-white">
@@ -88,8 +75,8 @@ export default async function OrderDetailPage({ params }: PageProps) {
             <span className={`rounded-full px-4 py-1.5 font-mono text-sm uppercase tracking-[0.54px] ${isCancelled ? 'bg-black/[0.08] text-black' : 'bg-white/15 text-white'}`}>
               #{order.orderNumber}
             </span>
-            <Badge color={statusColors[safeOrder.status]} className="px-3 py-1 text-sm">
-              {safeOrder.status}
+            <Badge color={statusColors[order.status]} className="px-3 py-1 text-sm">
+              {order.status}
             </Badge>
           </div>
         </div>
@@ -216,11 +203,11 @@ export default async function OrderDetailPage({ params }: PageProps) {
               <h3 className="mb-4 font-mono text-[11px] uppercase tracking-[0.54px] text-black/55">What happens next</h3>
               <div className="space-y-2">
                 {[
-                  { done: ['Paid', 'Reviewing', 'Confirmed', 'InProduction', 'Shipped', 'Delivered'].includes(safeOrder.status), text: 'Payment is confirmed' },
-                  { done: ['Reviewing', 'Confirmed', 'InProduction', 'Shipped', 'Delivered'].includes(safeOrder.status), text: 'Artwork is reviewed by our team' },
-                  { done: ['InProduction', 'Shipped', 'Delivered'].includes(safeOrder.status), text: 'Your T-shirt enters production' },
-                  { done: ['Shipped', 'Delivered'].includes(safeOrder.status), text: 'Shipped via NZ Post' },
-                  { done: safeOrder.status === 'Delivered', text: 'Delivered to your door' },
+                  { done: ['Paid', 'Reviewing', 'Printing', 'Ready', 'Completed'].includes(order.status), text: 'Payment is confirmed' },
+                  { done: ['Reviewing', 'Printing', 'Ready', 'Completed'].includes(order.status), text: 'Artwork is reviewed by our team' },
+                  { done: ['Printing', 'Ready', 'Completed'].includes(order.status), text: 'Your T-shirt enters production' },
+                  { done: ['Ready', 'Completed'].includes(order.status), text: 'Your order is ready for pickup or dispatch' },
+                  { done: order.status === 'Completed', text: 'Order handed over and completed' },
                 ].map(({ done, text }) => (
                   <div key={text} className="flex items-center gap-2.5 text-sm">
                     <span className={`flex h-5 w-5 flex-shrink-0 items-center justify-center rounded-full text-[10px] font-medium ${

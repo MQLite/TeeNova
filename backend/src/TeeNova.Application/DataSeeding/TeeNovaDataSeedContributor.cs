@@ -23,10 +23,10 @@ public class TeeNovaDataSeedContributor : IDataSeedContributor, ITransientDepend
     private static readonly Guid OversizedTeeId = new("00000003-0000-0000-0000-000000000003");
 
     // 鈹€鈹€ Order GUIDs (fixed, idempotent) 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
-    private static readonly Guid Order1Id = new("a0000001-0000-0000-0000-000000000001"); // Delivered
-    private static readonly Guid Order2Id = new("a0000002-0000-0000-0000-000000000002"); // InProduction
+    private static readonly Guid Order1Id = new("a0000001-0000-0000-0000-000000000001"); // Completed
+    private static readonly Guid Order2Id = new("a0000002-0000-0000-0000-000000000002"); // Printing
     private static readonly Guid Order3Id = new("a0000003-0000-0000-0000-000000000003"); // Reviewing
-    private static readonly Guid Order4Id = new("a0000004-0000-0000-0000-000000000004"); // Shipped
+    private static readonly Guid Order4Id = new("a0000004-0000-0000-0000-000000000004"); // Completed
     private static readonly Guid Order5Id = new("a0000005-0000-0000-0000-000000000005"); // Paid
     private static readonly Guid Order6Id = new("a0000006-0000-0000-0000-000000000006"); // Pending
 
@@ -239,7 +239,12 @@ public class TeeNovaDataSeedContributor : IDataSeedContributor, ITransientDepend
                 3, classic.BasePrice + variant.PriceAdjustment);
             item.UpsertPositionAsset(Guid.NewGuid(), PrintPosition.FrontCenter, Asset1Id, baseUrl + "/images/products/classic-tee.svg", "Sarah's custom birthday design");
             order.AddItem(item);
-            order.UpdateStatus(OrderStatus.Delivered);
+            order.UpdateStatus(OrderStatus.Paid);
+            order.UpdateStatus(OrderStatus.Reviewing);
+            order.ApproveForPrinting();
+            order.StartPrinting();
+            order.MarkReady();
+            order.Complete();
             await _orderRepository.InsertAsync(order, autoSave: true);
         }
 
@@ -255,7 +260,10 @@ public class TeeNovaDataSeedContributor : IDataSeedContributor, ITransientDepend
                 10, classic.BasePrice + variant.PriceAdjustment);
             item.UpsertPositionAsset(Guid.NewGuid(), PrintPosition.FrontCenter, Asset2Id, baseUrl + "/images/products/classic-tee.svg", "Club crest 鈥?high-res file provided");
             order.AddItem(item);
-            order.UpdateStatus(OrderStatus.InProduction);
+            order.UpdateStatus(OrderStatus.Paid);
+            order.UpdateStatus(OrderStatus.Reviewing);
+            order.ApproveForPrinting();
+            order.StartPrinting();
             await _orderRepository.InsertAsync(order, autoSave: true);
         }
 
@@ -288,7 +296,12 @@ public class TeeNovaDataSeedContributor : IDataSeedContributor, ITransientDepend
                 1, oversized.BasePrice + variant.PriceAdjustment);
             item.UpsertPositionAsset(Guid.NewGuid(), PrintPosition.FrontCenter, designNote: "Minimalist line-art design 鈥?see uploaded file");
             order.AddItem(item);
-            order.UpdateStatus(OrderStatus.Shipped);
+            order.UpdateStatus(OrderStatus.Paid);
+            order.UpdateStatus(OrderStatus.Reviewing);
+            order.ApproveForPrinting();
+            order.StartPrinting();
+            order.MarkReady();
+            order.Complete();
             await _orderRepository.InsertAsync(order, autoSave: true);
         }
 

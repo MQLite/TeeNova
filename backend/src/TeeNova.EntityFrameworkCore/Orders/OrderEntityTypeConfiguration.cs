@@ -67,7 +67,7 @@ public class OrderEntityTypeConfiguration :
             sa.Property(a => a.AddressLine1).HasMaxLength(512).IsRequired();
             sa.Property(a => a.AddressLine2).HasMaxLength(512);
             sa.Property(a => a.City).HasMaxLength(128).IsRequired();
-            sa.Property(a => a.State).HasMaxLength(128).IsRequired();
+            sa.Property(a => a.State).HasMaxLength(128).IsRequired(false);
             sa.Property(a => a.PostalCode).HasMaxLength(32).IsRequired();
             sa.Property(a => a.Country).HasMaxLength(64).IsRequired();
             sa.Property(a => a.Phone).HasMaxLength(32);

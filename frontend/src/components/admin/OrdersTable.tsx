@@ -2,19 +2,25 @@
 
 import { useState } from 'react'
 import Link from 'next/link'
-import { OrderStatusBadge } from '@/components/admin/OrderStatusBadge'
+import { OrderStatusBadge, STATUS_CONFIG } from '@/components/admin/OrderStatusBadge'
 import type { Order, OrderStatus } from '@/types'
+
+const STATUS_TAB_ORDER: OrderStatus[] = [
+  'Pending',
+  'Cancelled',
+  'Paid',
+  'Reviewing',
+  'Printing',
+  'Ready',
+  'Completed',
+]
 
 const STATUS_TABS: { label: string; value: OrderStatus | 'All' }[] = [
   { label: 'All', value: 'All' },
-  { label: 'Pending', value: 'Pending' },
-  { label: 'Paid', value: 'Paid' },
-  { label: 'Reviewing', value: 'Reviewing' },
-  { label: 'Confirmed', value: 'Confirmed' },
-  { label: 'In Production', value: 'InProduction' },
-  { label: 'Shipped', value: 'Shipped' },
-  { label: 'Delivered', value: 'Delivered' },
-  { label: 'Cancelled', value: 'Cancelled' },
+  ...STATUS_TAB_ORDER.map((status) => ({
+    label: STATUS_CONFIG[status].label,
+    value: status,
+  })),
 ]
 
 interface Props {

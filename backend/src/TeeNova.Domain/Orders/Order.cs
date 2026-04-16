@@ -23,10 +23,6 @@ public class Order : FullAuditedAggregateRoot<Guid>
         [OrderStatus.Ready]        = [OrderStatus.Completed],
         [OrderStatus.Completed]    = [],
         // ── Legacy paths kept for compatibility ──────────────────────────────
-        [OrderStatus.Confirmed]    = [OrderStatus.InProduction, OrderStatus.Cancelled],
-        [OrderStatus.InProduction] = [OrderStatus.Shipped],
-        [OrderStatus.Shipped]      = [OrderStatus.Delivered],
-        [OrderStatus.Delivered]    = [],
         // ── Terminal ─────────────────────────────────────────────────────────
         [OrderStatus.Cancelled]    = [],
     };

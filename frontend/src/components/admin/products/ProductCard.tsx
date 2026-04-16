@@ -1,6 +1,5 @@
 import Link from 'next/link'
 import type { ProductListItem } from '@/types'
-import { EditPlaceholderButton } from './EditPlaceholderButton'
 
 interface ProductCardProps {
   product: ProductListItem
@@ -35,6 +34,11 @@ export function ProductCard({ product }: ProductCardProps) {
           <span className="rounded-full border border-black/[0.08] bg-white/90 px-2.5 py-0.5 font-mono text-[10px] uppercase tracking-[0.54px] text-black/55 backdrop-blur-sm">
             {product.productType}
           </span>
+          {!product.isActive && (
+            <span className="rounded-full border border-amber-200 bg-amber-50/90 px-2.5 py-0.5 font-mono text-[10px] uppercase tracking-[0.54px] text-amber-700 backdrop-blur-sm">
+              Inactive
+            </span>
+          )}
         </div>
       </div>
 
@@ -64,7 +68,16 @@ export function ProductCard({ product }: ProductCardProps) {
               <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
             </svg>
           </Link>
-          <EditPlaceholderButton label="Edit" size="sm" />
+          <Link
+            href={`/admin/products/${product.id}/edit`}
+            className="inline-flex items-center gap-2 rounded-full border border-black/[0.10] bg-white px-3 py-1.5 text-[11px] text-black/70 transition-colors hover:bg-black/[0.03] hover:text-black"
+            style={{ letterSpacing: '-0.14px', fontWeight: 480 }}
+          >
+            <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+            </svg>
+            Edit
+          </Link>
         </div>
       </div>
     </div>

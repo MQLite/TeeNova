@@ -1,0 +1,9 @@
+<Project>
+  <PropertyGroup>
+    <!--
+      Avoid intermittent MSBuild failures in this environment when project
+      references are evaluated in parallel.
+    -->
+    <BuildInParallel>false</BuildInParallel>
+  </PropertyGroup>
+</Project>
