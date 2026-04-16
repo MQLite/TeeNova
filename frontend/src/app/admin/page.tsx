@@ -114,15 +114,14 @@ function QuickLinkCard({ href, label, description, icon }: {
 
 const BAR_COLORS: Record<string, string> = {
   Pending:      'bg-zinc-400',
+  Cancelled:    'bg-red-400',
   Paid:         'bg-green-500',
   Reviewing:    'bg-blue-500',
-  Confirmed:    'bg-blue-400',
-  InProduction: 'bg-violet-500',
-  Shipped:      'bg-sky-400',
-  Delivered:    'bg-green-400',
-  Cancelled:    'bg-red-400',
+  Printing:     'bg-orange-500',
+  Ready:        'bg-teal-500',
+  Completed:    'bg-emerald-500',
 }
-const STATUS_ORDER = ['Pending', 'Paid', 'Reviewing', 'Confirmed', 'InProduction', 'Shipped', 'Delivered', 'Cancelled']
+const STATUS_ORDER = ['Pending', 'Paid', 'Reviewing', 'Printing', 'Ready', 'Completed', 'Cancelled']
 
 function StatusDistributionChart({ ordersByStatus }: { ordersByStatus: Record<string, number> }) {
   const total = Object.values(ordersByStatus).reduce((a, b) => a + b, 0)
@@ -217,7 +216,7 @@ export default async function AdminDashboardPage() {
     (stats?.ordersByStatus['Pending'] ?? 0) +
     (stats?.ordersByStatus['Paid'] ?? 0) +
     (stats?.ordersByStatus['Reviewing'] ?? 0) +
-    (stats?.ordersByStatus['Confirmed'] ?? 0)
+    (stats?.ordersByStatus['Printing'] ?? 0)
 
   const today = new Date().toLocaleDateString('en-NZ', {
     weekday: 'short', day: 'numeric', month: 'short', year: 'numeric',
@@ -252,14 +251,14 @@ export default async function AdminDashboardPage() {
         <SummaryCard
           label="Needs Attention"
           value={stats ? pendingCount : <SkeletonBlock className="mt-1 h-7 w-14" />}
-          sub={stats ? 'Pending, paid, reviewing, or confirmed' : undefined}
+          sub={stats ? 'Pending, paid, reviewing, or printing' : undefined}
           icon={<svg viewBox="0 0 20 20" fill="currentColor" className="h-4 w-4">
             <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm1-12a1 1 0 10-2 0v4a1 1 0 00.293.707l2.828 2.829a1 1 0 101.415-1.415L11 9.586V6z" clipRule="evenodd" />
           </svg>}
         />
         <SummaryCard
           label="In Production"
-          value={stats ? (stats.ordersByStatus['InProduction'] ?? 0) : <SkeletonBlock className="mt-1 h-7 w-14" />}
+          value={stats ? (stats.ordersByStatus['Printing'] ?? 0) : <SkeletonBlock className="mt-1 h-7 w-14" />}
           sub={stats ? 'Currently printing' : undefined}
           icon={<svg viewBox="0 0 20 20" fill="currentColor" className="h-4 w-4">
             <path fillRule="evenodd" d="M5 4v3H4a2 2 0 00-2 2v3a2 2 0 002 2h1v2a1 1 0 001 1h8a1 1 0 001-1v-2h1a2 2 0 002-2V9a2 2 0 00-2-2h-1V4a1 1 0 00-1-1H6a1 1 0 00-1 1zm2 3V5h6v2H7zm-1 5a1 1 0 100-2 1 1 0 000 2zm8-1a1 1 0 11-2 0 1 1 0 012 0z" clipRule="evenodd" />

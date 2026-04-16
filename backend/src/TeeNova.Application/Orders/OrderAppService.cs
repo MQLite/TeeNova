@@ -280,12 +280,8 @@ public class OrderAppService : ApplicationService, IOrderAppService
         OrderStatus.Paid         => "Order Received",
         OrderStatus.Reviewing    => "Processing",
         OrderStatus.Printing     => "In Production",
-        OrderStatus.InProduction => "In Production",
-        OrderStatus.Confirmed    => "In Production",
         OrderStatus.Ready        => "Ready for Pickup",
         OrderStatus.Completed    => "Completed",
-        OrderStatus.Shipped      => "Shipped",
-        OrderStatus.Delivered    => "Delivered",
         OrderStatus.Cancelled    => "Cancelled",
         _                        => status.ToString(),
     };

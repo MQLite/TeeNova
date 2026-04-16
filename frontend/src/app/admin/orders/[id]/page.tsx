@@ -28,16 +28,12 @@ const PIPELINE: OrderStatus[] = ['Pending', 'Paid', 'Reviewing', 'Printing', 'Re
 
 const TRANSITIONS: Record<OrderStatus, OrderStatus[]> = {
   Pending:      ['Paid', 'Cancelled'],
+  Cancelled:    [],
   Paid:         ['Reviewing', 'Cancelled'],
   Reviewing:    [],                           // handled by approve/start-printing flow
   Printing:     [],                           // handled by mark-ready flow
   Ready:        [],                           // handled by complete flow
   Completed:    [],
-  Confirmed:    ['InProduction', 'Cancelled'],
-  InProduction: ['Shipped'],
-  Shipped:      ['Delivered'],
-  Delivered:    [],
-  Cancelled:    [],
 }
 
 // Position label → short readable form for display
@@ -499,13 +495,8 @@ export default function AdminOrderDetailPage() {
   const advanceNext = nextStatuses.filter((s) => s !== 'Cancelled')
   const isCancelled = order.status === 'Cancelled'
   const isCompleted = order.status === 'Completed'
-  const isTerminal = isCompleted || order.status === 'Delivered' || isCancelled
-  const progressStatus = order.status === 'Confirmed' ? 'InProduction'
-    : ['InProduction', 'Shipped', 'Delivered'].includes(order.status) ? order.status
-    : order.status
-  const pipelineIdx = PIPELINE.indexOf(progressStatus as OrderStatus)
-  // Reviewing uses approve/start-printing flow; Printing/Ready use mark-ready/complete flow
-  const showLifecycleActions = !['Pending', 'Paid', 'Reviewing', 'Printing', 'Ready', 'Completed'].includes(order.status)
+  const isTerminal = isCompleted || isCancelled
+  const pipelineIdx = PIPELINE.indexOf(order.status)
 
   const allPositionAssets = order.items.flatMap((i) => i.positionAssets)
   const hasAnyDesign = allPositionAssets.some((p) => p.uploadedAssetUrl)
@@ -635,8 +626,7 @@ export default function AdminOrderDetailPage() {
             </div>
           )}
 
-          {/* Legacy lifecycle actions (InProduction / Shipped) */}
-          {!isTerminal && showLifecycleActions && (
+          {!isTerminal && advanceNext.length > 0 && (
             <div className="mt-5 flex flex-wrap items-center gap-2 border-t border-black/[0.08] pt-4">
               {advanceNext.map((s) => (
                 <Button key={s} size="sm" loading={updating} onClick={() => handleStatusChange(s)}>
@@ -785,12 +775,6 @@ export default function AdminOrderDetailPage() {
             </div>
           )}
 
-          {order.status === 'Delivered' && (
-            <div className="card border-green-200 bg-green-50 p-4 text-sm text-green-700">
-              <p style={{ fontWeight: 480 }}>Delivered</p>
-              <p className="mt-0.5 text-xs text-green-600">Order has been delivered successfully.</p>
-            </div>
-          )}
         </div>
 
         {/* ── RIGHT: design review workstation ── */}

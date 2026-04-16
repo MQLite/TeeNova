@@ -10,16 +10,12 @@ interface StatusConfig {
 
 const STATUS_CONFIG: Record<OrderStatus, StatusConfig> = {
   Pending:      { bg: 'bg-zinc-100',   text: 'text-zinc-700',   dot: 'bg-zinc-400',   label: 'Pending' },
+  Cancelled:    { bg: 'bg-red-50',     text: 'text-red-600',    dot: 'bg-red-400',    label: 'Cancelled' },
   Paid:         { bg: 'bg-green-50',   text: 'text-green-700',  dot: 'bg-green-500',  label: 'Paid' },
   Reviewing:    { bg: 'bg-blue-50',    text: 'text-blue-700',   dot: 'bg-blue-500',   label: 'Reviewing' },
   Printing:     { bg: 'bg-orange-50',  text: 'text-orange-700', dot: 'bg-orange-500', label: 'Printing' },
   Ready:        { bg: 'bg-teal-50',    text: 'text-teal-700',   dot: 'bg-teal-500',   label: 'Ready' },
   Completed:    { bg: 'bg-emerald-50', text: 'text-emerald-800',dot: 'bg-emerald-600',label: 'Completed' },
-  Confirmed:    { bg: 'bg-blue-50',    text: 'text-blue-700',   dot: 'bg-blue-500',   label: 'Confirmed' },
-  InProduction: { bg: 'bg-violet-50',  text: 'text-violet-700', dot: 'bg-violet-500', label: 'In Production' },
-  Shipped:      { bg: 'bg-sky-50',     text: 'text-sky-700',    dot: 'bg-sky-500',    label: 'Shipped' },
-  Delivered:    { bg: 'bg-green-50',   text: 'text-green-700',  dot: 'bg-green-500',  label: 'Delivered' },
-  Cancelled:    { bg: 'bg-red-50',     text: 'text-red-600',    dot: 'bg-red-400',    label: 'Cancelled' },
 }
 
 interface Props {
