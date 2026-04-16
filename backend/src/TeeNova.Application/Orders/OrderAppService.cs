@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.IO;
 using System.Threading.Tasks;
 using Microsoft.EntityFrameworkCore;
 using TeeNova.Customization;
@@ -15,13 +16,19 @@ public class OrderAppService : ApplicationService, IOrderAppService
 {
     private readonly IRepository<Order, Guid> _orderRepository;
     private readonly IRepository<Catalog.Product, Guid> _productRepository;
+    private readonly IRepository<UploadedAsset, Guid> _assetRepository;
+    private readonly IRepository<OrderTimelineEntry, Guid> _timelineRepository;
 
     public OrderAppService(
         IRepository<Order, Guid> orderRepository,
-        IRepository<Catalog.Product, Guid> productRepository)
+        IRepository<Catalog.Product, Guid> productRepository,
+        IRepository<UploadedAsset, Guid> assetRepository,
+        IRepository<OrderTimelineEntry, Guid> timelineRepository)
     {
         _orderRepository = orderRepository;
         _productRepository = productRepository;
+        _assetRepository = assetRepository;
+        _timelineRepository = timelineRepository;
     }
 
     public async Task<OrderDto> CreateAsync(CreateOrderDto input)
@@ -39,7 +46,8 @@ public class OrderAppService : ApplicationService, IOrderAppService
         var customerName = input.ShippingAddress.FullName;
         var order = new Order(GuidGenerator.Create(), customerName, input.CustomerEmail, address)
         {
-            Notes = input.Notes
+            Notes = input.Notes,
+            DeliveryMethod = input.DeliveryMethod,
         };
 
         foreach (var itemDto in input.Items)
@@ -71,6 +79,9 @@ public class OrderAppService : ApplicationService, IOrderAppService
 
         await _orderRepository.InsertAsync(order, autoSave: true);
 
+        await AddTimelineEntryAsync(order.Id, OrderEventType.StatusChanged,
+            "Order placed", order.Status);
+
         return ObjectMapper.Map<Order, OrderDto>(order);
     }
 
@@ -85,7 +96,11 @@ public class OrderAppService : ApplicationService, IOrderAppService
         if (order == null)
             throw new Volo.Abp.Domain.Entities.EntityNotFoundException(typeof(Order), id);
 
-        return ObjectMapper.Map<Order, OrderDto>(order);
+        var dto = ObjectMapper.Map<Order, OrderDto>(order);
+        dto.DisplayStatus = GetDisplayStatus(order.Status);
+        await EnrichPositionAssetsAsync(dto);
+        await EnrichTimelineAsync(dto);
+        return dto;
     }
 
     public async Task<PagedResultDto<OrderDto>> GetListAsync(GetOrdersInput input)
@@ -104,10 +119,15 @@ public class OrderAppService : ApplicationService, IOrderAppService
             .Take(input.MaxResultCount)
             .ToListAsync();
 
-        return new PagedResultDto<OrderDto>(
-            totalCount,
-            ObjectMapper.Map<List<Order>, List<OrderDto>>(orders)
-        );
+        var dtos = ObjectMapper.Map<List<Order>, List<OrderDto>>(orders);
+
+        foreach (var (dto, order) in dtos.Zip(orders))
+        {
+            dto.DisplayStatus = GetDisplayStatus(order.Status);
+            await EnrichPositionAssetsAsync(dto);
+        }
+
+        return new PagedResultDto<OrderDto>(totalCount, dtos);
     }
 
     public async Task<OrderItemDto> UpdateItemDesignAsync(Guid orderId, Guid itemId, UpdateOrderItemDesignDto input)
@@ -118,6 +138,12 @@ public class OrderAppService : ApplicationService, IOrderAppService
             .ThenInclude(i => i.PositionAssets)
             .FirstOrDefaultAsync(o => o.Id == orderId)
             ?? throw new Volo.Abp.Domain.Entities.EntityNotFoundException(typeof(Order), orderId);
+
+        if (order.Status == OrderStatus.Cancelled)
+        {
+            throw new Volo.Abp.BusinessException("TeeNova:Order:CancelledOrderImmutable")
+                .WithData("OrderId", orderId);
+        }
 
         var item = order.Items.FirstOrDefault(i => i.Id == itemId)
             ?? throw new Volo.Abp.Domain.Entities.EntityNotFoundException(typeof(OrderItem), itemId);
@@ -137,6 +163,197 @@ public class OrderAppService : ApplicationService, IOrderAppService
     public async Task<OrderDto> UpdateStatusAsync(Guid id, UpdateOrderStatusDto input)
     {
         return await ChangeStatusAsync(id, input.NewStatus);
+    }
+
+    public async Task<OrderDto> UpdateAdminNotesAsync(Guid id, UpdateAdminNotesDto input)
+    {
+        var order = await _orderRepository.GetAsync(id);
+        order.AdminNotes = input.AdminNotes;
+        await _orderRepository.UpdateAsync(order, autoSave: true);
+        return await GetAsync(id);
+    }
+
+    public async Task<OrderDto> MarkPaidAsync(Guid id)
+        => await ChangeStatusAsync(id, OrderStatus.Paid);
+
+    public async Task<OrderDto> StartReviewAsync(Guid id)
+        => await ChangeStatusAsync(id, OrderStatus.Reviewing);
+
+    public async Task<OrderDto> ApproveForPrintingAsync(Guid id)
+    {
+        var order = await _orderRepository.GetAsync(id);
+        order.ApproveForPrinting();
+        await _orderRepository.UpdateAsync(order, autoSave: true);
+
+        await AddTimelineEntryAsync(id, OrderEventType.ApprovedForPrinting,
+            "Design approved for printing");
+
+        return await GetAsync(id);
+    }
+
+    public async Task<OrderDto> StartPrintingAsync(Guid id)
+    {
+        var order = await _orderRepository.GetAsync(id);
+        order.StartPrinting();
+        await _orderRepository.UpdateAsync(order, autoSave: true);
+
+        await AddTimelineEntryAsync(id, OrderEventType.StatusChanged,
+            "Printing started", OrderStatus.Printing);
+
+        return await GetAsync(id);
+    }
+
+    public async Task<OrderDto> MarkReadyAsync(Guid id)
+    {
+        var order = await _orderRepository.GetAsync(id);
+        order.MarkReady();
+        await _orderRepository.UpdateAsync(order, autoSave: true);
+
+        await AddTimelineEntryAsync(id, OrderEventType.StatusChanged,
+            "Order marked as Ready", OrderStatus.Ready);
+
+        return await GetAsync(id);
+    }
+
+    public async Task<OrderDto> CompleteAsync(Guid id)
+    {
+        var order = await _orderRepository.GetAsync(id);
+        order.Complete();
+        await _orderRepository.UpdateAsync(order, autoSave: true);
+
+        await AddTimelineEntryAsync(id, OrderEventType.StatusChanged,
+            "Order completed", OrderStatus.Completed);
+
+        return await GetAsync(id);
+    }
+
+    public async Task<OrderDto> ReopenAsync(Guid id)
+    {
+        var order = await _orderRepository.GetAsync(id);
+        order.Reopen(Clock.Now);
+        await _orderRepository.UpdateAsync(order, autoSave: true);
+
+        await AddTimelineEntryAsync(id, OrderEventType.StatusChanged,
+            "Order reopened", OrderStatus.Pending);
+
+        return await GetAsync(id);
+    }
+
+    public async Task<OrderDto> UpdateChecklistAsync(Guid id, UpdateOrderChecklistDto input)
+    {
+        var order = await _orderRepository.GetAsync(id);
+        order.UpdatePreparationChecklist(
+            input.IsDesignReviewed,
+            input.IsPrintPositionConfirmed,
+            input.IsFileDownloaded,
+            input.IsGarmentConfirmed,
+            input.IsReadyToPrint);
+
+        await _orderRepository.UpdateAsync(order, autoSave: true);
+
+        return await GetAsync(id);
+    }
+
+    public async Task<OrderDto> RecordNotificationAsync(Guid id)
+    {
+        var order = await _orderRepository.GetAsync(id);
+        if (order.Status != OrderStatus.Ready)
+        {
+            throw new Volo.Abp.BusinessException("TeeNova:Order:NotificationRequiresReadyStatus")
+                .WithData("CurrentStatus", order.Status);
+        }
+
+        await AddTimelineEntryAsync(
+            id,
+            OrderEventType.CustomerNotificationRecorded,
+            "Customer notification placeholder recorded for pickup readiness (no message sent)",
+            order.Status);
+
+        return await GetAsync(id);
+    }
+
+    // ── Private helpers ───────────────────────────────────────────────────────
+
+    private static string GetDisplayStatus(OrderStatus status) => status switch
+    {
+        OrderStatus.Pending      => "Order Received",
+        OrderStatus.Paid         => "Order Received",
+        OrderStatus.Reviewing    => "Processing",
+        OrderStatus.Printing     => "In Production",
+        OrderStatus.InProduction => "In Production",
+        OrderStatus.Confirmed    => "In Production",
+        OrderStatus.Ready        => "Ready for Pickup",
+        OrderStatus.Completed    => "Completed",
+        OrderStatus.Shipped      => "Shipped",
+        OrderStatus.Delivered    => "Delivered",
+        OrderStatus.Cancelled    => "Cancelled",
+        _                        => status.ToString(),
+    };
+
+    private async Task AddTimelineEntryAsync(
+        Guid orderId,
+        OrderEventType eventType,
+        string description,
+        OrderStatus? status = null)
+    {
+        var entry = new OrderTimelineEntry(
+            GuidGenerator.Create(), orderId, eventType, description, status);
+        await _timelineRepository.InsertAsync(entry, autoSave: true);
+    }
+
+    private async Task EnrichTimelineAsync(OrderDto orderDto)
+    {
+        var entries = await _timelineRepository.GetListAsync(
+            e => e.OrderId == orderDto.Id);
+
+        orderDto.Timeline = entries
+            .OrderBy(e => e.CreationTime)
+            .Select(e => ObjectMapper.Map<OrderTimelineEntry, OrderTimelineEntryDto>(e))
+            .ToList();
+    }
+
+    private async Task EnrichPositionAssetsAsync(OrderDto orderDto)
+    {
+        var assetIds = orderDto.Items
+            .SelectMany(i => i.PositionAssets)
+            .Where(p => p.UploadedAssetId.HasValue)
+            .Select(p => p.UploadedAssetId!.Value)
+            .Distinct()
+            .ToList();
+
+        if (assetIds.Count == 0) return;
+
+        var assets = await _assetRepository.GetListAsync(a => assetIds.Contains(a.Id));
+        var assetMap = assets.ToDictionary(a => a.Id);
+
+        foreach (var item in orderDto.Items)
+        {
+            foreach (var posAsset in item.PositionAssets)
+            {
+                if (posAsset.UploadedAssetId.HasValue &&
+                    assetMap.TryGetValue(posAsset.UploadedAssetId.Value, out var asset))
+                {
+                    posAsset.OriginalFileName = asset.OriginalFileName;
+                    posAsset.FileName = TryGetFileName(asset.StoredFileUrl);
+                    posAsset.FileSizeBytes = asset.FileSizeBytes;
+                }
+            }
+        }
+    }
+
+    private static string? TryGetFileName(string? fileUrl)
+    {
+        if (string.IsNullOrWhiteSpace(fileUrl))
+        {
+            return null;
+        }
+
+        if (Uri.TryCreate(fileUrl, UriKind.Absolute, out var uri))
+        {
+            return Path.GetFileName(uri.AbsolutePath);
+        }
+
+        return Path.GetFileName(fileUrl);
     }
 
     private static void SyncPositionAssets(OrderItem item, IEnumerable<CreateOrderItemPositionDto> positions)
@@ -160,39 +377,15 @@ public class OrderAppService : ApplicationService, IOrderAppService
             .WithData("Position", rawPosition);
     }
 
-    public async Task<OrderDto> MarkPaidAsync(Guid id)
-        => await ChangeStatusAsync(id, OrderStatus.Paid);
-
-    public async Task<OrderDto> StartReviewAsync(Guid id)
-        => await ChangeStatusAsync(id, OrderStatus.Reviewing);
-
-    public async Task<OrderDto> ReopenAsync(Guid id)
-    {
-        var order = await _orderRepository.GetAsync(id);
-        order.Reopen(Clock.Now);
-        await _orderRepository.UpdateAsync(order, autoSave: true);
-
-        var query = await _orderRepository.GetQueryableAsync();
-        var full = await query
-            .Include(o => o.Items)
-            .ThenInclude(i => i.PositionAssets)
-            .FirstOrDefaultAsync(o => o.Id == id);
-
-        return ObjectMapper.Map<Order, OrderDto>(full ?? order);
-    }
-
     private async Task<OrderDto> ChangeStatusAsync(Guid id, OrderStatus newStatus)
     {
         var order = await _orderRepository.GetAsync(id);
         order.UpdateStatus(newStatus);
         await _orderRepository.UpdateAsync(order, autoSave: true);
 
-        var query = await _orderRepository.GetQueryableAsync();
-        var full = await query
-            .Include(o => o.Items)
-            .ThenInclude(i => i.PositionAssets)
-            .FirstOrDefaultAsync(o => o.Id == id);
+        await AddTimelineEntryAsync(id, OrderEventType.StatusChanged,
+            $"Status changed to {newStatus}", newStatus);
 
-        return ObjectMapper.Map<Order, OrderDto>(full ?? order);
+        return await GetAsync(id);
     }
 }

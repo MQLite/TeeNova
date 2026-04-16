@@ -5,6 +5,7 @@ using System.Threading.Tasks;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using TeeNova.Customization;
+using TeeNova.Files;
 using TeeNova.Orders;
 using Volo.Abp.BackgroundWorkers;
 using Volo.Abp.Domain.Repositories;
@@ -48,7 +49,10 @@ public class OrphanedAssetCleanupWorker : AsyncPeriodicBackgroundWorkerBase
 
         var cutoff = DateTime.UtcNow.AddHours(-OrphanThresholdHours);
 
-        var candidates = await assetRepository.GetListAsync(a => a.CreationTime < cutoff);
+        // Only process customer design uploads.
+        // ProductImage assets are managed by admin and must never be auto-deleted.
+        var candidates = await assetRepository.GetListAsync(
+            a => a.AssetType == AssetType.CustomerDesign && a.CreationTime < cutoff);
 
         if (candidates.Count == 0)
         {

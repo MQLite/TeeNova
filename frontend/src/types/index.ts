@@ -71,18 +71,37 @@ export type OrderStatus =
   | 'Pending'
   | 'Paid'
   | 'Reviewing'
+  | 'Printing'
+  | 'Ready'
+  | 'Completed'
   | 'Confirmed'
   | 'InProduction'
   | 'Shipped'
   | 'Delivered'
   | 'Cancelled'
 
+export type DeliveryMethod = 'Pickup' | 'Shipping'
+
+export type OrderEventType =
+  | 'StatusChanged'
+  | 'ApprovedForPrinting'
+  | 'AdminNoteAdded'
+  | 'CustomerNotificationRecorded'
+
+export interface OrderTimelineEntry {
+  id: string
+  eventType: OrderEventType
+  status: OrderStatus | null
+  description: string
+  creationTime: string
+}
+
 export interface ShippingAddress {
   fullName: string
   addressLine1: string
   addressLine2?: string
   city: string
-  state: string
+  state?: string
   postalCode: string
   country: string
   phone?: string
@@ -101,6 +120,9 @@ export interface OrderItemPositionAsset {
   uploadedAssetId: string | null
   uploadedAssetUrl: string | null
   designNote: string | null
+  originalFileName: string | null
+  fileName: string | null
+  fileSizeBytes: number | null
 }
 
 export interface OrderItem {
@@ -119,13 +141,23 @@ export interface Order {
   id: string
   orderNumber: string
   status: OrderStatus
+  displayStatus: string
+  isApprovedForPrinting: boolean
+  isDesignReviewed: boolean
+  isPrintPositionConfirmed: boolean
+  isFileDownloaded: boolean
+  isGarmentConfirmed: boolean
+  isReadyToPrint: boolean
+  deliveryMethod: DeliveryMethod | null
   customerName: string
   customerEmail: string
   totalAmount: number
   shippingAddress: ShippingAddress
   items: OrderItem[]
   notes: string | null
+  adminNotes: string | null
   creationTime: string
+  timeline: OrderTimelineEntry[]
 }
 
 // ─── Cart (client-side) ───────────────────────────────────────────────────────

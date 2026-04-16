@@ -45,7 +45,35 @@ public class OrderController : TeeNovaControllerBase
     public async Task<OrderDto> ReopenAsync(Guid id)
         => await _orderAppService.ReopenAsync(id);
 
+    [HttpPut("{id:guid}/checklist")]
+    public async Task<OrderDto> UpdateChecklistAsync(Guid id, [FromBody] UpdateOrderChecklistDto input)
+        => await _orderAppService.UpdateChecklistAsync(id, input);
+
+    [HttpPost("{id:guid}/record-notification")]
+    public async Task<OrderDto> RecordNotificationAsync(Guid id)
+        => await _orderAppService.RecordNotificationAsync(id);
+
     [HttpPut("{orderId:guid}/items/{itemId:guid}/design")]
     public async Task<OrderItemDto> UpdateItemDesignAsync(Guid orderId, Guid itemId, [FromBody] UpdateOrderItemDesignDto input)
         => await _orderAppService.UpdateItemDesignAsync(orderId, itemId, input);
+
+    [HttpPut("{id:guid}/notes")]
+    public async Task<OrderDto> UpdateAdminNotesAsync(Guid id, [FromBody] UpdateAdminNotesDto input)
+        => await _orderAppService.UpdateAdminNotesAsync(id, input);
+
+    [HttpPost("{id:guid}/approve-for-printing")]
+    public async Task<OrderDto> ApproveForPrintingAsync(Guid id)
+        => await _orderAppService.ApproveForPrintingAsync(id);
+
+    [HttpPost("{id:guid}/start-printing")]
+    public async Task<OrderDto> StartPrintingAsync(Guid id)
+        => await _orderAppService.StartPrintingAsync(id);
+
+    [HttpPost("{id:guid}/mark-ready")]
+    public async Task<OrderDto> MarkReadyAsync(Guid id)
+        => await _orderAppService.MarkReadyAsync(id);
+
+    [HttpPost("{id:guid}/complete")]
+    public async Task<OrderDto> CompleteAsync(Guid id)
+        => await _orderAppService.CompleteAsync(id);
 }

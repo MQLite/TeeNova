@@ -7,7 +7,8 @@ namespace TeeNova.EntityFrameworkCore.Orders;
 public class OrderEntityTypeConfiguration :
     IEntityTypeConfiguration<Order>,
     IEntityTypeConfiguration<OrderItem>,
-    IEntityTypeConfiguration<OrderItemPositionAsset>
+    IEntityTypeConfiguration<OrderItemPositionAsset>,
+    IEntityTypeConfiguration<OrderTimelineEntry>
 {
     public void Configure(EntityTypeBuilder<Order> builder)
     {
@@ -32,6 +33,32 @@ public class OrderEntityTypeConfiguration :
         builder.Property(o => o.Status)
             .HasConversion<string>()
             .HasMaxLength(32);
+
+        builder.Property(o => o.AdminNotes)
+            .HasMaxLength(4000);
+
+        builder.Property(o => o.IsApprovedForPrinting)
+            .HasDefaultValue(false);
+
+        builder.Property(o => o.IsDesignReviewed)
+            .HasDefaultValue(false);
+
+        builder.Property(o => o.IsPrintPositionConfirmed)
+            .HasDefaultValue(false);
+
+        builder.Property(o => o.IsFileDownloaded)
+            .HasDefaultValue(false);
+
+        builder.Property(o => o.IsGarmentConfirmed)
+            .HasDefaultValue(false);
+
+        builder.Property(o => o.IsReadyToPrint)
+            .HasDefaultValue(false);
+
+        builder.Property(o => o.DeliveryMethod)
+            .HasConversion<string>()
+            .HasMaxLength(32)
+            .IsRequired(false);
 
         // Owned value object — stored as columns in the Orders table
         builder.OwnsOne(o => o.ShippingAddress, sa =>
@@ -78,5 +105,24 @@ public class OrderEntityTypeConfiguration :
         builder.Property(p => p.DesignNote).HasMaxLength(2000);
 
         builder.HasIndex(p => new { p.OrderItemId, p.Position }).IsUnique();
+    }
+
+    public void Configure(EntityTypeBuilder<OrderTimelineEntry> builder)
+    {
+        builder.ToTable("OrderTimelineEntries");
+
+        builder.Property(e => e.Description)
+            .IsRequired()
+            .HasMaxLength(512);
+
+        builder.Property(e => e.EventType)
+            .HasConversion<string>()
+            .HasMaxLength(64);
+
+        builder.Property(e => e.Status)
+            .HasConversion<string>()
+            .HasMaxLength(32);
+
+        builder.HasIndex(e => e.OrderId);
     }
 }
