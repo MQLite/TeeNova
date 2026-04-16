@@ -13,7 +13,7 @@ public class ShippingAddress : ValueObject
     public string City { get; init; } = default!;
     public string? State { get; init; }
     public string PostalCode { get; init; } = default!;
-    public string Country { get; init; } = "US";
+    public string Country { get; init; } = "NZ";
     public string? Phone { get; init; }
 
     protected ShippingAddress() { }

@@ -1,5 +1,5 @@
+import Link from 'next/link'
 import { catalogApi } from '@/api/catalog'
-import { EditPlaceholderButton } from '@/components/admin/products/EditPlaceholderButton'
 import { EmptyState } from '@/components/admin/products/EmptyState'
 import { ProductGrid } from '@/components/admin/products/ProductGrid'
 import { ProductHeader } from '@/components/admin/products/ProductHeader'
@@ -8,7 +8,10 @@ export const metadata = { title: 'Products' }
 export const dynamic = 'force-dynamic'
 
 export default async function AdminProductsPage() {
-  const { items: products, totalCount } = await catalogApi.getProducts({ isActive: undefined, maxResultCount: 100 })
+  // isActive omitted — admin sees all products regardless of status
+  const { items: products, totalCount } = await catalogApi.getProducts({ maxResultCount: 100 })
+
+  const activeCount = products.filter((p) => p.isActive).length
 
   return (
     <div className="admin-page admin-stack">
@@ -17,7 +20,16 @@ export default async function AdminProductsPage() {
         subtitle={`${totalCount} product${totalCount !== 1 ? 's' : ''} in catalogue`}
         eyebrow="Admin Catalogue"
         action={
-          <EditPlaceholderButton label="Add Product" variant="primary" />
+          <Link
+            href="/admin/products/new"
+            className="inline-flex items-center gap-2 rounded-full bg-black px-4 py-2 text-sm text-white transition-opacity hover:opacity-85"
+            style={{ letterSpacing: '-0.14px', fontWeight: 480 }}
+          >
+            <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" />
+            </svg>
+            Add Product
+          </Link>
         }
       />
 
@@ -35,19 +47,19 @@ export default async function AdminProductsPage() {
           />
         </div>
         <div className="flex items-center gap-2">
-          <span className="rounded-full border border-black/[0.08] bg-black/[0.02] px-3 py-2 font-mono text-[11px] uppercase tracking-[0.54px] text-black/50">
-            Demo View
+          <span className="rounded-full border border-green-200 bg-green-50 px-3 py-2 font-mono text-[11px] uppercase tracking-[0.54px] text-green-700">
+            {activeCount} active
           </span>
           <span className="rounded-full border border-black/[0.08] bg-white px-3 py-2 font-mono text-[11px] uppercase tracking-[0.54px] text-black/55">
-            {totalCount} live products
+            {totalCount} total
           </span>
         </div>
       </div>
 
       {products.length === 0 ? (
         <EmptyState
-          title="No products to display"
-          description="Products will appear here once the catalogue is seeded or connected to the product management workflow."
+          title="No products yet"
+          description="Add your first product to get started."
         />
       ) : (
         <ProductGrid products={products} />

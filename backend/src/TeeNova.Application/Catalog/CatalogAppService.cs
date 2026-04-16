@@ -67,11 +67,37 @@ public class CatalogAppService : ApplicationService, ICatalogAppService
 
     // ── Admin: Products ───────────────────────────────────────────────────────
 
-    public Task<ProductDto> CreateAsync(CreateProductDto input)
-        => throw new NotImplementedException("CatalogAppService.CreateAsync is not yet implemented.");
+    public async Task<ProductDto> CreateAsync(CreateProductDto input)
+    {
+        var product = new Product(GuidGenerator.Create(), input.Name, input.BasePrice, input.ProductType)
+        {
+            Description = input.Description,
+            IsActive = input.IsActive,
+        };
 
-    public Task<ProductDto> UpdateAsync(Guid id, UpdateProductDto input)
-        => throw new NotImplementedException("CatalogAppService.UpdateAsync is not yet implemented.");
+        await _productRepository.InsertAsync(product, autoSave: true);
+        return await GetAsync(product.Id);
+    }
+
+    public async Task<ProductDto> UpdateAsync(Guid id, UpdateProductDto input)
+    {
+        var product = await _productRepository.GetAsync(id);
+        product.Name = input.Name;
+        product.Description = input.Description;
+        product.BasePrice = input.BasePrice;
+        product.ProductType = input.ProductType;
+        product.IsActive = input.IsActive;
+        await _productRepository.UpdateAsync(product, autoSave: true);
+        return await GetAsync(id);
+    }
+
+    public async Task<ProductDto> UpdateStatusAsync(Guid id, UpdateProductStatusDto input)
+    {
+        var product = await _productRepository.GetAsync(id);
+        product.IsActive = input.IsActive;
+        await _productRepository.UpdateAsync(product, autoSave: true);
+        return await GetAsync(id);
+    }
 
     public Task DeleteAsync(Guid id)
         => throw new NotImplementedException("CatalogAppService.DeleteAsync is not yet implemented.");
