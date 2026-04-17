@@ -26,6 +26,7 @@ export interface ProductImage {
   url: string
   isPrimary: boolean
   sortOrder: number
+  color: string | null
 }
 
 export interface Product {

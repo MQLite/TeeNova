@@ -2,9 +2,9 @@ import { notFound } from 'next/navigation'
 import Link from 'next/link'
 import { catalogApi } from '@/api/catalog'
 import { ProductHeader } from '@/components/admin/products/ProductHeader'
-import { ProductImageGallery } from '@/components/admin/products/ProductImageGallery'
 import { ProductStatusToggle } from '@/components/admin/products/ProductStatusToggle'
-import { VariantBadge } from '@/components/admin/products/VariantBadge'
+import { VariantSection } from '@/components/admin/products/VariantSection'
+import { ImageSection } from '@/components/admin/products/ImageSection'
 
 export const metadata = { title: 'Product Detail' }
 export const dynamic = 'force-dynamic'
@@ -53,7 +53,7 @@ export default async function AdminProductDetailPage({ params }: PageProps) {
         subtitle={`${product.variants.length} variant${product.variants.length !== 1 ? 's' : ''} - ${product.productType}`}
         action={
           <Link
-            href={`/admin/products/${product.id}/edit`}
+            href={`/admin/products/${product.id}/edit?from=detail`}
             className="inline-flex items-center gap-2 rounded-full bg-black px-4 py-2 text-sm text-white transition-opacity hover:opacity-85"
             style={{ letterSpacing: '-0.14px', fontWeight: 480 }}
           >
@@ -67,20 +67,7 @@ export default async function AdminProductDetailPage({ params }: PageProps) {
 
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-[1.15fr_0.85fr]">
         <div className="space-y-6">
-          <section className="rounded-[28px] border border-black/[0.08] bg-white p-5 shadow-card">
-            <div className="mb-4 flex items-center justify-between gap-4">
-              <div>
-                <p className="font-mono text-[11px] uppercase tracking-[0.54px] text-black/45">Image Gallery</p>
-                <h2 className="mt-1 text-lg text-black" style={{ fontWeight: 540, letterSpacing: '-0.26px' }}>
-                  Product imagery
-                </h2>
-              </div>
-              <span className="rounded-full border border-black/[0.08] bg-black/[0.02] px-3 py-1.5 font-mono text-[11px] uppercase tracking-[0.54px] text-black/55">
-                {product.images.length} image{product.images.length !== 1 ? 's' : ''}
-              </span>
-            </div>
-            <ProductImageGallery name={product.name} images={product.images} />
-          </section>
+          <ImageSection productId={product.id} initialImages={product.images} />
 
           <section className="rounded-[28px] border border-black/[0.08] bg-white p-5 shadow-card">
             <p className="font-mono text-[11px] uppercase tracking-[0.54px] text-black/45">Description</p>
@@ -115,26 +102,6 @@ export default async function AdminProductDetailPage({ params }: PageProps) {
           </section>
 
           <section className="rounded-[28px] border border-black/[0.08] bg-white p-5 shadow-card">
-            <div className="flex items-center justify-between gap-4">
-              <div>
-                <p className="font-mono text-[11px] uppercase tracking-[0.54px] text-black/45">Variants</p>
-                <h2 className="mt-1 text-lg text-black" style={{ fontWeight: 540, letterSpacing: '-0.26px' }}>
-                  Sizes and colours
-                </h2>
-              </div>
-              <span className="rounded-full border border-black/[0.08] bg-white px-3 py-1.5 font-mono text-[11px] uppercase tracking-[0.54px] text-black/55">
-                {product.variants.length} total
-              </span>
-            </div>
-
-            <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2">
-              {product.variants.map((variant) => (
-                <VariantBadge key={variant.id} size={variant.size} color={variant.color} />
-              ))}
-            </div>
-          </section>
-
-          <section className="rounded-[28px] border border-black/[0.08] bg-white p-5 shadow-card">
             <p className="font-mono text-[11px] uppercase tracking-[0.54px] text-black/45">Metadata</p>
             <div className="mt-4 space-y-3">
               <div className="rounded-2xl border border-black/[0.06] bg-black/[0.02] px-4 py-3">
@@ -157,6 +124,8 @@ export default async function AdminProductDetailPage({ params }: PageProps) {
           </section>
         </div>
       </div>
+
+      <VariantSection productId={product.id} basePrice={product.basePrice} initialVariants={product.variants} />
     </div>
   )
 }

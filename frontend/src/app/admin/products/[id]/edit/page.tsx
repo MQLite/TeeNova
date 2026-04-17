@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { useParams, useRouter } from 'next/navigation'
+import { useParams, useRouter, useSearchParams } from 'next/navigation'
 import Link from 'next/link'
 import { catalogApi } from '@/api/catalog'
 import { ProductForm, type ProductFormValues } from '@/components/admin/products/ProductForm'
@@ -10,6 +10,8 @@ import type { Product } from '@/types'
 export default function EditProductPage() {
   const { id } = useParams<{ id: string }>()
   const router = useRouter()
+  const searchParams = useSearchParams()
+  const from = searchParams.get('from')
   const [product, setProduct] = useState<Product | null>(null)
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
@@ -19,6 +21,9 @@ export default function EditProductPage() {
       .then(setProduct)
       .finally(() => setLoading(false))
   }, [id])
+
+  const backHref = from === 'list' ? '/admin/products' : `/admin/products/${id}`
+  const backLabel = from === 'list' ? 'Back to Products' : `Back to ${product?.name ?? 'Product'}`
 
   async function handleSubmit(values: ProductFormValues) {
     setSaving(true)
@@ -30,7 +35,7 @@ export default function EditProductPage() {
         productType: values.productType,
         isActive: values.isActive,
       })
-      router.push(`/admin/products/${id}`)
+      router.push(backHref)
     } finally {
       setSaving(false)
     }
@@ -72,13 +77,13 @@ export default function EditProductPage() {
     <div className="admin-page admin-stack">
       <div>
         <Link
-          href={`/admin/products/${id}`}
+          href={backHref}
           className="inline-flex items-center gap-2 font-mono text-[11px] uppercase tracking-[0.54px] text-black/55 transition-colors hover:text-black"
         >
           <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
             <path strokeLinecap="round" strokeLinejoin="round" d="M15 19l-7-7 7-7" />
           </svg>
-          Back to {product.name}
+          {backLabel}
         </Link>
       </div>
 
@@ -97,7 +102,7 @@ export default function EditProductPage() {
           initialValues={initialValues}
           saving={saving}
           onSubmit={handleSubmit}
-          onCancel={() => router.push(`/admin/products/${id}`)}
+          onCancel={() => router.push(backHref)}
         />
       </div>
     </div>

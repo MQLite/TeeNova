@@ -40,6 +40,7 @@ export const apiClient = {
       })
     }
     const res = await fetch(url.toString(), {
+      cache: 'no-store',
       headers: { 'Content-Type': 'application/json' },
     })
     return handleResponse<T>(res)
@@ -59,6 +60,14 @@ export const apiClient = {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
       body: body !== undefined ? JSON.stringify(body) : undefined,
+    })
+    return handleResponse<T>(res)
+  },
+
+  async delete<T>(path: string): Promise<T> {
+    const res = await fetch(`${API_BASE}${path}`, {
+      method: 'DELETE',
+      headers: { 'Content-Type': 'application/json' },
     })
     return handleResponse<T>(res)
   },

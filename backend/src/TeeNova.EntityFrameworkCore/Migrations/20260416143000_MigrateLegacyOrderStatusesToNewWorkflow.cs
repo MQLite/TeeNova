@@ -56,42 +56,8 @@ WHERE [Description] IN (
 
         protected override void Down(MigrationBuilder migrationBuilder)
         {
-            migrationBuilder.Sql(@"
-UPDATE [teenova].[Orders]
-SET [Status] = CASE [Status]
-    WHEN 'Reviewing' THEN 'Confirmed'
-    WHEN 'Printing' THEN 'InProduction'
-    WHEN 'Completed' THEN 'Delivered'
-    ELSE [Status]
-END
-WHERE [Status] IN ('Reviewing', 'Printing', 'Completed');
-");
-
-            migrationBuilder.Sql(@"
-UPDATE [teenova].[OrderTimelineEntries]
-SET [Status] = CASE [Status]
-    WHEN 'Reviewing' THEN 'Confirmed'
-    WHEN 'Printing' THEN 'InProduction'
-    WHEN 'Completed' THEN 'Delivered'
-    ELSE [Status]
-END
-WHERE [Status] IN ('Reviewing', 'Printing', 'Completed');
-");
-
-            migrationBuilder.Sql(@"
-UPDATE [teenova].[OrderTimelineEntries]
-SET [Description] = CASE [Description]
-    WHEN 'Status changed to Reviewing' THEN 'Status changed to Confirmed'
-    WHEN 'Status changed to Printing' THEN 'Status changed to InProduction'
-    WHEN 'Status changed to Completed' THEN 'Status changed to Delivered'
-    ELSE [Description]
-END
-WHERE [Description] IN (
-    'Status changed to Reviewing',
-    'Status changed to Printing',
-    'Status changed to Completed'
-);
-");
+            throw new NotSupportedException(
+                "This migration cannot be safely rolled back because it normalizes legacy order statuses in place.");
         }
     }
 }

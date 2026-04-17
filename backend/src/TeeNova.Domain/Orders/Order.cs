@@ -18,9 +18,9 @@ public class Order : FullAuditedAggregateRoot<Guid>
     {
         [OrderStatus.Pending]      = [OrderStatus.Paid,         OrderStatus.Cancelled],
         [OrderStatus.Paid]         = [OrderStatus.Reviewing,    OrderStatus.Cancelled],
-        [OrderStatus.Reviewing]    = [OrderStatus.Printing,     OrderStatus.Cancelled],
-        [OrderStatus.Printing]     = [OrderStatus.Ready,        OrderStatus.Cancelled],
-        [OrderStatus.Ready]        = [OrderStatus.Completed],
+        [OrderStatus.Reviewing]    = [OrderStatus.Cancelled],
+        [OrderStatus.Printing]     = [OrderStatus.Cancelled],
+        [OrderStatus.Ready]        = [],
         [OrderStatus.Completed]    = [],
         // ── Legacy paths kept for compatibility ──────────────────────────────
         // ── Terminal ─────────────────────────────────────────────────────────

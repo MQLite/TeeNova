@@ -168,6 +168,7 @@ public class OrderAppService : ApplicationService, IOrderAppService
     public async Task<OrderDto> UpdateAdminNotesAsync(Guid id, UpdateAdminNotesDto input)
     {
         var order = await _orderRepository.GetAsync(id);
+        EnsureOrderMutable(order);
         order.AdminNotes = input.AdminNotes;
         await _orderRepository.UpdateAsync(order, autoSave: true);
         return await GetAsync(id);
@@ -242,6 +243,7 @@ public class OrderAppService : ApplicationService, IOrderAppService
     public async Task<OrderDto> UpdateChecklistAsync(Guid id, UpdateOrderChecklistDto input)
     {
         var order = await _orderRepository.GetAsync(id);
+        EnsureOrderMutable(order);
         order.UpdatePreparationChecklist(
             input.IsDesignReviewed,
             input.IsPrintPositionConfirmed,
@@ -375,6 +377,12 @@ public class OrderAppService : ApplicationService, IOrderAppService
 
     private async Task<OrderDto> ChangeStatusAsync(Guid id, OrderStatus newStatus)
     {
+        if (newStatus is OrderStatus.Printing or OrderStatus.Ready or OrderStatus.Completed)
+        {
+            throw new Volo.Abp.BusinessException("TeeNova:Order:StatusRequiresDedicatedAction")
+                .WithData("RequestedStatus", newStatus);
+        }
+
         var order = await _orderRepository.GetAsync(id);
         order.UpdateStatus(newStatus);
         await _orderRepository.UpdateAsync(order, autoSave: true);
@@ -383,5 +391,14 @@ public class OrderAppService : ApplicationService, IOrderAppService
             $"Status changed to {newStatus}", newStatus);
 
         return await GetAsync(id);
+    }
+
+    private static void EnsureOrderMutable(Order order)
+    {
+        if (order.Status == OrderStatus.Cancelled)
+        {
+            throw new Volo.Abp.BusinessException("TeeNova:Order:CancelledOrderImmutable")
+                .WithData("OrderId", order.Id);
+        }
     }
 }

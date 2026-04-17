@@ -60,5 +60,8 @@ public class ProductEntityTypeConfiguration :
         builder.Property(i => i.Url)
             .IsRequired()
             .HasMaxLength(CatalogConsts.MaxImageUrlLength);
+
+        builder.Property(i => i.Color)
+            .HasMaxLength(CatalogConsts.MaxColorLength);
     }
 }

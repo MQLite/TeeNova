@@ -1,11 +1,13 @@
+import type { ReactNode } from 'react'
 import { EmptyState as BaseEmptyState } from '@/components/admin/EmptyState'
 
 interface ProductEmptyStateProps {
   title: string
   description: string
+  action?: ReactNode
 }
 
-export function EmptyState({ title, description }: ProductEmptyStateProps) {
+export function EmptyState({ title, description, action }: ProductEmptyStateProps) {
   return (
     <BaseEmptyState
       icon={
@@ -15,6 +17,7 @@ export function EmptyState({ title, description }: ProductEmptyStateProps) {
       }
       title={title}
       description={description}
+      action={action}
     />
   )
 }

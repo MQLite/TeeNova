@@ -33,4 +33,5 @@ public class ProductImageDto
     public string Url { get; set; } = default!;
     public bool IsPrimary { get; set; }
     public int SortOrder { get; set; }
+    public string? Color { get; set; }
 }

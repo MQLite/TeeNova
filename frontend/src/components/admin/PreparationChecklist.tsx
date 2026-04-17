@@ -52,10 +52,12 @@ const ITEMS: Array<{ key: ChecklistKey; label: string; description: string }> = 
 export function PreparationChecklist({
   order,
   saving,
+  disabled = false,
   onChange,
 }: {
   order: Order
   saving: boolean
+  disabled?: boolean
   onChange: (payload: Pick<Order, ChecklistKey>) => void
 }) {
   return (
@@ -72,13 +74,18 @@ export function PreparationChecklist({
         )}
       </CardHeader>
       <CardBody className="space-y-3">
+        {disabled && (
+          <p className="text-xs text-black/45" style={{ letterSpacing: '-0.14px' }}>
+            Checklist is locked while the order is cancelled.
+          </p>
+        )}
         {ITEMS.map((item) => (
           <ChecklistItem
             key={item.key}
             label={item.label}
             description={item.description}
             checked={order[item.key]}
-            disabled={saving}
+            disabled={saving || disabled}
             onChange={(checked) => onChange({ ...pickChecklist(order), [item.key]: checked })}
           />
         ))}
