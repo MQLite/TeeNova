@@ -1,5 +1,7 @@
 using System;
+using System.Threading;
 using System.Threading.Tasks;
+using Microsoft.AspNetCore.Http;
 using TeeNova.Catalog.Dtos;
 using Volo.Abp.Application.Dtos;
 using Volo.Abp.Application.Services;
@@ -17,6 +19,12 @@ public interface ICatalogAppService : IApplicationService
     Task<ProductDto> UpdateAsync(Guid id, UpdateProductDto input);
     Task<ProductDto> UpdateStatusAsync(Guid id, UpdateProductStatusDto input);
     Task DeleteAsync(Guid id);
+
+    // ── Admin: Images ─────────────────────────────────────────────────────────
+    Task<ProductImageDto> UploadProductImageAsync(Guid productId, IFormFile file, CancellationToken cancellationToken = default);
+    Task<ProductImageDto> UpdateProductImageAsync(Guid productId, Guid imageId, UpdateProductImageDto input);
+    Task SetPrimaryProductImageAsync(Guid productId, Guid imageId);
+    Task DeleteProductImageAsync(Guid productId, Guid imageId);
 
     // ── Admin: Variants ───────────────────────────────────────────────────────
     Task<ProductVariantDto> CreateVariantAsync(Guid productId, CreateProductVariantDto input);
