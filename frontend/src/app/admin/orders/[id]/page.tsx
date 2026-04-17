@@ -717,6 +717,7 @@ export default function AdminOrderDetailPage() {
           <NotesPanel
             orderId={order.id}
             initialNotes={order.adminNotes}
+            disabled={isCancelled}
             onSaved={(notes) => setOrder((prev) => prev ? { ...prev, adminNotes: notes } : prev)}
           />
 
@@ -725,6 +726,7 @@ export default function AdminOrderDetailPage() {
           <PreparationChecklist
             order={order}
             saving={savingChecklist}
+            disabled={isCancelled}
             onChange={handleChecklistUpdate}
           />
 

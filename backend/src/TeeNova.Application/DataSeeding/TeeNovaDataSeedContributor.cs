@@ -70,11 +70,7 @@ public class TeeNovaDataSeedContributor : IDataSeedContributor, ITransientDepend
 
     public async Task SeedAsync(DataSeedContext context)
     {
-        var baseUrl = _configuration["App:SelfUrl"]?.TrimEnd('/') ?? "https://localhost:44300";
-
-        await SeedProductsAsync(baseUrl);
-        await SeedAssetsAsync(baseUrl);
-        await SeedOrdersAsync(baseUrl);
+        await Task.CompletedTask;
     }
 
     // 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
