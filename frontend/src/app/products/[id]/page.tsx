@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { useParams } from 'next/navigation'
 import Link from 'next/link'
 import { catalogApi } from '@/api/catalog'
@@ -9,6 +9,7 @@ import { filesApi } from '@/api/files'
 import { useCartStore } from '@/features/cart/cart-store'
 import { PrintPositionSelector } from '@/components/products/PrintPositionSelector'
 import type { Product, PrintPositionOption, PrintPosition, UploadedAsset } from '@/types'
+import { filterImagesForColor } from '@/lib/image-utils'
 
 export default function ProductDetailPage() {
   const { id } = useParams<{ id: string }>()
@@ -25,12 +26,20 @@ export default function ProductDetailPage() {
   const [addedToCart, setAddedToCart] = useState(false)
   const [variantQtys, setVariantQtys] = useState<Record<string, number>>({})
   const [focusedVariantId, setFocusedVariantId] = useState<string | null>(null)
+  const [selectedColor, setSelectedColor] = useState<string | null>(null)
+  const [selectedImageId, setSelectedImageId] = useState<string | null>(null)
+
+  const displayedImages = useMemo(
+    () => (product ? filterImagesForColor(product.images, selectedColor) : []),
+    [product, selectedColor],
+  )
 
   useEffect(() => {
     Promise.all([catalogApi.getProduct(id), customizationApi.getPrintPositions()])
       .then(([p, pos]) => {
         setProduct(p)
         setPositions(pos)
+        setSelectedColor(p.variants[0]?.color ?? null)
         const front = pos.find((p) => p.name === 'FrontCenter')
         if (front) setSelectedPositions([front.value])
       })
@@ -107,7 +116,10 @@ export default function ProductDetailPage() {
     )
   }
 
-  const primaryImage = product.images.find((i) => i.isPrimary) ?? product.images[0]
+  const activeImage =
+    (selectedImageId ? displayedImages.find((i) => i.id === selectedImageId) : null) ??
+    displayedImages[0] ??
+    null
   const uniqueColors = [...new Set(product.variants.map((v) => v.color))]
   const uniqueSizes = [...new Set(product.variants.map((v) => v.size))]
   const totalQty = Object.values(variantQtys).reduce((s, q) => s + (q > 0 ? q : 0), 0)
@@ -139,10 +151,32 @@ export default function ProductDetailPage() {
 
           {/* ── Left: Image ── */}
           <div className="lg:sticky lg:top-24 lg:self-start">
+
+            {/* Color selector pills */}
+            {uniqueColors.length > 0 && (
+              <div className="mb-3 flex flex-wrap gap-2">
+                {uniqueColors.map((color) => (
+                  <button
+                    key={color}
+                    type="button"
+                    onClick={() => { setSelectedColor(color); setSelectedImageId(null) }}
+                    className={`rounded-full border px-3 py-1.5 font-mono text-[11px] uppercase tracking-[0.54px] transition-colors ${
+                      selectedColor === color
+                        ? 'border-black bg-black text-white'
+                        : 'border-black/[0.12] bg-white text-black/55 hover:border-black/30 hover:text-black'
+                    }`}
+                  >
+                    {color}
+                  </button>
+                ))}
+              </div>
+            )}
+
+            {/* Main image */}
             <div className="card overflow-hidden">
-              {primaryImage ? (
+              {activeImage ? (
                 // eslint-disable-next-line @next/next/no-img-element
-                <img src={primaryImage.url} alt={product.name}
+                <img src={activeImage.url} alt={product.name}
                   className="h-full w-full object-contain p-8" style={{ minHeight: 360 }} />
               ) : (
                 <div className="flex items-center justify-center bg-black/[0.02]" style={{ minHeight: 360 }}>
@@ -152,6 +186,30 @@ export default function ProductDetailPage() {
                 </div>
               )}
             </div>
+
+            {/* Thumbnail strip — only when filtered set has multiple images */}
+            {displayedImages.length > 1 && (
+              <div className="mt-3 grid grid-cols-4 gap-2">
+                {displayedImages.map((img) => {
+                  const isActive = img.id === activeImage?.id
+                  return (
+                    <button
+                      key={img.id}
+                      type="button"
+                      onClick={() => setSelectedImageId(img.id)}
+                      className={`relative overflow-hidden rounded-2xl border bg-white transition-all ${
+                        isActive ? 'border-black shadow-sm' : 'border-black/[0.08] hover:border-black/[0.20]'
+                      }`}
+                    >
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                      <img src={img.url} alt="" className="aspect-square h-full w-full object-contain p-2" />
+                    </button>
+                  )
+                })}
+              </div>
+            )}
+
+            {/* Feature tags */}
             <div className="mt-3 grid grid-cols-3 gap-2">
               {['Premium cotton', 'Vivid print', 'Fast ship'].map((t) => (
                 <div key={t} className="card flex items-center justify-center py-2.5 text-center">

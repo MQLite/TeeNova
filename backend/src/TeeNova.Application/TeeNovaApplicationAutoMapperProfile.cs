@@ -4,6 +4,8 @@ using TeeNova.Catalog.Dtos;
 using TeeNova.Customization;
 using TeeNova.Orders;
 using TeeNova.Orders.Dtos;
+using TeeNova.PrintConfig;
+using TeeNova.PrintConfig.Dtos;
 
 namespace TeeNova;
 
@@ -29,6 +31,10 @@ public class TeeNovaApplicationAutoMapperProfile : Profile
                     .FirstOrDefault()));
         CreateMap<ProductVariant, ProductVariantDto>();
         CreateMap<ProductImage, ProductImageDto>();
+
+        // PrintConfig
+        CreateMap<PrintArea, PrintAreaDto>();
+        CreateMap<PrintSize, PrintSizeDto>();
 
         // Orders
         CreateMap<Order, OrderDto>()
