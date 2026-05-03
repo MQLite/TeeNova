@@ -2,6 +2,7 @@ using Microsoft.EntityFrameworkCore;
 using TeeNova.Catalog;
 using TeeNova.Customization;
 using TeeNova.Orders;
+using TeeNova.PrintConfig;
 using TeeNova.Production;
 using Volo.Abp.Data;
 using Volo.Abp.EntityFrameworkCore;
@@ -24,6 +25,10 @@ public class TeeNovaDbContext : AbpDbContext<TeeNovaDbContext>
     public DbSet<OrderItem> OrderItems { get; set; }
     public DbSet<OrderItemPositionAsset> OrderItemPositionAssets { get; set; }
     public DbSet<OrderTimelineEntry> OrderTimelineEntries { get; set; }
+
+    // PrintConfig
+    public DbSet<PrintArea> PrintAreas { get; set; }
+    public DbSet<PrintSize> PrintSizes { get; set; }
 
     // Production
     public DbSet<ProductionJob> ProductionJobs { get; set; }

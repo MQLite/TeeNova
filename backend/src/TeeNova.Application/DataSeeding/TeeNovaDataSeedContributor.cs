@@ -7,6 +7,7 @@ using Microsoft.Extensions.Configuration;
 using TeeNova.Catalog;
 using TeeNova.Customization;
 using TeeNova.Orders;
+using TeeNova.PrintConfig;
 using Volo.Abp;
 using Volo.Abp.Data;
 using Volo.Abp.DependencyInjection;
@@ -48,6 +49,8 @@ public class TeeNovaDataSeedContributor : IDataSeedContributor, ITransientDepend
     private readonly IRepository<Product, Guid>       _productRepository;
     private readonly IRepository<Order, Guid>         _orderRepository;
     private readonly IRepository<UploadedAsset, Guid> _assetRepository;
+    private readonly IRepository<PrintArea, Guid>     _printAreaRepository;
+    private readonly IRepository<PrintSize, Guid>     _printSizeRepository;
     private readonly IDataFilter _dataFilter;
     private readonly IConfiguration _configuration;
     private readonly IClock _clock;
@@ -56,26 +59,88 @@ public class TeeNovaDataSeedContributor : IDataSeedContributor, ITransientDepend
         IRepository<Product, Guid>       productRepository,
         IRepository<Order, Guid>         orderRepository,
         IRepository<UploadedAsset, Guid> assetRepository,
+        IRepository<PrintArea, Guid>     printAreaRepository,
+        IRepository<PrintSize, Guid>     printSizeRepository,
         IDataFilter dataFilter,
         IConfiguration configuration,
         IClock clock)
     {
-        _productRepository = productRepository;
-        _orderRepository   = orderRepository;
-        _assetRepository   = assetRepository;
-        _dataFilter        = dataFilter;
-        _configuration     = configuration;
-        _clock             = clock;
+        _productRepository   = productRepository;
+        _orderRepository     = orderRepository;
+        _assetRepository     = assetRepository;
+        _printAreaRepository = printAreaRepository;
+        _printSizeRepository = printSizeRepository;
+        _dataFilter          = dataFilter;
+        _configuration       = configuration;
+        _clock               = clock;
     }
 
     public async Task SeedAsync(DataSeedContext context)
     {
-        await Task.CompletedTask;
+        await SeedPrintAreasAsync();
+        await SeedPrintSizesAsync();
     }
 
     // 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
     // Products
     // 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
+
+    private static readonly (string Name, string Code, int LegacyValue)[] PrintAreaSeedData =
+    [
+        ("Front Center",  "FRONT_CENTER",  0),
+        ("Back Center",   "BACK_CENTER",   1),
+        ("Left Chest",    "LEFT_CHEST",    2),
+        ("Right Chest",   "RIGHT_CHEST",   3),
+        ("Left Sleeve",   "LEFT_SLEEVE",   4),
+        ("Right Sleeve",  "RIGHT_SLEEVE",  5),
+        ("Neck Label",    "NECK_LABEL",    6),
+    ];
+
+    private static readonly (string Name, string Code, int SortOrder)[] PrintSizeSeedData =
+    [
+        ("A5",          "A5",          0),
+        ("A4",          "A4",          1),
+        ("A3",          "A3",          2),
+        ("Small Chest", "SMALL_CHEST", 3),
+        ("Large Back",  "LARGE_BACK",  4),
+    ];
+
+    private async Task SeedPrintAreasAsync()
+    {
+        foreach (var (name, code, legacyValue) in PrintAreaSeedData)
+        {
+            if (!await _printAreaRepository.AnyAsync(a => a.Code == code))
+            {
+                await _printAreaRepository.InsertAsync(
+                    new PrintArea(Guid.NewGuid(), name, code)
+                    {
+                        LegacyPositionValue = legacyValue,
+                        SortOrder           = legacyValue,
+                        BasePrice           = 0m,
+                        IsActive            = true,
+                    },
+                    autoSave: true);
+            }
+        }
+    }
+
+    private async Task SeedPrintSizesAsync()
+    {
+        foreach (var (name, code, sortOrder) in PrintSizeSeedData)
+        {
+            if (!await _printSizeRepository.AnyAsync(s => s.Code == code))
+            {
+                await _printSizeRepository.InsertAsync(
+                    new PrintSize(Guid.NewGuid(), name, code)
+                    {
+                        SortOrder = sortOrder,
+                        BasePrice = 0m,
+                        IsActive  = true,
+                    },
+                    autoSave: true);
+            }
+        }
+    }
 
     private async Task SeedProductsAsync(string baseUrl)
     {
