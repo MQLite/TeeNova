@@ -49,6 +49,57 @@ export interface PrintPositionOption {
   displayLabel: string
 }
 
+export interface PrintArea {
+  id: string
+  name: string
+  code: string
+  basePrice: number
+  isActive: boolean
+  sortOrder: number
+  legacyPositionValue?: number | null
+}
+
+export interface PrintSize {
+  id: string
+  name: string
+  code: string
+  basePrice: number
+  isActive: boolean
+  sortOrder: number
+}
+
+export interface PriceCalculationPrintItem {
+  printAreaId: string
+  printSizeId: string
+}
+
+export interface PriceCalculationRequest {
+  productId: string
+  variantId: string
+  quantity: number
+  prints: PriceCalculationPrintItem[]
+}
+
+export interface PrintAddOnPrice {
+  printAreaId: string
+  printAreaName: string
+  printAreaPrice: number
+  printSizeId: string
+  printSizeName: string
+  printSizePrice: number
+  linePrice: number
+}
+
+export interface PriceCalculationResponse {
+  productBasePrice: number
+  variantAdjustment: number
+  printAddOns: PrintAddOnPrice[]
+  unitPrice: number
+  quantity: number
+  lineTotal: number
+  currency: string
+}
+
 export type PrintPosition =
   | 'FrontCenter'
   | 'BackCenter'
@@ -123,6 +174,20 @@ export interface OrderItemPositionAsset {
   fileSizeBytes: number | null
 }
 
+export interface OrderItemPrint {
+  id?: string
+  printAreaId: string
+  printAreaName: string
+  printAreaCode?: string
+  printAreaPrice?: number
+  printSizeId: string
+  printSizeName: string
+  printSizeCode?: string
+  printSizePrice?: number
+  sortOrder?: number
+  notes?: string | null
+}
+
 export interface OrderItem {
   id: string
   productId: string
@@ -133,6 +198,7 @@ export interface OrderItem {
   unitPrice: number
   lineTotal: number
   positionAssets: OrderItemPositionAsset[]
+  prints?: OrderItemPrint[]
 }
 
 export interface Order {
@@ -167,13 +233,24 @@ export interface PrintPositionUpload {
   designNote?: string
 }
 
+export interface CartItemPrint {
+  printAreaId: string
+  printAreaName: string
+  printSizeId: string
+  printSizeName: string
+}
+
 export interface CartItem {
+  cartItemKey: string
   productId: string
   productVariantId: string
   productName: string
   variantLabel: string
+  color?: string
+  size?: string
   unitPrice: number
   quantity: number
+  prints?: CartItemPrint[]
   printPositions?: PrintPositionUpload[]
 }
 

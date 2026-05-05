@@ -6,7 +6,8 @@ namespace TeeNova.EntityFrameworkCore.PrintConfig;
 
 public class PrintConfigEntityTypeConfiguration :
     IEntityTypeConfiguration<PrintArea>,
-    IEntityTypeConfiguration<PrintSize>
+    IEntityTypeConfiguration<PrintSize>,
+    IEntityTypeConfiguration<PrintAreaSizeOption>
 {
     public void Configure(EntityTypeBuilder<PrintArea> builder)
     {
@@ -33,5 +34,27 @@ public class PrintConfigEntityTypeConfiguration :
         builder.Property(s => s.BasePrice).HasColumnType("decimal(18,4)");
 
         builder.HasIndex(s => s.Code).IsUnique();
+    }
+
+    public void Configure(EntityTypeBuilder<PrintAreaSizeOption> builder)
+    {
+        builder.ToTable("PrintAreaSizeOptions");
+
+        builder.Property(o => o.PrintAreaId).IsRequired();
+        builder.Property(o => o.PrintSizeId).IsRequired();
+        builder.Property(o => o.IsActive).IsRequired();
+        builder.Property(o => o.SortOrder).IsRequired();
+
+        builder.HasIndex(o => new { o.PrintAreaId, o.PrintSizeId }).IsUnique();
+
+        builder.HasOne<PrintArea>()
+            .WithMany()
+            .HasForeignKey(o => o.PrintAreaId)
+            .OnDelete(DeleteBehavior.Restrict);
+
+        builder.HasOne<PrintSize>()
+            .WithMany()
+            .HasForeignKey(o => o.PrintSizeId)
+            .OnDelete(DeleteBehavior.Restrict);
     }
 }

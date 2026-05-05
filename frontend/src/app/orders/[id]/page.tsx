@@ -42,6 +42,10 @@ function getPrimaryPreview(item: OrderItem) {
   return getPositionAssets(item)[0]?.uploadedAssetUrl ?? null
 }
 
+function getPrintSummary(item: OrderItem) {
+  return item.prints ?? []
+}
+
 export default async function OrderDetailPage({ params }: PageProps) {
   const { id } = await params
   const order = await ordersApi.getById(id)
@@ -114,6 +118,15 @@ export default async function OrderDetailPage({ params }: PageProps) {
                     <p className="text-sm text-black/55" style={{ letterSpacing: '-0.14px' }}>
                       {item.variantLabel} × {item.quantity}
                     </p>
+                    {getPrintSummary(item).length > 0 && (
+                      <div className="mt-2 flex flex-wrap gap-1">
+                        {getPrintSummary(item).map((print) => (
+                          <span key={`${print.printAreaId}:${print.printSizeId}`} className="inline-flex items-center rounded-full border border-black/[0.08] px-2 py-0.5 font-mono text-[10px] uppercase tracking-[0.54px] text-black/55">
+                            {print.printAreaName} · {print.printSizeName}
+                          </span>
+                        ))}
+                      </div>
+                    )}
 
                     {getPositionAssets(item).length > 0 && (
                       <div className="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-2">

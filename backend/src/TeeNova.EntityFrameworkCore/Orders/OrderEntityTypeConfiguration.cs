@@ -1,6 +1,7 @@
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Metadata.Builders;
 using TeeNova.Orders;
+using TeeNova.PrintConfig;
 
 namespace TeeNova.EntityFrameworkCore.Orders;
 
@@ -8,6 +9,7 @@ public class OrderEntityTypeConfiguration :
     IEntityTypeConfiguration<Order>,
     IEntityTypeConfiguration<OrderItem>,
     IEntityTypeConfiguration<OrderItemPositionAsset>,
+    IEntityTypeConfiguration<OrderItemPrint>,
     IEntityTypeConfiguration<OrderTimelineEntry>
 {
     public void Configure(EntityTypeBuilder<Order> builder)
@@ -91,6 +93,11 @@ public class OrderEntityTypeConfiguration :
             .WithOne()
             .HasForeignKey(p => p.OrderItemId)
             .OnDelete(DeleteBehavior.Cascade);
+
+        builder.HasMany(i => i.Prints)
+            .WithOne()
+            .HasForeignKey(p => p.OrderItemId)
+            .OnDelete(DeleteBehavior.Cascade);
     }
 
     public void Configure(EntityTypeBuilder<OrderItemPositionAsset> builder)
@@ -105,6 +112,47 @@ public class OrderEntityTypeConfiguration :
         builder.Property(p => p.DesignNote).HasMaxLength(2000);
 
         builder.HasIndex(p => new { p.OrderItemId, p.Position }).IsUnique();
+    }
+
+    public void Configure(EntityTypeBuilder<OrderItemPrint> builder)
+    {
+        builder.ToTable("OrderItemPrints");
+
+        // FK to PrintArea / PrintSize — no cascade (config data must not cascade into orders)
+        builder.HasOne<PrintArea>()
+            .WithMany()
+            .HasForeignKey(p => p.PrintAreaId)
+            .OnDelete(DeleteBehavior.Restrict);
+
+        builder.HasOne<PrintSize>()
+            .WithMany()
+            .HasForeignKey(p => p.PrintSizeId)
+            .OnDelete(DeleteBehavior.Restrict);
+
+        // Snapshot strings — reuse PrintConfig max lengths for consistency
+        builder.Property(p => p.PrintAreaName)
+            .IsRequired()
+            .HasMaxLength(PrintConfigConsts.MaxNameLength);
+        builder.Property(p => p.PrintAreaCode)
+            .IsRequired()
+            .HasMaxLength(PrintConfigConsts.MaxCodeLength);
+        builder.Property(p => p.PrintAreaPrice)
+            .HasColumnType("decimal(18,4)");
+
+        builder.Property(p => p.PrintSizeName)
+            .IsRequired()
+            .HasMaxLength(PrintConfigConsts.MaxNameLength);
+        builder.Property(p => p.PrintSizeCode)
+            .IsRequired()
+            .HasMaxLength(PrintConfigConsts.MaxCodeLength);
+        builder.Property(p => p.PrintSizePrice)
+            .HasColumnType("decimal(18,4)");
+
+        builder.Property(p => p.Notes).HasMaxLength(2000);
+
+        builder.HasIndex(p => p.OrderItemId);
+        builder.HasIndex(p => p.PrintAreaId);
+        builder.HasIndex(p => p.PrintSizeId);
     }
 
     public void Configure(EntityTypeBuilder<OrderTimelineEntry> builder)
