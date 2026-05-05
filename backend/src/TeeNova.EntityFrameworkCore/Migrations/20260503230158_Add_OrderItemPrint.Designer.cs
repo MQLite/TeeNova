@@ -3,6 +3,7 @@ using System;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Metadata;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using TeeNova.EntityFrameworkCore;
 using Volo.Abp.EntityFrameworkCore;
@@ -12,9 +13,11 @@ using Volo.Abp.EntityFrameworkCore;
 namespace TeeNova.Migrations
 {
     [DbContext(typeof(TeeNovaDbContext))]
-    partial class TeeNovaDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260503230158_Add_OrderItemPrint")]
+    partial class Add_OrderItemPrint
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -558,33 +561,6 @@ namespace TeeNova.Migrations
                     b.ToTable("PrintAreas", "teenova");
                 });
 
-            modelBuilder.Entity("TeeNova.PrintConfig.PrintAreaSizeOption", b =>
-                {
-                    b.Property<Guid>("Id")
-                        .HasColumnType("uniqueidentifier");
-
-                    b.Property<bool>("IsActive")
-                        .HasColumnType("bit");
-
-                    b.Property<Guid>("PrintAreaId")
-                        .HasColumnType("uniqueidentifier");
-
-                    b.Property<Guid>("PrintSizeId")
-                        .HasColumnType("uniqueidentifier");
-
-                    b.Property<int>("SortOrder")
-                        .HasColumnType("int");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("PrintSizeId");
-
-                    b.HasIndex("PrintAreaId", "PrintSizeId")
-                        .IsUnique();
-
-                    b.ToTable("PrintAreaSizeOptions", "teenova");
-                });
-
             modelBuilder.Entity("TeeNova.PrintConfig.PrintSize", b =>
                 {
                     b.Property<Guid>("Id")
@@ -779,21 +755,6 @@ namespace TeeNova.Migrations
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
 
-                    b.HasOne("TeeNova.PrintConfig.PrintArea", null)
-                        .WithMany()
-                        .HasForeignKey("PrintAreaId")
-                        .OnDelete(DeleteBehavior.Restrict)
-                        .IsRequired();
-
-                    b.HasOne("TeeNova.PrintConfig.PrintSize", null)
-                        .WithMany()
-                        .HasForeignKey("PrintSizeId")
-                        .OnDelete(DeleteBehavior.Restrict)
-                        .IsRequired();
-                });
-
-            modelBuilder.Entity("TeeNova.PrintConfig.PrintAreaSizeOption", b =>
-                {
                     b.HasOne("TeeNova.PrintConfig.PrintArea", null)
                         .WithMany()
                         .HasForeignKey("PrintAreaId")

@@ -8,6 +8,11 @@ export interface CreateOrderItemPositionPayload {
   designNote?: string
 }
 
+export interface CreateOrderItemPrintPayload {
+  printAreaId: string
+  printSizeId: string
+}
+
 export interface CreateOrderPayload {
   customerEmail: string
   shippingAddress: ShippingAddress
@@ -16,6 +21,7 @@ export interface CreateOrderPayload {
     productVariantId: string
     quantity: number
     printPositions: CreateOrderItemPositionPayload[]
+    prints?: CreateOrderItemPrintPayload[]
   }[]
   notes?: string
 }

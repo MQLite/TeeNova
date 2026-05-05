@@ -2,6 +2,11 @@
 
 import Link from 'next/link'
 import { useCartStore } from '@/features/cart/cart-store'
+import type { CartItem } from '@/types'
+
+function getPrintSummary(item: CartItem) {
+  return item.prints ?? []
+}
 
 export default function CartPage() {
   const { items, removeItem, updateQuantity, totalPrice } = useCartStore()
@@ -47,7 +52,7 @@ export default function CartPage() {
         <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
           <div className="space-y-4 lg:col-span-2">
             {items.map((item, idx) => (
-              <div key={item.productVariantId} className="card overflow-hidden">
+              <div key={item.cartItemKey} className="card overflow-hidden">
                 <div className="flex gap-4 p-5">
                   <div className="flex h-20 w-20 flex-shrink-0 items-center justify-center overflow-hidden rounded-lg bg-black/[0.03]">
                     {item.printPositions?.[0]?.uploadedAssetUrl ? (
@@ -73,6 +78,16 @@ export default function CartPage() {
                         <p className="mt-0.5 text-sm text-black/55" style={{ letterSpacing: '-0.14px' }}>
                           {item.variantLabel}
                         </p>
+                        {getPrintSummary(item).length > 0 ? (
+                          <div className="mt-2 flex flex-wrap gap-1">
+                            {getPrintSummary(item).map((print) => (
+                              <span key={`${print.printAreaId}:${print.printSizeId}`}
+                                className="inline-flex items-center rounded-full border border-black/[0.08] px-2 py-0.5 font-mono text-[10px] uppercase tracking-[0.54px] text-black/55">
+                                {print.printAreaName} · {print.printSizeName}
+                              </span>
+                            ))}
+                          </div>
+                        ) : null}
                         {item.printPositions && item.printPositions.length > 0 ? (
                           <div className="mt-1 flex flex-wrap gap-1">
                             {item.printPositions.map((pp) => (
@@ -85,7 +100,7 @@ export default function CartPage() {
                         ) : null}
                       </div>
                       <button
-                        onClick={() => removeItem(item.productVariantId)}
+                        onClick={() => removeItem(item.cartItemKey)}
                         className="flex-shrink-0 rounded-full p-1.5 text-black/25 transition-colors hover:bg-red-50 hover:text-red-500"
                         title="Remove"
                       >
@@ -99,14 +114,14 @@ export default function CartPage() {
                       <div className="flex items-center gap-0 rounded-full border border-black/[0.10]">
                         <button
                           className="px-3 py-1.5 text-base text-black/50 transition-colors hover:text-black"
-                          onClick={() => updateQuantity(item.productVariantId, item.quantity - 1)}
+                          onClick={() => updateQuantity(item.cartItemKey, item.quantity - 1)}
                         >−</button>
                         <span className="min-w-[2rem] text-center text-sm text-black" style={{ fontWeight: 480 }}>
                           {item.quantity}
                         </span>
                         <button
                           className="px-3 py-1.5 text-base text-black/50 transition-colors hover:text-black"
-                          onClick={() => updateQuantity(item.productVariantId, item.quantity + 1)}
+                          onClick={() => updateQuantity(item.cartItemKey, item.quantity + 1)}
                         >+</button>
                       </div>
                       <span className="text-base text-black" style={{ fontWeight: 540, letterSpacing: '-0.26px' }}>

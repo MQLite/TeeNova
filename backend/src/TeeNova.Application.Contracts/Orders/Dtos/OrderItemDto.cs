@@ -14,4 +14,5 @@ public class OrderItemDto
     public decimal UnitPrice { get; set; }
     public decimal LineTotal => UnitPrice * Quantity;
     public List<OrderItemPositionAssetDto> PositionAssets { get; set; } = new();
+    public List<OrderItemPrintDto> Prints { get; set; } = new();
 }

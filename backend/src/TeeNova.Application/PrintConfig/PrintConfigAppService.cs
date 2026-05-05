@@ -6,21 +6,25 @@ using Microsoft.EntityFrameworkCore;
 using TeeNova.PrintConfig.Dtos;
 using Volo.Abp;
 using Volo.Abp.Application.Services;
+using Volo.Abp.Domain.Entities;
 using Volo.Abp.Domain.Repositories;
 
 namespace TeeNova.PrintConfig;
 
 public class PrintConfigAppService : ApplicationService, IPrintConfigAppService
 {
-    private readonly IRepository<PrintArea, Guid> _areaRepository;
-    private readonly IRepository<PrintSize, Guid> _sizeRepository;
+    private readonly IRepository<PrintArea, Guid>           _areaRepository;
+    private readonly IRepository<PrintSize, Guid>           _sizeRepository;
+    private readonly IRepository<PrintAreaSizeOption, Guid> _optionRepository;
 
     public PrintConfigAppService(
-        IRepository<PrintArea, Guid> areaRepository,
-        IRepository<PrintSize, Guid> sizeRepository)
+        IRepository<PrintArea, Guid>           areaRepository,
+        IRepository<PrintSize, Guid>           sizeRepository,
+        IRepository<PrintAreaSizeOption, Guid> optionRepository)
     {
-        _areaRepository = areaRepository;
-        _sizeRepository = sizeRepository;
+        _areaRepository   = areaRepository;
+        _sizeRepository   = sizeRepository;
+        _optionRepository = optionRepository;
     }
 
     // ── PrintArea ──────────────────────────────────────────────────────────────
@@ -166,5 +170,109 @@ public class PrintConfigAppService : ApplicationService, IPrintConfigAppService
         var size = await _sizeRepository.GetAsync(id);
         size.IsActive = false;
         await _sizeRepository.UpdateAsync(size, autoSave: true);
+    }
+
+    // ── PrintAreaSizeOption ────────────────────────────────────────────────────
+
+    public async Task<List<PrintAreaSizeOptionDto>> GetAreaSizesAsync(Guid areaId, bool includeInactive = false)
+    {
+        var area = await _areaRepository.GetAsync(areaId);
+
+        var optionQuery = await _optionRepository.GetQueryableAsync();
+        var sizeQuery   = await _sizeRepository.GetQueryableAsync();
+
+        var joined = optionQuery
+            .Where(o => o.PrintAreaId == areaId)
+            .Join(sizeQuery, o => o.PrintSizeId, s => s.Id, (o, s) => new { Option = o, Size = s });
+
+        if (!includeInactive)
+        {
+            if (!area.IsActive)
+                return [];
+
+            joined = joined.Where(x => x.Option.IsActive && x.Size.IsActive);
+        }
+
+        var rows = await joined
+            .OrderBy(x => x.Option.SortOrder)
+            .ThenBy(x => x.Size.Name)
+            .ToListAsync();
+
+        return rows.Select(x =>
+        {
+            var dto = ObjectMapper.Map<PrintAreaSizeOption, PrintAreaSizeOptionDto>(x.Option);
+            dto.PrintSize = ObjectMapper.Map<PrintSize, PrintSizeDto>(x.Size);
+            return dto;
+        }).ToList();
+    }
+
+    public async Task<List<PrintAreaSizeOptionDto>> SetAreaSizesAsync(Guid areaId, List<SetPrintAreaSizeOptionInput> input)
+    {
+        var area = await _areaRepository.GetAsync(areaId);
+
+        if (!area.IsActive)
+            throw new UserFriendlyException("Cannot update allowed sizes for an inactive print area.");
+
+        // Reject duplicate PrintSizeId values in the input
+        var duplicates = input.GroupBy(x => x.PrintSizeId).Where(g => g.Count() > 1).Select(g => g.Key).ToList();
+        if (duplicates.Any())
+            throw new UserFriendlyException("Duplicate PrintSizeId values found in the input list.");
+
+        // Validate all referenced PrintSizes exist; enforce active constraint
+        var sizeIds  = input.Select(x => x.PrintSizeId).Distinct().ToList();
+        var sizeQuery = await _sizeRepository.GetQueryableAsync();
+        var sizes     = await sizeQuery.Where(s => sizeIds.Contains(s.Id)).ToListAsync();
+
+        foreach (var item in input)
+        {
+            var size = sizes.FirstOrDefault(s => s.Id == item.PrintSizeId)
+                ?? throw new EntityNotFoundException(typeof(PrintSize), item.PrintSizeId);
+
+            if (item.IsActive && !size.IsActive)
+                throw new UserFriendlyException(
+                    $"Cannot add '{size.Name}' as an active option because the print size is inactive.");
+        }
+
+        // Load existing options for this area
+        var optionQuery = await _optionRepository.GetQueryableAsync();
+        var existing    = await optionQuery.Where(o => o.PrintAreaId == areaId).ToListAsync();
+
+        var inputBySize = input.ToDictionary(x => x.PrintSizeId);
+
+        // Update or insert
+        foreach (var item in input)
+        {
+            var row = existing.FirstOrDefault(o => o.PrintSizeId == item.PrintSizeId);
+            if (row is not null)
+            {
+                row.IsActive  = item.IsActive;
+                row.SortOrder = item.SortOrder;
+                await _optionRepository.UpdateAsync(row);
+            }
+            else
+            {
+                var newOption = new PrintAreaSizeOption(GuidGenerator.Create(), areaId, item.PrintSizeId)
+                {
+                    IsActive  = item.IsActive,
+                    SortOrder = item.SortOrder,
+                };
+                await _optionRepository.InsertAsync(newOption);
+            }
+        }
+
+        // Soft-deactivate options not included in input
+        foreach (var row in existing.Where(o => !inputBySize.ContainsKey(o.PrintSizeId)))
+        {
+            if (row.IsActive)
+            {
+                row.IsActive = false;
+                await _optionRepository.UpdateAsync(row);
+            }
+        }
+
+        await CurrentUnitOfWork!.SaveChangesAsync();
+
+        // Return all options (including newly inactive) so admin sees full state
+        return await GetAreaSizesAsync(areaId, includeInactive: true);
     }
 }

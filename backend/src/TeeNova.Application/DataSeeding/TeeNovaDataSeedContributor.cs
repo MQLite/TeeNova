@@ -46,63 +46,82 @@ public class TeeNovaDataSeedContributor : IDataSeedContributor, ITransientDepend
     private static readonly Guid Asset3Id = new("b0000003-0000-0000-0000-000000000003"); // Order5 鈥?company logo
     private static readonly Guid Asset4Id = new("b0000004-0000-0000-0000-000000000004"); // Order6 鈥?staff uniform logo
 
-    private readonly IRepository<Product, Guid>       _productRepository;
-    private readonly IRepository<Order, Guid>         _orderRepository;
-    private readonly IRepository<UploadedAsset, Guid> _assetRepository;
-    private readonly IRepository<PrintArea, Guid>     _printAreaRepository;
-    private readonly IRepository<PrintSize, Guid>     _printSizeRepository;
+    private readonly IRepository<Product, Guid>           _productRepository;
+    private readonly IRepository<Order, Guid>             _orderRepository;
+    private readonly IRepository<UploadedAsset, Guid>     _assetRepository;
+    private readonly IRepository<PrintArea, Guid>         _printAreaRepository;
+    private readonly IRepository<PrintSize, Guid>         _printSizeRepository;
+    private readonly IRepository<PrintAreaSizeOption, Guid> _printAreaSizeOptionRepository;
     private readonly IDataFilter _dataFilter;
     private readonly IConfiguration _configuration;
     private readonly IClock _clock;
 
     public TeeNovaDataSeedContributor(
-        IRepository<Product, Guid>       productRepository,
-        IRepository<Order, Guid>         orderRepository,
-        IRepository<UploadedAsset, Guid> assetRepository,
-        IRepository<PrintArea, Guid>     printAreaRepository,
-        IRepository<PrintSize, Guid>     printSizeRepository,
+        IRepository<Product, Guid>             productRepository,
+        IRepository<Order, Guid>               orderRepository,
+        IRepository<UploadedAsset, Guid>       assetRepository,
+        IRepository<PrintArea, Guid>           printAreaRepository,
+        IRepository<PrintSize, Guid>           printSizeRepository,
+        IRepository<PrintAreaSizeOption, Guid> printAreaSizeOptionRepository,
         IDataFilter dataFilter,
         IConfiguration configuration,
         IClock clock)
     {
-        _productRepository   = productRepository;
-        _orderRepository     = orderRepository;
-        _assetRepository     = assetRepository;
-        _printAreaRepository = printAreaRepository;
-        _printSizeRepository = printSizeRepository;
-        _dataFilter          = dataFilter;
-        _configuration       = configuration;
-        _clock               = clock;
+        _productRepository             = productRepository;
+        _orderRepository               = orderRepository;
+        _assetRepository               = assetRepository;
+        _printAreaRepository           = printAreaRepository;
+        _printSizeRepository           = printSizeRepository;
+        _printAreaSizeOptionRepository = printAreaSizeOptionRepository;
+        _dataFilter                    = dataFilter;
+        _configuration                 = configuration;
+        _clock                         = clock;
     }
 
     public async Task SeedAsync(DataSeedContext context)
     {
         await SeedPrintAreasAsync();
         await SeedPrintSizesAsync();
+        await SeedPrintAreaSizeOptionsAsync();
     }
 
     // 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
     // Products
     // 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
 
+    // Neck Label is intentionally excluded from seed data (business decision).
+    // Small Chest, Large Back, Neck Label Size are intentionally excluded from PrintSize seed.
     private static readonly (string Name, string Code, int LegacyValue)[] PrintAreaSeedData =
     [
-        ("Front Center",  "FRONT_CENTER",  0),
-        ("Back Center",   "BACK_CENTER",   1),
-        ("Left Chest",    "LEFT_CHEST",    2),
-        ("Right Chest",   "RIGHT_CHEST",   3),
-        ("Left Sleeve",   "LEFT_SLEEVE",   4),
-        ("Right Sleeve",  "RIGHT_SLEEVE",  5),
-        ("Neck Label",    "NECK_LABEL",    6),
+        ("Front Center", "FRONT_CENTER", 0),
+        ("Back Center",  "BACK_CENTER",  1),
+        ("Left Chest",   "LEFT_CHEST",   2),
+        ("Right Chest",  "RIGHT_CHEST",  3),
+        ("Left Sleeve",  "LEFT_SLEEVE",  4),
+        ("Right Sleeve", "RIGHT_SLEEVE", 5),
     ];
 
     private static readonly (string Name, string Code, int SortOrder)[] PrintSizeSeedData =
     [
-        ("A5",          "A5",          0),
-        ("A4",          "A4",          1),
-        ("A3",          "A3",          2),
-        ("Small Chest", "SMALL_CHEST", 3),
-        ("Large Back",  "LARGE_BACK",  4),
+        ("A5",        "A5",        0),
+        ("A4",        "A4",        1),
+        ("A3",        "A3",        2),
+        ("Logo Size", "LOGO_SIZE", 3),
+    ];
+
+    // (AreaCode, SizeCode) pairs that define allowed print combinations
+    private static readonly (string AreaCode, string SizeCode)[] PrintAreaSizeOptionSeedData =
+    [
+        ("FRONT_CENTER",  "A5"),
+        ("FRONT_CENTER",  "A4"),
+        ("FRONT_CENTER",  "A3"),
+        ("BACK_CENTER",   "A5"),
+        ("BACK_CENTER",   "A4"),
+        ("BACK_CENTER",   "A3"),
+        ("LEFT_CHEST",    "LOGO_SIZE"),
+        ("RIGHT_CHEST",   "LOGO_SIZE"),
+        ("LEFT_SLEEVE",   "LOGO_SIZE"),
+        ("RIGHT_SLEEVE",  "LOGO_SIZE"),
     ];
 
     private async Task SeedPrintAreasAsync()
@@ -139,6 +158,38 @@ public class TeeNovaDataSeedContributor : IDataSeedContributor, ITransientDepend
                     },
                     autoSave: true);
             }
+        }
+    }
+
+    private async Task SeedPrintAreaSizeOptionsAsync()
+    {
+        var areas = (await _printAreaRepository.GetListAsync())
+            .ToDictionary(a => a.Code, a => a.Id);
+        var sizes = (await _printSizeRepository.GetListAsync())
+            .ToDictionary(s => s.Code, s => s.Id);
+
+        var sortCounter = new Dictionary<string, int>();
+
+        foreach (var (areaCode, sizeCode) in PrintAreaSizeOptionSeedData)
+        {
+            if (!areas.TryGetValue(areaCode, out var areaId) ||
+                !sizes.TryGetValue(sizeCode, out var sizeId))
+                continue;
+
+            if (await _printAreaSizeOptionRepository.AnyAsync(
+                    o => o.PrintAreaId == areaId && o.PrintSizeId == sizeId))
+                continue;
+
+            sortCounter.TryGetValue(areaCode, out var order);
+            sortCounter[areaCode] = order + 1;
+
+            await _printAreaSizeOptionRepository.InsertAsync(
+                new PrintAreaSizeOption(Guid.NewGuid(), areaId, sizeId)
+                {
+                    IsActive  = true,
+                    SortOrder = order,
+                },
+                autoSave: true);
         }
     }
 

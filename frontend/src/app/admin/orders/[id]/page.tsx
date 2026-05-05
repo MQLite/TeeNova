@@ -19,7 +19,7 @@ import { FileInfoCard } from '@/components/admin/FileInfoCard'
 import { PreparationChecklist } from '@/components/admin/PreparationChecklist'
 import { NotificationPanel } from '@/components/admin/NotificationPanel'
 import { DownloadDesignButton } from '@/components/orders/DownloadDesignButton'
-import type { Order, OrderItemPositionAsset, OrderStatus, PrintPosition } from '@/types'
+import type { Order, OrderItem, OrderItemPositionAsset, OrderStatus, PrintPosition } from '@/types'
 import clsx from 'clsx'
 
 // ── Constants ─────────────────────────────────────────────────────────────────
@@ -89,6 +89,38 @@ function PrintPositionBadge({ position }: { position: string }) {
       {POSITION_AREA[position] ?? position.replace(/([A-Z])/g, ' $1').trim()}
     </span>
   )
+}
+
+function getPrintSummary(item: OrderItem) {
+  return item.prints ?? []
+}
+
+function getPrintAreaPrice(itemPrint: NonNullable<OrderItem['prints']>[number]) {
+  return itemPrint.printAreaPrice ?? 0
+}
+
+function getPrintSizePrice(itemPrint: NonNullable<OrderItem['prints']>[number]) {
+  return itemPrint.printSizePrice ?? 0
+}
+
+function getPrintEntryTotal(itemPrint: NonNullable<OrderItem['prints']>[number]) {
+  return getPrintAreaPrice(itemPrint) + getPrintSizePrice(itemPrint)
+}
+
+function getTotalPrintAddOns(item: OrderItem) {
+  return getPrintSummary(item).reduce((sum, itemPrint) => sum + getPrintEntryTotal(itemPrint), 0)
+}
+
+function getLineTotal(item: OrderItem) {
+  return item.lineTotal ?? item.unitPrice * item.quantity
+}
+
+function getInferredProductAndVariantPortion(item: OrderItem) {
+  return item.unitPrice - getTotalPrintAddOns(item)
+}
+
+function formatMoney(value: number) {
+  return `$${value.toFixed(2)}`
 }
 
 function QualityWarning({ asset }: { asset: OrderItemPositionAsset }) {
@@ -811,6 +843,12 @@ export default function AdminOrderDetailPage() {
                           <span className="inline-flex items-center rounded-full border border-black/[0.08] px-2 py-0.5 font-mono text-[10px] uppercase tracking-[0.54px] text-black/55">
                             Qty {item.quantity}
                           </span>
+                          {getPrintSummary(item).map((print) => (
+                            <span key={`${print.printAreaId}:${print.printSizeId}`}
+                              className="inline-flex items-center rounded-full border border-black/[0.08] px-2 py-0.5 font-mono text-[10px] uppercase tracking-[0.54px] text-black/55">
+                              {print.printAreaName} · {print.printSizeName}
+                            </span>
+                          ))}
                           {item.positionAssets.map((p) => (
                             <PrintPositionBadge key={p.id} position={p.position} />
                           ))}
@@ -818,12 +856,143 @@ export default function AdminOrderDetailPage() {
                       </div>
                       <div className="flex-shrink-0 text-right">
                         <p className="text-sm text-black" style={{ fontWeight: 540 }}>
-                          ${(item.unitPrice * item.quantity).toFixed(2)}
+                          {formatMoney(getLineTotal(item))}
                         </p>
                         <p className="font-mono text-[10px] uppercase tracking-[0.54px] text-black/45">
-                          ${item.unitPrice.toFixed(2)} each
+                          {formatMoney(item.unitPrice)} each
                         </p>
                       </div>
+                    </div>
+
+                    <div className="px-5 pb-4">
+                      <details className="rounded-lg border border-black/[0.08] bg-black/[0.02]">
+                        <summary className="flex cursor-pointer list-none items-center justify-between gap-3 px-4 py-3">
+                          <div>
+                            <p className="text-sm text-black" style={{ fontWeight: 480, letterSpacing: '-0.14px' }}>
+                              Pricing Details
+                            </p>
+                            <p className="mt-0.5 font-mono text-[10px] uppercase tracking-[0.54px] text-black/45">
+                              Snapshot-based breakdown for this order item
+                            </p>
+                          </div>
+                          <span className="font-mono text-[10px] uppercase tracking-[0.54px] text-black/45">
+                            Expand
+                          </span>
+                        </summary>
+
+                        <div className="border-t border-black/[0.08] px-4 py-4">
+                          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
+                            <div className="rounded-lg border border-black/[0.08] bg-white px-3 py-2.5">
+                              <p className="font-mono text-[10px] uppercase tracking-[0.54px] text-black/45">
+                                Stored unit price
+                              </p>
+                              <p className="mt-1 text-sm text-black" style={{ fontWeight: 540 }}>
+                                {formatMoney(item.unitPrice)}
+                              </p>
+                            </div>
+                            <div className="rounded-lg border border-black/[0.08] bg-white px-3 py-2.5">
+                              <p className="font-mono text-[10px] uppercase tracking-[0.54px] text-black/45">
+                                Quantity
+                              </p>
+                              <p className="mt-1 text-sm text-black" style={{ fontWeight: 540 }}>
+                                {item.quantity}
+                              </p>
+                            </div>
+                            <div className="rounded-lg border border-black/[0.08] bg-white px-3 py-2.5">
+                              <p className="font-mono text-[10px] uppercase tracking-[0.54px] text-black/45">
+                                Total print add-ons
+                              </p>
+                              <p className="mt-1 text-sm text-black" style={{ fontWeight: 540 }}>
+                                {formatMoney(getTotalPrintAddOns(item))}
+                              </p>
+                            </div>
+                            <div className="rounded-lg border border-black/[0.08] bg-white px-3 py-2.5">
+                              <p className="font-mono text-[10px] uppercase tracking-[0.54px] text-black/45">
+                                Line total
+                              </p>
+                              <p className="mt-1 text-sm text-black" style={{ fontWeight: 540 }}>
+                                {formatMoney(getLineTotal(item))}
+                              </p>
+                            </div>
+                          </div>
+
+                          {getPrintSummary(item).length > 0 ? (
+                            <>
+                              <div className="mt-4 rounded-lg border border-black/[0.08] bg-white px-3 py-3">
+                                <div className="flex items-start justify-between gap-3">
+                                  <div>
+                                    <p className="text-sm text-black" style={{ fontWeight: 480, letterSpacing: '-0.14px' }}>
+                                      Product + variant portion (inferred)
+                                    </p>
+                                    <p className="mt-0.5 text-xs text-black/55" style={{ letterSpacing: '-0.14px' }}>
+                                      Base product and variant adjustment are grouped because separate snapshots are not stored on this order.
+                                    </p>
+                                  </div>
+                                  <p className="text-sm text-black" style={{ fontWeight: 540 }}>
+                                    {formatMoney(getInferredProductAndVariantPortion(item))}
+                                  </p>
+                                </div>
+                              </div>
+
+                              <div className="mt-4 space-y-2">
+                                {getPrintSummary(item)
+                                  .slice()
+                                  .sort((a, b) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0))
+                                  .map((itemPrint) => (
+                                    <div
+                                      key={itemPrint.id ?? `${itemPrint.printAreaId}:${itemPrint.printSizeId}`}
+                                      className="rounded-lg border border-black/[0.08] bg-white px-3 py-3"
+                                    >
+                                      <div className="flex items-start justify-between gap-3">
+                                        <div className="min-w-0 flex-1">
+                                          <p className="text-sm text-black" style={{ fontWeight: 480, letterSpacing: '-0.14px' }}>
+                                            {itemPrint.printAreaName}
+                                            {itemPrint.printAreaCode ? ` (${itemPrint.printAreaCode})` : ''}
+                                          </p>
+                                          <p className="mt-0.5 text-xs text-black/55" style={{ letterSpacing: '-0.14px' }}>
+                                            Print area add-on
+                                          </p>
+                                        </div>
+                                        <p className="text-sm text-black" style={{ fontWeight: 540 }}>
+                                          {formatMoney(getPrintAreaPrice(itemPrint))}
+                                        </p>
+                                      </div>
+                                      <div className="mt-3 flex items-start justify-between gap-3">
+                                        <div className="min-w-0 flex-1">
+                                          <p className="text-sm text-black" style={{ fontWeight: 480, letterSpacing: '-0.14px' }}>
+                                            {itemPrint.printSizeName}
+                                            {itemPrint.printSizeCode ? ` (${itemPrint.printSizeCode})` : ''}
+                                          </p>
+                                          <p className="mt-0.5 text-xs text-black/55" style={{ letterSpacing: '-0.14px' }}>
+                                            Print size add-on
+                                          </p>
+                                        </div>
+                                        <p className="text-sm text-black" style={{ fontWeight: 540 }}>
+                                          {formatMoney(getPrintSizePrice(itemPrint))}
+                                        </p>
+                                      </div>
+                                      <div className="mt-3 flex items-center justify-between border-t border-black/[0.08] pt-3">
+                                        <span className="font-mono text-[10px] uppercase tracking-[0.54px] text-black/45">
+                                          Print entry total
+                                        </span>
+                                        <span className="text-sm text-black" style={{ fontWeight: 540 }}>
+                                          {formatMoney(getPrintEntryTotal(itemPrint))}
+                                        </span>
+                                      </div>
+                                    </div>
+                                  ))}
+                              </div>
+                            </>
+                          ) : (
+                            <div
+                              className="mt-4 rounded-lg border border-dashed border-black/[0.10] bg-white px-4 py-3 text-sm text-black/55"
+                              style={{ letterSpacing: '-0.14px' }}
+                            >
+                              No print add-ons.
+                            </div>
+                          )}
+                        </div>
+                      </details>
                     </div>
 
                     {/* Design cards grid */}

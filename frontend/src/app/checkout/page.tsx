@@ -6,7 +6,11 @@ import Link from 'next/link'
 import { useCartStore } from '@/features/cart/cart-store'
 import { ordersApi } from '@/api/orders'
 import { Button } from '@/components/ui/Button'
-import type { ShippingAddress } from '@/types'
+import type { CartItem, ShippingAddress } from '@/types'
+
+function getPrintSummary(item: CartItem) {
+  return item.prints ?? []
+}
 
 export default function CheckoutPage() {
   const router = useRouter()
@@ -57,6 +61,10 @@ export default function CheckoutPage() {
             assetId: p.uploadedAssetId,
             assetUrl: p.uploadedAssetUrl,
             designNote: p.designNote,
+          })),
+          prints: (item.prints ?? []).map((print) => ({
+            printAreaId: print.printAreaId,
+            printSizeId: print.printSizeId,
           })),
         })),
       })
@@ -176,7 +184,7 @@ export default function CheckoutPage() {
                 {/* Items */}
                 <div className="max-h-56 overflow-y-auto divide-y divide-black/[0.06]">
                   {items.map((item) => (
-                    <div key={item.productVariantId} className="flex gap-3 px-5 py-3">
+                    <div key={item.cartItemKey} className="flex gap-3 px-5 py-3">
                       <div className="h-11 w-11 flex-shrink-0 rounded-lg overflow-hidden bg-black/[0.03] flex items-center justify-center">
                         {item.printPositions?.[0]?.uploadedAssetUrl ? (
                           // eslint-disable-next-line @next/next/no-img-element
@@ -194,6 +202,16 @@ export default function CheckoutPage() {
                         <p className="text-xs text-black/55" style={{ letterSpacing: '-0.14px' }}>
                           {item.variantLabel} · ×{item.quantity}
                         </p>
+                        {getPrintSummary(item).length > 0 && (
+                          <div className="mt-1 flex flex-wrap gap-1">
+                            {getPrintSummary(item).map((print) => (
+                              <span key={`${print.printAreaId}:${print.printSizeId}`}
+                                className="inline-flex items-center rounded-full border border-black/[0.08] px-2 py-0.5 font-mono text-[10px] uppercase tracking-[0.54px] text-black/50">
+                                {print.printAreaName} · {print.printSizeName}
+                              </span>
+                            ))}
+                          </div>
+                        )}
                       </div>
                       <span className="text-sm text-black" style={{ fontWeight: 480 }}>
                         ${(item.unitPrice * item.quantity).toFixed(2)}

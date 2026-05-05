@@ -21,6 +21,7 @@ public class OrderItem : Entity<Guid>
     public decimal UnitPrice { get; set; }
 
     public List<OrderItemPositionAsset> PositionAssets { get; private set; } = [];
+    public List<OrderItemPrint> Prints { get; private set; } = [];
 
     // Future: DesignProjectId, TemplateId, CropFrameData (JSON)
 
@@ -40,6 +41,26 @@ public class OrderItem : Entity<Guid>
         VariantLabel = variantLabel;
         Quantity = quantity;
         UnitPrice = unitPrice;
+    }
+
+    public void AddPrint(
+        Guid id,
+        Guid printAreaId,
+        string printAreaName,
+        string printAreaCode,
+        decimal printAreaPrice,
+        Guid printSizeId,
+        string printSizeName,
+        string printSizeCode,
+        decimal printSizePrice,
+        int sortOrder = 0,
+        string? notes = null)
+    {
+        Prints.Add(new OrderItemPrint(
+            id, Id,
+            printAreaId, printAreaName, printAreaCode, printAreaPrice,
+            printSizeId, printSizeName, printSizeCode, printSizePrice,
+            sortOrder, notes));
     }
 
     public void SetPositionAssets(IEnumerable<OrderItemPositionAsset> positionAssets)
