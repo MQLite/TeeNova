@@ -33,6 +33,15 @@ const navItems = [
     ),
   },
   {
+    href: '/admin/print-config',
+    label: 'Print Config',
+    icon: (
+      <svg viewBox="0 0 20 20" fill="currentColor" className="h-4 w-4 shrink-0">
+        <path fillRule="evenodd" d="M5 4v3H4a2 2 0 00-2 2v3a2 2 0 002 2h1v2a1 1 0 102 0v-2h6v2a1 1 0 102 0v-2h1a2 2 0 002-2V9a2 2 0 00-2-2h-1V4a1 1 0 00-1-1H6a1 1 0 00-1 1zm2 3h6V4H7v3zm-1 9a1 1 0 100-2 1 1 0 000 2zm8 0a1 1 0 100-2 1 1 0 000 2z" clipRule="evenodd" />
+      </svg>
+    ),
+  },
+  {
     href: '/admin/assets',
     label: 'Assets',
     icon: (

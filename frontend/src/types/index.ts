@@ -68,6 +68,38 @@ export interface PrintSize {
   sortOrder: number
 }
 
+export interface PrintAreaSizeOption {
+  id: string
+  printAreaId: string
+  printSizeId: string
+  isActive: boolean
+  sortOrder: number
+  printSize: PrintSize
+}
+
+export interface CreateUpdatePrintAreaInput {
+  name: string
+  code: string
+  basePrice: number
+  isActive: boolean
+  sortOrder: number
+  legacyPositionValue?: number | null
+}
+
+export interface CreateUpdatePrintSizeInput {
+  name: string
+  code: string
+  basePrice: number
+  isActive: boolean
+  sortOrder: number
+}
+
+export interface SetPrintAreaSizeOptionInput {
+  printSizeId: string
+  isActive: boolean
+  sortOrder: number
+}
+
 export interface PriceCalculationPrintItem {
   printAreaId: string
   printSizeId: string
