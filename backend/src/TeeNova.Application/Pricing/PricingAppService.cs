@@ -20,17 +20,20 @@ namespace TeeNova.Pricing;
 public class PricingAppService : ApplicationService, IPricingAppService
 {
     private readonly IRepository<Catalog.Product, Guid> _productRepository;
-    private readonly IRepository<PrintArea, Guid> _printAreaRepository;
-    private readonly IRepository<PrintSize, Guid> _printSizeRepository;
+    private readonly IRepository<PrintArea, Guid>        _printAreaRepository;
+    private readonly IRepository<PrintSize, Guid>        _printSizeRepository;
+    private readonly PrintConfigValidator                 _printConfigValidator;
 
     public PricingAppService(
         IRepository<Catalog.Product, Guid> productRepository,
-        IRepository<PrintArea, Guid> printAreaRepository,
-        IRepository<PrintSize, Guid> printSizeRepository)
+        IRepository<PrintArea, Guid>        printAreaRepository,
+        IRepository<PrintSize, Guid>        printSizeRepository,
+        PrintConfigValidator                printConfigValidator)
     {
-        _productRepository = productRepository;
-        _printAreaRepository = printAreaRepository;
-        _printSizeRepository = printSizeRepository;
+        _productRepository    = productRepository;
+        _printAreaRepository  = printAreaRepository;
+        _printSizeRepository  = printSizeRepository;
+        _printConfigValidator = printConfigValidator;
     }
 
     public async Task<PriceCalculationResponseDto> CalculateAsync(PriceCalculationRequestDto input)
@@ -91,6 +94,7 @@ public class PricingAppService : ApplicationService, IPricingAppService
         IEnumerable<PrintCalculationItemDto> printDtos)
     {
         var result = new List<PrintPricingEntry>();
+        var pairs  = new List<(PrintArea Area, PrintSize Size)>();
 
         foreach (var dto in printDtos)
         {
@@ -110,10 +114,15 @@ public class PricingAppService : ApplicationService, IPricingAppService
                     .WithData("PrintSizeId", dto.PrintSizeId)
                     .WithData("PrintSizeName", size.Name);
 
+            pairs.Add((area, size));
             result.Add(new PrintPricingEntry(
                 area.Id, area.Name, area.BasePrice,
                 size.Id, size.Name, size.BasePrice));
         }
+
+        // Validate that each (PrintArea, PrintSize) pair has an active PrintAreaSizeOption.
+        // Uses a single batch query across all pairs.
+        await _printConfigValidator.ValidatePrintCombinationsAsync(pairs);
 
         return result;
     }
