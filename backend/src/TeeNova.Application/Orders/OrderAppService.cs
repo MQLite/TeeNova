@@ -17,27 +17,30 @@ namespace TeeNova.Orders;
 
 public class OrderAppService : ApplicationService, IOrderAppService
 {
-    private readonly IRepository<Order, Guid> _orderRepository;
-    private readonly IRepository<Catalog.Product, Guid> _productRepository;
-    private readonly IRepository<UploadedAsset, Guid> _assetRepository;
+    private readonly IRepository<Order, Guid>              _orderRepository;
+    private readonly IRepository<Catalog.Product, Guid>    _productRepository;
+    private readonly IRepository<UploadedAsset, Guid>      _assetRepository;
     private readonly IRepository<OrderTimelineEntry, Guid> _timelineRepository;
-    private readonly IRepository<PrintArea, Guid> _printAreaRepository;
-    private readonly IRepository<PrintSize, Guid> _printSizeRepository;
+    private readonly IRepository<PrintArea, Guid>          _printAreaRepository;
+    private readonly IRepository<PrintSize, Guid>          _printSizeRepository;
+    private readonly PrintConfigValidator                   _printConfigValidator;
 
     public OrderAppService(
-        IRepository<Order, Guid> orderRepository,
-        IRepository<Catalog.Product, Guid> productRepository,
-        IRepository<UploadedAsset, Guid> assetRepository,
+        IRepository<Order, Guid>              orderRepository,
+        IRepository<Catalog.Product, Guid>    productRepository,
+        IRepository<UploadedAsset, Guid>      assetRepository,
         IRepository<OrderTimelineEntry, Guid> timelineRepository,
-        IRepository<PrintArea, Guid> printAreaRepository,
-        IRepository<PrintSize, Guid> printSizeRepository)
+        IRepository<PrintArea, Guid>          printAreaRepository,
+        IRepository<PrintSize, Guid>          printSizeRepository,
+        PrintConfigValidator                  printConfigValidator)
     {
-        _orderRepository = orderRepository;
-        _productRepository = productRepository;
-        _assetRepository = assetRepository;
-        _timelineRepository = timelineRepository;
-        _printAreaRepository = printAreaRepository;
-        _printSizeRepository = printSizeRepository;
+        _orderRepository      = orderRepository;
+        _productRepository    = productRepository;
+        _assetRepository      = assetRepository;
+        _timelineRepository   = timelineRepository;
+        _printAreaRepository  = printAreaRepository;
+        _printSizeRepository  = printSizeRepository;
+        _printConfigValidator = printConfigValidator;
     }
 
     public async Task<OrderDto> CreateAsync(CreateOrderDto input)
@@ -397,6 +400,7 @@ public class OrderAppService : ApplicationService, IOrderAppService
         IEnumerable<CreateOrderItemPrintDto> printDtos)
     {
         var result = new List<LoadedOrderItemPrint>();
+        var pairs  = new List<(PrintArea Area, PrintSize Size)>();
 
         foreach (var dto in printDtos)
         {
@@ -418,8 +422,13 @@ public class OrderAppService : ApplicationService, IOrderAppService
                     .WithData("PrintSizeId", dto.PrintSizeId)
                     .WithData("PrintSizeName", size.Name);
 
+            pairs.Add((area, size));
             result.Add(new LoadedOrderItemPrint(area, size));
         }
+
+        // Validate that each (PrintArea, PrintSize) pair has an active PrintAreaSizeOption.
+        // Uses a single batch query across all pairs.
+        await _printConfigValidator.ValidatePrintCombinationsAsync(pairs);
 
         return result;
     }
