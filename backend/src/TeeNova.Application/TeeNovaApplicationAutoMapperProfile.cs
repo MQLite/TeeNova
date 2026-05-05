@@ -35,6 +35,8 @@ public class TeeNovaApplicationAutoMapperProfile : Profile
         // PrintConfig
         CreateMap<PrintArea, PrintAreaDto>();
         CreateMap<PrintSize, PrintSizeDto>();
+        CreateMap<PrintAreaSizeOption, PrintAreaSizeOptionDto>()
+            .ForMember(d => d.PrintSize, o => o.Ignore()); // populated manually in app service
 
         // Orders
         CreateMap<Order, OrderDto>()
@@ -43,7 +45,9 @@ public class TeeNovaApplicationAutoMapperProfile : Profile
             .ForMember(d => d.Timeline, o => o.Ignore());
         CreateMap<OrderTimelineEntry, OrderTimelineEntryDto>();
         CreateMap<OrderItem, OrderItemDto>()
-            .ForMember(d => d.PositionAssets, o => o.MapFrom(s => s.PositionAssets));
+            .ForMember(d => d.PositionAssets, o => o.MapFrom(s => s.PositionAssets))
+            .ForMember(d => d.Prints, o => o.MapFrom(s => s.Prints));
+        CreateMap<OrderItemPrint, OrderItemPrintDto>();
         CreateMap<OrderItemPositionAsset, OrderItemPositionAssetDto>()
             .ForMember(d => d.OriginalFileName, o => o.Ignore())
             .ForMember(d => d.FileName, o => o.Ignore())

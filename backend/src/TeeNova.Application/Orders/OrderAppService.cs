@@ -4,8 +4,11 @@ using System.Linq;
 using System.IO;
 using System.Threading.Tasks;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging;
 using TeeNova.Customization;
 using TeeNova.Orders.Dtos;
+using TeeNova.Pricing;
+using TeeNova.PrintConfig;
 using Volo.Abp.Application.Dtos;
 using Volo.Abp.Application.Services;
 using Volo.Abp.Domain.Repositories;
@@ -18,17 +21,23 @@ public class OrderAppService : ApplicationService, IOrderAppService
     private readonly IRepository<Catalog.Product, Guid> _productRepository;
     private readonly IRepository<UploadedAsset, Guid> _assetRepository;
     private readonly IRepository<OrderTimelineEntry, Guid> _timelineRepository;
+    private readonly IRepository<PrintArea, Guid> _printAreaRepository;
+    private readonly IRepository<PrintSize, Guid> _printSizeRepository;
 
     public OrderAppService(
         IRepository<Order, Guid> orderRepository,
         IRepository<Catalog.Product, Guid> productRepository,
         IRepository<UploadedAsset, Guid> assetRepository,
-        IRepository<OrderTimelineEntry, Guid> timelineRepository)
+        IRepository<OrderTimelineEntry, Guid> timelineRepository,
+        IRepository<PrintArea, Guid> printAreaRepository,
+        IRepository<PrintSize, Guid> printSizeRepository)
     {
         _orderRepository = orderRepository;
         _productRepository = productRepository;
         _assetRepository = assetRepository;
         _timelineRepository = timelineRepository;
+        _printAreaRepository = printAreaRepository;
+        _printSizeRepository = printSizeRepository;
     }
 
     public async Task<OrderDto> CreateAsync(CreateOrderDto input)
@@ -62,19 +71,38 @@ public class OrderAppService : ApplicationService, IOrderAppService
             var variant = product.Variants.FirstOrDefault(v => v.Id == itemDto.ProductVariantId)
                 ?? throw new Volo.Abp.BusinessException("TeeNova:Catalog:VariantNotFound");
 
-            var effectivePrice = product.BasePrice + variant.PriceAdjustment;
+            // Load prints first so their prices feed into the final unit price before
+            // OrderItem is constructed (unit price is immutable after construction).
+            var loadedPrints = itemDto.Prints?.Count > 0
+                ? await LoadOrderItemPrintsAsync(itemDto.Prints)
+                : [];
+
+            var printAddOnTotal = loadedPrints.Sum(p => p.Area.BasePrice + p.Size.BasePrice);
+            var unitPrice = product.BasePrice + variant.PriceAdjustment + printAddOnTotal;
             var variantLabel = $"{variant.Color} / {variant.Size}";
 
             var item = new OrderItem(
                 GuidGenerator.Create(), order.Id,
                 product.Id, variant.Id,
                 product.Name, variantLabel,
-                itemDto.Quantity, effectivePrice);
+                itemDto.Quantity, unitPrice);
 
             if (itemDto.PrintPositions?.Count > 0)
                 SyncPositionAssets(item, itemDto.PrintPositions);
 
+            AddPrintsToItem(item, loadedPrints);
+
             order.AddItem(item);
+
+            Logger.LogInformation(
+                "[OrderPricing] OrderId={OrderId} ProductId={ProductId} ProductVariantId={ProductVariantId} Quantity={Quantity} PrintCount={PrintCount} UnitPrice={UnitPrice} LineTotal={LineTotal}",
+                order.Id,
+                product.Id,
+                variant.Id,
+                itemDto.Quantity,
+                loadedPrints.Count,
+                unitPrice,
+                unitPrice * itemDto.Quantity);
         }
 
         await _orderRepository.InsertAsync(order, autoSave: true);
@@ -91,6 +119,8 @@ public class OrderAppService : ApplicationService, IOrderAppService
         var order = await query
             .Include(o => o.Items)
             .ThenInclude(i => i.PositionAssets)
+            .Include(o => o.Items)
+            .ThenInclude(i => i.Prints)
             .FirstOrDefaultAsync(o => o.Id == id);
 
         if (order == null)
@@ -108,7 +138,9 @@ public class OrderAppService : ApplicationService, IOrderAppService
         var query = await _orderRepository.GetQueryableAsync();
         query = query
             .Include(o => o.Items)
-            .ThenInclude(i => i.PositionAssets);
+            .ThenInclude(i => i.PositionAssets)
+            .Include(o => o.Items)
+            .ThenInclude(i => i.Prints);
 
         // TODO: apply input.Status, input.Search, input.DateFrom, input.DateTo filters
 
@@ -136,6 +168,8 @@ public class OrderAppService : ApplicationService, IOrderAppService
         var order = await query
             .Include(o => o.Items)
             .ThenInclude(i => i.PositionAssets)
+            .Include(o => o.Items)
+            .ThenInclude(i => i.Prints)
             .FirstOrDefaultAsync(o => o.Id == orderId)
             ?? throw new Volo.Abp.Domain.Entities.EntityNotFoundException(typeof(Order), orderId);
 
@@ -353,6 +387,61 @@ public class OrderAppService : ApplicationService, IOrderAppService
 
         return Path.GetFileName(fileUrl);
     }
+
+    /// <summary>
+    /// Loads and validates PrintArea + PrintSize for each requested print.
+    /// Returns a list of loaded entity pairs; prices are used for unit price
+    /// calculation before OrderItem is constructed.
+    /// </summary>
+    private async Task<List<LoadedOrderItemPrint>> LoadOrderItemPrintsAsync(
+        IEnumerable<CreateOrderItemPrintDto> printDtos)
+    {
+        var result = new List<LoadedOrderItemPrint>();
+
+        foreach (var dto in printDtos)
+        {
+            var area = await _printAreaRepository.FindAsync(dto.PrintAreaId)
+                ?? throw new Volo.Abp.Domain.Entities.EntityNotFoundException(
+                    typeof(PrintArea), dto.PrintAreaId);
+
+            if (!area.IsActive)
+                throw new Volo.Abp.BusinessException("TeeNova:PrintConfig:PrintAreaInactive")
+                    .WithData("PrintAreaId", dto.PrintAreaId)
+                    .WithData("PrintAreaName", area.Name);
+
+            var size = await _printSizeRepository.FindAsync(dto.PrintSizeId)
+                ?? throw new Volo.Abp.Domain.Entities.EntityNotFoundException(
+                    typeof(PrintSize), dto.PrintSizeId);
+
+            if (!size.IsActive)
+                throw new Volo.Abp.BusinessException("TeeNova:PrintConfig:PrintSizeInactive")
+                    .WithData("PrintSizeId", dto.PrintSizeId)
+                    .WithData("PrintSizeName", size.Name);
+
+            result.Add(new LoadedOrderItemPrint(area, size));
+        }
+
+        return result;
+    }
+
+    /// <summary>
+    /// Writes OrderItemPrint records onto the item from already-loaded entities.
+    /// Synchronous — no DB access, entities were loaded by LoadOrderItemPrintsAsync.
+    /// </summary>
+    private void AddPrintsToItem(OrderItem item, IReadOnlyList<LoadedOrderItemPrint> prints)
+    {
+        var sortOrder = 0;
+        foreach (var (area, size) in prints)
+        {
+            item.AddPrint(
+                GuidGenerator.Create(),
+                area.Id, area.Name, area.Code, area.BasePrice,
+                size.Id, size.Name, size.Code, size.BasePrice,
+                sortOrder++);
+        }
+    }
+
+    private record LoadedOrderItemPrint(PrintArea Area, PrintSize Size);
 
     private static void SyncPositionAssets(OrderItem item, IEnumerable<CreateOrderItemPositionDto> positions)
     {

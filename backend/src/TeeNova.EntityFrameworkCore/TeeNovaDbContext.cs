@@ -24,11 +24,13 @@ public class TeeNovaDbContext : AbpDbContext<TeeNovaDbContext>
     public DbSet<Order> Orders { get; set; }
     public DbSet<OrderItem> OrderItems { get; set; }
     public DbSet<OrderItemPositionAsset> OrderItemPositionAssets { get; set; }
+    public DbSet<OrderItemPrint> OrderItemPrints { get; set; }
     public DbSet<OrderTimelineEntry> OrderTimelineEntries { get; set; }
 
     // PrintConfig
-    public DbSet<PrintArea> PrintAreas { get; set; }
-    public DbSet<PrintSize> PrintSizes { get; set; }
+    public DbSet<PrintArea>           PrintAreas           { get; set; }
+    public DbSet<PrintSize>           PrintSizes           { get; set; }
+    public DbSet<PrintAreaSizeOption> PrintAreaSizeOptions { get; set; }
 
     // Production
     public DbSet<ProductionJob> ProductionJobs { get; set; }

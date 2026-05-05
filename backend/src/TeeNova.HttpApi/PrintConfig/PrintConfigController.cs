@@ -70,4 +70,16 @@ public class PrintConfigController : TeeNovaControllerBase
     [HttpDelete("sizes/{id:guid}")]
     public async Task DeleteSizeAsync(Guid id)
         => await _printConfigAppService.DeleteSizeAsync(id);
+
+    // ── PrintAreaSizeOption ────────────────────────────────────────────────────
+
+    /// <summary>Returns allowed print sizes for a print area.</summary>
+    [HttpGet("areas/{areaId:guid}/sizes")]
+    public async Task<List<PrintAreaSizeOptionDto>> GetAreaSizesAsync(Guid areaId, [FromQuery] bool includeInactive = false)
+        => await _printConfigAppService.GetAreaSizesAsync(areaId, includeInactive);
+
+    /// <summary>Replaces the allowed print size list for a print area.</summary>
+    [HttpPut("areas/{areaId:guid}/sizes")]
+    public async Task<List<PrintAreaSizeOptionDto>> SetAreaSizesAsync(Guid areaId, [FromBody] List<SetPrintAreaSizeOptionInput> input)
+        => await _printConfigAppService.SetAreaSizesAsync(areaId, input);
 }

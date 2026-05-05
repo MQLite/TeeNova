@@ -21,4 +21,8 @@ public interface IPrintConfigAppService : IApplicationService
     Task<PrintSizeDto>       CreateSizeAsync(CreateUpdatePrintSizeDto input);
     Task<PrintSizeDto>       UpdateSizeAsync(Guid id, CreateUpdatePrintSizeDto input);
     Task                     DeleteSizeAsync(Guid id);
+
+    // ── PrintAreaSizeOption ────────────────────────────────────────────────────
+    Task<List<PrintAreaSizeOptionDto>> GetAreaSizesAsync(Guid areaId, bool includeInactive = false);
+    Task<List<PrintAreaSizeOptionDto>> SetAreaSizesAsync(Guid areaId, List<SetPrintAreaSizeOptionInput> input);
 }

@@ -31,6 +31,7 @@ public class CreateOrderItemDto
     public int Quantity { get; set; } = 1;
 
     public List<CreateOrderItemPositionDto> PrintPositions { get; set; } = new();
+    public List<CreateOrderItemPrintDto> Prints { get; set; } = new();
 }
 
 public class CreateOrderItemPositionDto
