@@ -173,10 +173,23 @@ export default function ProductDetailPage() {
     if (loadError) return loadError
     if (!product) return 'Product could not be loaded.'
     if (selectedVariantLines.length === 0) return 'Enter at least one quantity to preview pricing.'
+    if (selectedPrintAreas.some((id) => allowedSizesLoadingByArea[id]))
+      return 'Loading available print sizes…'
+    if (selectedPrintAreas.some((id) => allowedSizesErrorByArea[id]))
+      return 'Could not load print sizes for one or more areas. Deselect and reselect the area to retry.'
     if (missingPrintSizeAreaIds.length > 0) return 'Select a print size for every chosen print area to price this order.'
     if (pricingError) return pricingError
     return null
-  }, [loadError, missingPrintSizeAreaIds.length, pricingError, product, selectedVariantLines.length])
+  }, [
+    allowedSizesErrorByArea,
+    allowedSizesLoadingByArea,
+    loadError,
+    missingPrintSizeAreaIds.length,
+    pricingError,
+    product,
+    selectedPrintAreas,
+    selectedVariantLines.length,
+  ])
 
   useEffect(() => {
     let isMounted = true
