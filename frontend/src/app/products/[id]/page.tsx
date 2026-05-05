@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import Link from 'next/link'
 import { useParams } from 'next/navigation'
 import { catalogApi } from '@/api/catalog'
@@ -18,9 +18,9 @@ import type {
   CartItemPrint,
   PriceCalculationResponse,
   PrintArea,
+  PrintAreaSizeOption,
   PrintPosition,
   PrintPositionOption,
-  PrintSize,
   Product,
   UploadedAsset,
 } from '@/types'
@@ -69,9 +69,13 @@ export default function ProductDetailPage() {
   const [uploadingPosition, setUploadingPosition] = useState<number | null>(null)
   const [dragOverPosition, setDragOverPosition] = useState<number | null>(null)
   const [printAreas, setPrintAreas] = useState<PrintArea[]>([])
-  const [printSizes, setPrintSizes] = useState<PrintSize[]>([])
   const [selectedPrintAreas, setSelectedPrintAreas] = useState<string[]>([])
   const [printSizeByArea, setPrintSizeByArea] = useState<Record<string, string | undefined>>({})
+  const [allowedSizesByArea, setAllowedSizesByArea] = useState<Record<string, PrintAreaSizeOption[]>>({})
+  const [allowedSizesLoadingByArea, setAllowedSizesLoadingByArea] = useState<Record<string, boolean>>({})
+  const [allowedSizesErrorByArea, setAllowedSizesErrorByArea] = useState<Record<string, string | undefined>>({})
+  const selectedPrintAreasRef = useRef<string[]>([])
+  const loadingAreasRef = useRef<Set<string>>(new Set())
   const [loading, setLoading] = useState(true)
   const [loadError, setLoadError] = useState<string | null>(null)
   const [variantQtys, setVariantQtys] = useState<Record<string, number>>({})
@@ -109,13 +113,35 @@ export default function ProductDetailPage() {
   )
 
   const missingPrintSizeAreaIds = useMemo(
-    () => selectedPrintAreas.filter((areaId) => !printSizeByArea[areaId]),
-    [printSizeByArea, selectedPrintAreas],
+    () =>
+      selectedPrintAreas.filter((areaId) => {
+        if (allowedSizesLoadingByArea[areaId]) return true
+        if (allowedSizesErrorByArea[areaId]) return true
+        const allowed = allowedSizesByArea[areaId]
+        if (!allowed || allowed.length === 0) return true
+        const selectedSizeId = printSizeByArea[areaId]
+        if (!selectedSizeId) return true
+        return !allowed.some((o) => o.printSizeId === selectedSizeId)
+      }),
+    [allowedSizesByArea, allowedSizesErrorByArea, allowedSizesLoadingByArea, printSizeByArea, selectedPrintAreas],
   )
 
   const perAreaValidationErrors = useMemo(
-    () => Object.fromEntries(missingPrintSizeAreaIds.map((areaId) => [areaId, 'Choose a print size for this area.'])),
-    [missingPrintSizeAreaIds],
+    () =>
+      Object.fromEntries(
+        missingPrintSizeAreaIds
+          .filter((areaId) => {
+            const allowed = allowedSizesByArea[areaId]
+            return (
+              allowed &&
+              allowed.length > 0 &&
+              !allowedSizesErrorByArea[areaId] &&
+              !allowedSizesLoadingByArea[areaId]
+            )
+          })
+          .map((areaId) => [areaId, 'Choose a print size for this area.']),
+      ),
+    [allowedSizesByArea, allowedSizesErrorByArea, allowedSizesLoadingByArea, missingPrintSizeAreaIds],
   )
 
   const totalQty = selectedVariantLines.reduce((sum, line) => sum + line.quantity, 0)
@@ -162,15 +188,13 @@ export default function ProductDetailPage() {
       catalogApi.getProduct(id),
       customizationApi.getPrintPositions(),
       printConfigApi.getAreas(),
-      printConfigApi.getSizes(),
     ])
-      .then(([loadedProduct, loadedPositions, loadedAreas, loadedSizes]) => {
+      .then(([loadedProduct, loadedPositions, loadedAreas]) => {
         if (!isMounted) return
 
         setProduct(loadedProduct)
         setPositions(loadedPositions)
         setPrintAreas(loadedAreas)
-        setPrintSizes(loadedSizes)
         setSelectedColor(loadedProduct.variants[0]?.color ?? null)
 
         const front = loadedPositions.find((position) => position.name === 'FrontCenter')
@@ -196,6 +220,46 @@ export default function ProductDetailPage() {
 
     return () => window.clearTimeout(timeout)
   }, [variantQtys])
+
+  useEffect(() => {
+    selectedPrintAreasRef.current = selectedPrintAreas
+
+    const toFetch = selectedPrintAreas.filter(
+      (id) => allowedSizesByArea[id] === undefined && !loadingAreasRef.current.has(id),
+    )
+
+    if (toFetch.length === 0) return
+
+    toFetch.forEach((areaId) => {
+      loadingAreasRef.current.add(areaId)
+      setAllowedSizesLoadingByArea((prev) => ({ ...prev, [areaId]: true }))
+      setAllowedSizesErrorByArea((prev) => ({ ...prev, [areaId]: undefined }))
+
+      printConfigApi.getAreaSizes(areaId)
+        .then((options) => {
+          loadingAreasRef.current.delete(areaId)
+          if (!selectedPrintAreasRef.current.includes(areaId)) return
+          setAllowedSizesByArea((prev) => ({ ...prev, [areaId]: options }))
+          setAllowedSizesLoadingByArea((prev) => ({ ...prev, [areaId]: false }))
+          setPrintSizeByArea((prev) => {
+            const current = prev[areaId]
+            if (current && !options.some((o) => o.printSizeId === current)) {
+              return { ...prev, [areaId]: undefined }
+            }
+            return prev
+          })
+        })
+        .catch((err) => {
+          loadingAreasRef.current.delete(areaId)
+          if (!selectedPrintAreasRef.current.includes(areaId)) return
+          setAllowedSizesErrorByArea((prev) => ({
+            ...prev,
+            [areaId]: err instanceof Error ? err.message : 'Could not load print sizes for this area.',
+          }))
+          setAllowedSizesLoadingByArea((prev) => ({ ...prev, [areaId]: false }))
+        })
+    })
+  }, [selectedPrintAreas, allowedSizesByArea])
 
   useEffect(() => {
     if (!product) {
@@ -319,6 +383,8 @@ export default function ProductDetailPage() {
   }
 
   function handlePrintAreasChange(areaIds: string[]) {
+    const removed = selectedPrintAreas.filter((id) => !areaIds.includes(id))
+
     setSelectedPrintAreas(areaIds)
     setPrintSizeByArea((prev) => {
       const next: Record<string, string | undefined> = {}
@@ -327,6 +393,25 @@ export default function ProductDetailPage() {
       })
       return next
     })
+
+    if (removed.length > 0) {
+      removed.forEach((id) => loadingAreasRef.current.delete(id))
+      setAllowedSizesByArea((prev) => {
+        const next = { ...prev }
+        removed.forEach((id) => delete next[id])
+        return next
+      })
+      setAllowedSizesLoadingByArea((prev) => {
+        const next = { ...prev }
+        removed.forEach((id) => delete next[id])
+        return next
+      })
+      setAllowedSizesErrorByArea((prev) => {
+        const next = { ...prev }
+        removed.forEach((id) => delete next[id])
+        return next
+      })
+    }
   }
 
   function handlePrintSizeChange(areaId: string, sizeId: string) {
@@ -359,17 +444,18 @@ export default function ProductDetailPage() {
     try {
       const prints: CartItemPrint[] = selectedPrintAreas.map((areaId) => {
         const area = printAreas.find((item) => item.id === areaId)
-        const size = printSizes.find((item) => item.id === printSizeByArea[areaId])
+        const selectedSizeId = printSizeByArea[areaId]
+        const sizeOption = allowedSizesByArea[areaId]?.find((o) => o.printSizeId === selectedSizeId)
 
-        if (!area || !size) {
+        if (!area || !sizeOption) {
           throw new Error('Print configuration is incomplete.')
         }
 
         return {
           printAreaId: area.id,
           printAreaName: area.name,
-          printSizeId: size.id,
-          printSizeName: size.name,
+          printSizeId: sizeOption.printSize.id,
+          printSizeName: sizeOption.printSize.name,
         }
       })
 
@@ -594,7 +680,9 @@ export default function ProductDetailPage() {
               </div>
               <PrintSizeSelector
                 selectedAreas={selectedAreaDetails}
-                sizes={printSizes}
+                allowedSizesByArea={allowedSizesByArea}
+                allowedSizesLoadingByArea={allowedSizesLoadingByArea}
+                allowedSizesErrorByArea={allowedSizesErrorByArea}
                 printSizeByArea={printSizeByArea}
                 errors={perAreaValidationErrors}
                 onChange={handlePrintSizeChange}
