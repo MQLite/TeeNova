@@ -80,6 +80,7 @@ public class TeeNovaDataSeedContributor : IDataSeedContributor, ITransientDepend
 
     public async Task SeedAsync(DataSeedContext context)
     {
+        await CleanupObsoletePrintConfigAsync();
         await SeedPrintAreasAsync();
         await SeedPrintSizesAsync();
         await SeedPrintAreaSizeOptionsAsync();
@@ -190,6 +191,66 @@ public class TeeNovaDataSeedContributor : IDataSeedContributor, ITransientDepend
                     SortOrder = order,
                 },
                 autoSave: true);
+        }
+    }
+
+    private static readonly string[] ObsoleteAreaCodes = ["NECK_LABEL"];
+    private static readonly string[] ObsoleteSizeCodes = ["SMALL_CHEST", "LARGE_BACK", "NECK_LABEL_SIZE"];
+    private static readonly (string AreaCode, string SizeCode)[] ObsoleteCombinations =
+    [
+        ("LEFT_CHEST",  "A3"),
+        ("LEFT_CHEST",  "A4"),
+        ("LEFT_CHEST",  "A5"),
+        ("RIGHT_CHEST", "A3"),
+        ("RIGHT_CHEST", "A4"),
+        ("RIGHT_CHEST", "A5"),
+    ];
+
+    private async Task CleanupObsoletePrintConfigAsync()
+    {
+        var allAreas   = await _printAreaRepository.GetListAsync();
+        var allSizes   = await _printSizeRepository.GetListAsync();
+        var allOptions = await _printAreaSizeOptionRepository.GetListAsync();
+
+        var areaByCode = allAreas.ToDictionary(a => a.Code, a => a);
+        var sizeByCode = allSizes.ToDictionary(s => s.Code, s => s);
+
+        var obsoleteAreaIds = ObsoleteAreaCodes
+            .Where(areaByCode.ContainsKey).Select(c => areaByCode[c].Id).ToHashSet();
+        var obsoleteSizeIds = ObsoleteSizeCodes
+            .Where(sizeByCode.ContainsKey).Select(c => sizeByCode[c].Id).ToHashSet();
+        var obsoleteComboPairs = ObsoleteCombinations
+            .Where(p => areaByCode.ContainsKey(p.AreaCode) && sizeByCode.ContainsKey(p.SizeCode))
+            .Select(p => (AreaId: areaByCode[p.AreaCode].Id, SizeId: sizeByCode[p.SizeCode].Id))
+            .ToHashSet();
+
+        // Deactivate obsolete PrintAreaSizeOptions
+        foreach (var opt in allOptions)
+        {
+            var isObsolete =
+                obsoleteAreaIds.Contains(opt.PrintAreaId) ||
+                obsoleteSizeIds.Contains(opt.PrintSizeId) ||
+                obsoleteComboPairs.Contains((opt.PrintAreaId, opt.PrintSizeId));
+
+            if (isObsolete && opt.IsActive)
+            {
+                opt.IsActive = false;
+                await _printAreaSizeOptionRepository.UpdateAsync(opt, autoSave: true);
+            }
+        }
+
+        // Deactivate obsolete PrintSizes
+        foreach (var size in allSizes.Where(s => ObsoleteSizeCodes.Contains(s.Code) && s.IsActive))
+        {
+            size.IsActive = false;
+            await _printSizeRepository.UpdateAsync(size, autoSave: true);
+        }
+
+        // Deactivate obsolete PrintAreas
+        foreach (var area in allAreas.Where(a => ObsoleteAreaCodes.Contains(a.Code) && a.IsActive))
+        {
+            area.IsActive = false;
+            await _printAreaRepository.UpdateAsync(area, autoSave: true);
         }
     }
 
