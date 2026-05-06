@@ -30,16 +30,9 @@ interface PageProps {
   params: Promise<{ id: string }>
 }
 
-function formatPosition(value: string) {
-  return value.replace(/([A-Z])/g, ' $1').trim()
-}
-
-function getPositionAssets(item: OrderItem) {
-  return item.positionAssets ?? []
-}
-
 function getPrimaryPreview(item: OrderItem) {
-  return getPositionAssets(item)[0]?.uploadedAssetUrl ?? null
+  return getPrintSummary(item).find((print) => print.uploadedAssetUrl)?.uploadedAssetUrl
+    ?? null
 }
 
 function getPrintSummary(item: OrderItem) {
@@ -121,52 +114,52 @@ export default async function OrderDetailPage({ params }: PageProps) {
                     {getPrintSummary(item).length > 0 && (
                       <div className="mt-2 flex flex-wrap gap-1">
                         {getPrintSummary(item).map((print) => (
-                          <span key={`${print.printAreaId}:${print.printSizeId}`} className="inline-flex items-center rounded-full border border-black/[0.08] px-2 py-0.5 font-mono text-[10px] uppercase tracking-[0.54px] text-black/55">
+                          <span key={print.id} className="inline-flex flex-col rounded-lg border border-black/[0.08] px-2 py-1 text-[10px] text-black/55">
                             {print.printAreaName} · {print.printSizeName}
+                            {print.uploadedAssetUrl && <span className="text-green-600">Design uploaded</span>}
                           </span>
                         ))}
                       </div>
                     )}
 
-                    {getPositionAssets(item).length > 0 && (
+                    {getPrintSummary(item).some((print) => print.uploadedAssetUrl || print.designNote) && (
                       <div className="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-2">
-                        {getPositionAssets(item).map((positionAsset) => (
-                          <div key={positionAsset.id} className="rounded-lg border border-black/[0.08] bg-black/[0.02] p-3">
-                            <div className="flex items-start gap-3">
-                              <div className="flex h-14 w-14 flex-shrink-0 items-center justify-center overflow-hidden rounded-lg border border-black/[0.08]">
-                                {positionAsset.uploadedAssetUrl ? (
-                                  // eslint-disable-next-line @next/next/no-img-element
-                                  <img
-                                    src={positionAsset.uploadedAssetUrl}
-                                    alt={`Design for ${formatPosition(positionAsset.position)}`}
-                                    className="h-full w-full object-contain p-1"
-                                  />
-                                ) : (
-                                  <svg viewBox="0 0 200 220" className="h-6 w-6 text-black/[0.06]" fill="currentColor">
-                                    <path d="M 59 36 L 30 48 L 14 85 L 41 94 L 44 85 L 44 185 L 156 185 L 156 85 L 159 94 L 186 85 L 170 48 L 141 36 C 134 54 118 61 100 61 C 82 61 66 54 59 36 Z" />
-                                  </svg>
-                                )}
-                              </div>
-                              <div className="min-w-0 flex-1">
-                                <span className="inline-flex items-center rounded-full border border-black/[0.08] px-2 py-0.5 font-mono text-[10px] uppercase tracking-[0.54px] text-black/55">
-                                  {formatPosition(positionAsset.position)}
-                                </span>
-                                {positionAsset.designNote && (
-                                  <div className="mt-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
-                                    <span className="font-medium">Note: </span>{positionAsset.designNote}
+                        {getPrintSummary(item)
+                          .filter((print) => print.uploadedAssetUrl || print.designNote)
+                          .map((print) => (
+                            <div key={print.id} className="rounded-lg border border-black/[0.08] bg-black/[0.02] p-3">
+                              <div className="flex items-start gap-3">
+                                {print.uploadedAssetUrl && (
+                                  <div className="flex h-14 w-14 flex-shrink-0 items-center justify-center overflow-hidden rounded-lg border border-black/[0.08] bg-white">
+                                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                                    <img
+                                      src={print.uploadedAssetUrl}
+                                      alt={`Design for ${print.printAreaName}`}
+                                      className="h-full w-full object-contain p-1"
+                                    />
                                   </div>
                                 )}
-                                {positionAsset.uploadedAssetUrl && (
-                                  <div className="mt-2">
-                                    <DownloadDesignButton url={positionAsset.uploadedAssetUrl} />
-                                  </div>
-                                )}
+                                <div className="min-w-0 flex-1">
+                                  <span className="inline-flex items-center rounded-full border border-black/[0.08] px-2 py-0.5 font-mono text-[10px] uppercase tracking-[0.54px] text-black/55">
+                                    {print.printAreaName} · {print.printSizeName}
+                                  </span>
+                                  {print.designNote && (
+                                    <div className="mt-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
+                                      <span className="font-medium">Note: </span>{print.designNote}
+                                    </div>
+                                  )}
+                                  {print.uploadedAssetUrl && (
+                                    <div className="mt-2">
+                                      <DownloadDesignButton url={print.uploadedAssetUrl} />
+                                    </div>
+                                  )}
+                                </div>
                               </div>
                             </div>
-                          </div>
-                        ))}
+                          ))}
                       </div>
                     )}
+
                   </div>
 
                   <span className="text-sm text-black" style={{ fontWeight: 540 }}>${item.lineTotal.toFixed(2)}</span>

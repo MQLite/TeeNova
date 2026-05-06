@@ -40,8 +40,8 @@ public class OrphanedAssetCleanupWorker : AsyncPeriodicBackgroundWorkerBase
         // NOT from constructor injection (would be captive dependency in singleton).
         var assetRepository = workerContext.ServiceProvider
             .GetRequiredService<IRepository<UploadedAsset, Guid>>();
-        var orderItemPositionAssetRepository = workerContext.ServiceProvider
-            .GetRequiredService<IRepository<OrderItemPositionAsset, Guid>>();
+        var orderItemPrintRepository = workerContext.ServiceProvider
+            .GetRequiredService<IRepository<OrderItemPrint, Guid>>();
         var storageService = workerContext.ServiceProvider
             .GetRequiredService<IFileStorageService>();
 
@@ -61,7 +61,7 @@ public class OrphanedAssetCleanupWorker : AsyncPeriodicBackgroundWorkerBase
         }
 
         var candidateIds = candidates.Select(a => a.Id).ToList();
-        var referencedIds = (await orderItemPositionAssetRepository.GetListAsync(
+        var referencedIds = (await orderItemPrintRepository.GetListAsync(
                     p => p.UploadedAssetId != null && candidateIds.Contains(p.UploadedAssetId!.Value)))
                 .Select(p => p.UploadedAssetId!.Value).ToHashSet();
 

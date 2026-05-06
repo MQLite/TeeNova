@@ -15,7 +15,6 @@ public class OrderDto
 
     public bool IsApprovedForPrinting { get; set; }
     public bool IsDesignReviewed { get; set; }
-    public bool IsPrintPositionConfirmed { get; set; }
     public bool IsFileDownloaded { get; set; }
     public bool IsGarmentConfirmed { get; set; }
     public bool IsReadyToPrint { get; set; }

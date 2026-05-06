@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { useCartStore } from '@/features/cart/cart-store'
@@ -10,6 +10,10 @@ import type { CartItem, ShippingAddress } from '@/types'
 
 function getPrintSummary(item: CartItem) {
   return item.prints ?? []
+}
+
+function getUploadedDesignUrl(item: CartItem) {
+  return item.prints?.find((print) => print.uploadedAssetUrl)?.uploadedAssetUrl
 }
 
 export default function CheckoutPage() {
@@ -30,6 +34,12 @@ export default function CheckoutPage() {
     country: 'NZ',
     phone: '',
   })
+
+  useEffect(() => {
+    if (items.length === 0 && !submitted) {
+      router.replace('/cart')
+    }
+  }, [items.length, router, submitted])
 
   function handleChange(e: React.ChangeEvent<HTMLInputElement>) {
     setForm((prev) => ({ ...prev, [e.target.name]: e.target.value }))
@@ -56,15 +66,12 @@ export default function CheckoutPage() {
           productId: item.productId,
           productVariantId: item.productVariantId,
           quantity: item.quantity,
-          printPositions: (item.printPositions ?? []).map((p) => ({
-            position: p.position,
-            assetId: p.uploadedAssetId,
-            assetUrl: p.uploadedAssetUrl,
-            designNote: p.designNote,
-          })),
           prints: (item.prints ?? []).map((print) => ({
             printAreaId: print.printAreaId,
             printSizeId: print.printSizeId,
+            uploadedAssetId: print.uploadedAssetId,
+            uploadedAssetUrl: print.uploadedAssetUrl,
+            designNote: print.designNote,
           })),
         })),
       })
@@ -79,7 +86,6 @@ export default function CheckoutPage() {
   }
 
   if (items.length === 0 && !submitted) {
-    router.replace('/cart')
     return null
   }
 
@@ -186,9 +192,9 @@ export default function CheckoutPage() {
                   {items.map((item) => (
                     <div key={item.cartItemKey} className="flex gap-3 px-5 py-3">
                       <div className="h-11 w-11 flex-shrink-0 rounded-lg overflow-hidden bg-black/[0.03] flex items-center justify-center">
-                        {item.printPositions?.[0]?.uploadedAssetUrl ? (
+                        {getUploadedDesignUrl(item) ? (
                           // eslint-disable-next-line @next/next/no-img-element
-                          <img src={item.printPositions[0]?.uploadedAssetUrl ?? ''} alt="" className="h-full w-full object-contain p-0.5" />
+                          <img src={getUploadedDesignUrl(item) ?? ''} alt="" className="h-full w-full object-contain p-0.5" />
                         ) : (
                           <svg viewBox="0 0 200 220" className="h-6 w-6 text-black/[0.08]" fill="currentColor">
                             <path d="M 59 36 L 30 48 L 14 85 L 41 94 L 44 85 L 44 185 L 156 185 L 156 85 L 159 94 L 186 85 L 170 48 L 141 36 C 134 54 118 61 100 61 C 82 61 66 54 59 36 Z" />
@@ -206,8 +212,10 @@ export default function CheckoutPage() {
                           <div className="mt-1 flex flex-wrap gap-1">
                             {getPrintSummary(item).map((print) => (
                               <span key={`${print.printAreaId}:${print.printSizeId}`}
-                                className="inline-flex items-center rounded-full border border-black/[0.08] px-2 py-0.5 font-mono text-[10px] uppercase tracking-[0.54px] text-black/50">
+                                className="inline-flex flex-col rounded-lg border border-black/[0.08] px-2 py-1 text-[10px] text-black/50">
                                 {print.printAreaName} · {print.printSizeName}
+                                {print.uploadedAssetUrl && <span className="text-green-600">Design uploaded</span>}
+                                {print.designNote && <span className="normal-case tracking-normal text-black/45">{print.designNote}</span>}
                               </span>
                             ))}
                           </div>

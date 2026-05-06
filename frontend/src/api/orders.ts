@@ -1,16 +1,12 @@
 import { apiClient } from '@/lib/api-client'
-import type { Order, OrderStatus, PagedResult, PrintPosition, ShippingAddress } from '@/types'
-
-export interface CreateOrderItemPositionPayload {
-  position: string
-  assetId?: string
-  assetUrl?: string
-  designNote?: string
-}
+import type { Order, OrderStatus, PagedResult, ShippingAddress } from '@/types'
 
 export interface CreateOrderItemPrintPayload {
   printAreaId: string
   printSizeId: string
+  uploadedAssetId?: string
+  uploadedAssetUrl?: string
+  designNote?: string
 }
 
 export interface CreateOrderPayload {
@@ -20,7 +16,6 @@ export interface CreateOrderPayload {
     productId: string
     productVariantId: string
     quantity: number
-    printPositions: CreateOrderItemPositionPayload[]
     prints?: CreateOrderItemPrintPayload[]
   }[]
   notes?: string
@@ -62,7 +57,6 @@ export const ordersApi = {
     id: string,
     payload: {
       isDesignReviewed: boolean
-      isPrintPositionConfirmed: boolean
       isFileDownloaded: boolean
       isGarmentConfirmed: boolean
       isReadyToPrint: boolean
@@ -95,16 +89,15 @@ export const ordersApi = {
     return apiClient.post(`/api/orders/${id}/complete`)
   },
 
-  updateItemDesign(
+  updatePrintDesign(
     orderId: string,
-    itemId: string,
+    printId: string,
     payload: {
-      position: PrintPosition
-      uploadedAssetId?: string
-      uploadedAssetUrl?: string
-      designNote?: string
+      uploadedAssetId?: string | null
+      uploadedAssetUrl?: string | null
+      designNote?: string | null
     },
-  ): Promise<import('@/types').OrderItem> {
-    return apiClient.put(`/api/orders/${orderId}/items/${itemId}/design`, payload)
+  ): Promise<Order> {
+    return apiClient.put(`/api/orders/${orderId}/prints/${printId}/design`, payload)
   },
 }
