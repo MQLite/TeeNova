@@ -3,6 +3,7 @@ using System;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Metadata;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using TeeNova.EntityFrameworkCore;
 using Volo.Abp.EntityFrameworkCore;
@@ -12,9 +13,11 @@ using Volo.Abp.EntityFrameworkCore;
 namespace TeeNova.Migrations
 {
     [DbContext(typeof(TeeNovaDbContext))]
-    partial class TeeNovaDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260506030949_AddDesignFieldsToOrderItemPrints")]
+    partial class AddDesignFieldsToOrderItemPrints
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -313,6 +316,11 @@ namespace TeeNova.Migrations
                         .HasColumnType("bit")
                         .HasDefaultValue(false);
 
+                    b.Property<bool>("IsPrintPositionConfirmed")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bit")
+                        .HasDefaultValue(false);
+
                     b.Property<bool>("IsReadyToPrint")
                         .ValueGeneratedOnAdd()
                         .HasColumnType("bit")
@@ -385,6 +393,38 @@ namespace TeeNova.Migrations
                     b.HasIndex("OrderId");
 
                     b.ToTable("OrderItems", "teenova");
+                });
+
+            modelBuilder.Entity("TeeNova.Orders.OrderItemPositionAsset", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("DesignNote")
+                        .HasMaxLength(2000)
+                        .HasColumnType("nvarchar(2000)");
+
+                    b.Property<Guid>("OrderItemId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("Position")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("nvarchar(32)");
+
+                    b.Property<Guid?>("UploadedAssetId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("UploadedAssetUrl")
+                        .HasMaxLength(1024)
+                        .HasColumnType("nvarchar(1024)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("OrderItemId", "Position")
+                        .IsUnique();
+
+                    b.ToTable("OrderItemPositionAssets", "teenova");
                 });
 
             modelBuilder.Entity("TeeNova.Orders.OrderItemPrint", b =>
@@ -509,6 +549,9 @@ namespace TeeNova.Migrations
                     b.Property<bool>("IsActive")
                         .HasColumnType("bit");
 
+                    b.Property<int?>("LegacyPositionValue")
+                        .HasColumnType("int");
+
                     b.Property<string>("Name")
                         .IsRequired()
                         .HasMaxLength(128)
@@ -521,6 +564,10 @@ namespace TeeNova.Migrations
 
                     b.HasIndex("Code")
                         .IsUnique();
+
+                    b.HasIndex("LegacyPositionValue")
+                        .IsUnique()
+                        .HasFilter("[LegacyPositionValue] IS NOT NULL");
 
                     b.ToTable("PrintAreas", "teenova");
                 });
@@ -729,6 +776,15 @@ namespace TeeNova.Migrations
                         .IsRequired();
                 });
 
+            modelBuilder.Entity("TeeNova.Orders.OrderItemPositionAsset", b =>
+                {
+                    b.HasOne("TeeNova.Orders.OrderItem", null)
+                        .WithMany("PositionAssets")
+                        .HasForeignKey("OrderItemId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+                });
+
             modelBuilder.Entity("TeeNova.Orders.OrderItemPrint", b =>
                 {
                     b.HasOne("TeeNova.Orders.OrderItem", null)
@@ -779,6 +835,8 @@ namespace TeeNova.Migrations
 
             modelBuilder.Entity("TeeNova.Orders.OrderItem", b =>
                 {
+                    b.Navigation("PositionAssets");
+
                     b.Navigation("Prints");
                 });
 #pragma warning restore 612, 618

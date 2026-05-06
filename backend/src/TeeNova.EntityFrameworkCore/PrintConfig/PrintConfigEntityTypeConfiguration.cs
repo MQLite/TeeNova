@@ -18,11 +18,6 @@ public class PrintConfigEntityTypeConfiguration :
         builder.Property(a => a.BasePrice).HasColumnType("decimal(18,4)");
 
         builder.HasIndex(a => a.Code).IsUnique();
-
-        // Filtered unique index: allows multiple NULLs, enforces uniqueness among non-null values
-        builder.HasIndex(a => a.LegacyPositionValue)
-            .IsUnique()
-            .HasFilter("[LegacyPositionValue] IS NOT NULL");
     }
 
     public void Configure(EntityTypeBuilder<PrintSize> builder)

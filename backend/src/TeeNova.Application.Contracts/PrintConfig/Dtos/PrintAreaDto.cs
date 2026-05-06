@@ -10,5 +10,4 @@ public class PrintAreaDto
     public decimal BasePrice { get; set; }
     public bool IsActive { get; set; }
     public int SortOrder { get; set; }
-    public int? LegacyPositionValue { get; set; }
 }

@@ -1,6 +1,21 @@
 import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
-import type { CartItem } from '@/types'
+import type { CartItem, CartItemPrint } from '@/types'
+
+function mergePrintDesignData(existing: CartItemPrint[] = [], incoming: CartItemPrint[] = []) {
+  return incoming.map((print) => {
+    const current = existing.find(
+      (item) => item.printAreaId === print.printAreaId && item.printSizeId === print.printSizeId,
+    )
+
+    return {
+      ...print,
+      uploadedAssetId: current?.uploadedAssetId ?? print.uploadedAssetId,
+      uploadedAssetUrl: current?.uploadedAssetUrl ?? print.uploadedAssetUrl,
+      designNote: current?.designNote ?? print.designNote,
+    }
+  })
+}
 
 interface CartStore {
   items: CartItem[]
@@ -26,7 +41,11 @@ export const useCartStore = create<CartStore>()(
             return {
               items: state.items.map((i) =>
                 i.cartItemKey === newItem.cartItemKey
-                  ? { ...i, quantity: i.quantity + newItem.quantity }
+                  ? {
+                      ...i,
+                      quantity: i.quantity + newItem.quantity,
+                      prints: mergePrintDesignData(i.prints, newItem.prints),
+                    }
                   : i,
               ),
             }
@@ -67,14 +86,23 @@ export const useCartStore = create<CartStore>()(
     }),
     {
       name: 'teenova-cart',
-      version: 2,
+      version: 3,
       migrate: (persistedState) => {
-        const state = persistedState as { items?: Array<CartItem & { cartItemKey?: string }> } | undefined
+        const state = persistedState as {
+          items?: Array<CartItem & { cartItemKey?: string }>
+        } | undefined
         return {
-          items: (state?.items ?? []).map((item) => ({
-            ...item,
-            cartItemKey: item.cartItemKey ?? `${item.productVariantId}__blank`,
-            prints: item.prints ?? [],
+          items: (state?.items ?? []).map(({ cartItemKey, productId, productVariantId, productName, variantLabel, color, size, unitPrice, quantity, prints }) => ({
+            cartItemKey: cartItemKey ?? `${productVariantId}__blank`,
+            productId,
+            productVariantId,
+            productName,
+            variantLabel,
+            color,
+            size,
+            unitPrice,
+            quantity,
+            prints: prints ?? [],
           })),
         }
       },

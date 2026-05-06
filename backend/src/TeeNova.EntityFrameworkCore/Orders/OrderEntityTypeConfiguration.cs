@@ -8,7 +8,6 @@ namespace TeeNova.EntityFrameworkCore.Orders;
 public class OrderEntityTypeConfiguration :
     IEntityTypeConfiguration<Order>,
     IEntityTypeConfiguration<OrderItem>,
-    IEntityTypeConfiguration<OrderItemPositionAsset>,
     IEntityTypeConfiguration<OrderItemPrint>,
     IEntityTypeConfiguration<OrderTimelineEntry>
 {
@@ -43,9 +42,6 @@ public class OrderEntityTypeConfiguration :
             .HasDefaultValue(false);
 
         builder.Property(o => o.IsDesignReviewed)
-            .HasDefaultValue(false);
-
-        builder.Property(o => o.IsPrintPositionConfirmed)
             .HasDefaultValue(false);
 
         builder.Property(o => o.IsFileDownloaded)
@@ -89,29 +85,10 @@ public class OrderEntityTypeConfiguration :
         builder.Property(i => i.VariantLabel).IsRequired().HasMaxLength(128);
         builder.Property(i => i.UnitPrice).HasColumnType("decimal(18,4)");
 
-        builder.HasMany(i => i.PositionAssets)
-            .WithOne()
-            .HasForeignKey(p => p.OrderItemId)
-            .OnDelete(DeleteBehavior.Cascade);
-
         builder.HasMany(i => i.Prints)
             .WithOne()
             .HasForeignKey(p => p.OrderItemId)
             .OnDelete(DeleteBehavior.Cascade);
-    }
-
-    public void Configure(EntityTypeBuilder<OrderItemPositionAsset> builder)
-    {
-        builder.ToTable("OrderItemPositionAssets");
-
-        builder.Property(p => p.Position)
-            .HasConversion<string>()
-            .HasMaxLength(32);
-
-        builder.Property(p => p.UploadedAssetUrl).HasMaxLength(1024);
-        builder.Property(p => p.DesignNote).HasMaxLength(2000);
-
-        builder.HasIndex(p => new { p.OrderItemId, p.Position }).IsUnique();
     }
 
     public void Configure(EntityTypeBuilder<OrderItemPrint> builder)
@@ -149,6 +126,8 @@ public class OrderEntityTypeConfiguration :
             .HasColumnType("decimal(18,4)");
 
         builder.Property(p => p.Notes).HasMaxLength(2000);
+        builder.Property(p => p.UploadedAssetUrl).HasMaxLength(1024);
+        builder.Property(p => p.DesignNote).HasMaxLength(2000);
 
         builder.HasIndex(p => p.OrderItemId);
         builder.HasIndex(p => p.PrintAreaId);

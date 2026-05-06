@@ -23,7 +23,6 @@ public class TeeNovaDbContext : AbpDbContext<TeeNovaDbContext>
     // Orders
     public DbSet<Order> Orders { get; set; }
     public DbSet<OrderItem> OrderItems { get; set; }
-    public DbSet<OrderItemPositionAsset> OrderItemPositionAssets { get; set; }
     public DbSet<OrderItemPrint> OrderItemPrints { get; set; }
     public DbSet<OrderTimelineEntry> OrderTimelineEntries { get; set; }
 

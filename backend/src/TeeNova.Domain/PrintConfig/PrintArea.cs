@@ -11,12 +11,6 @@ public class PrintArea : Entity<Guid>
     public bool IsActive { get; set; } = true;
     public int SortOrder { get; set; }
 
-    /// <summary>
-    /// Maps to the legacy <see cref="TeeNova.Customization.PrintPosition"/> enum integer value.
-    /// Null for new custom areas that have no legacy equivalent.
-    /// </summary>
-    public int? LegacyPositionValue { get; set; }
-
     protected PrintArea() { }
 
     public PrintArea(Guid id, string name, string code) : base(id)

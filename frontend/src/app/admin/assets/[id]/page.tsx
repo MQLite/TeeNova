@@ -120,8 +120,8 @@ export default async function AdminAssetDetailPage({ params }: Props) {
                 <MetaRow label="Order" value={asset.linkedOrderNumber ?? '—'} />
                 <MetaRow label="Customer" value={asset.linkedCustomerName ?? '—'} />
                 <MetaRow label="Product" value={asset.linkedProductName ?? '—'} />
-                {asset.printPosition && (
-                  <MetaRow label="Print position" value={asset.printPosition} />
+                {asset.printAreaName && (
+                  <MetaRow label="Print area" value={asset.printAreaName} />
                 )}
                 {asset.designNote && (
                   <div>

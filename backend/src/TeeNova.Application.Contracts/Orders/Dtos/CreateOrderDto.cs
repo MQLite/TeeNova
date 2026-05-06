@@ -30,14 +30,5 @@ public class CreateOrderItemDto
     [Range(1, 100)]
     public int Quantity { get; set; } = 1;
 
-    public List<CreateOrderItemPositionDto> PrintPositions { get; set; } = new();
     public List<CreateOrderItemPrintDto> Prints { get; set; } = new();
-}
-
-public class CreateOrderItemPositionDto
-{
-    public string Position { get; set; } = default!;
-    public Guid? AssetId { get; set; }
-    public string? AssetUrl { get; set; }
-    public string? DesignNote { get; set; }
 }

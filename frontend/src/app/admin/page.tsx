@@ -34,7 +34,9 @@ function SummaryCard({ label, value, sub, icon }: {
         {icon}
       </div>
       <p className="font-mono text-[11px] uppercase tracking-[0.54px] text-black/55">{label}</p>
-      <p className="mt-1 text-2xl text-black tabular-nums" style={{ fontWeight: 400, letterSpacing: '-0.96px' }}>{value}</p>
+      <div className="mt-1 text-2xl text-black tabular-nums" style={{ fontWeight: 400, letterSpacing: '-0.96px' }}>
+        {value}
+      </div>
       {sub && <p className="mt-0.5 font-mono text-[10px] uppercase tracking-[0.54px] text-black/45">{sub}</p>}
     </div>
   )

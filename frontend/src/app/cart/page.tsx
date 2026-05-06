@@ -8,6 +8,10 @@ function getPrintSummary(item: CartItem) {
   return item.prints ?? []
 }
 
+function getUploadedDesignUrl(item: CartItem) {
+  return item.prints?.find((print) => print.uploadedAssetUrl)?.uploadedAssetUrl
+}
+
 export default function CartPage() {
   const { items, removeItem, updateQuantity, totalPrice } = useCartStore()
 
@@ -55,10 +59,10 @@ export default function CartPage() {
               <div key={item.cartItemKey} className="card overflow-hidden">
                 <div className="flex gap-4 p-5">
                   <div className="flex h-20 w-20 flex-shrink-0 items-center justify-center overflow-hidden rounded-lg bg-black/[0.03]">
-                    {item.printPositions?.[0]?.uploadedAssetUrl ? (
+                    {getUploadedDesignUrl(item) ? (
                       // eslint-disable-next-line @next/next/no-img-element
                       <img
-                        src={item.printPositions[0].uploadedAssetUrl}
+                        src={getUploadedDesignUrl(item) ?? ''}
                         alt="design"
                         className="h-full w-full object-contain p-1"
                       />
@@ -82,18 +86,10 @@ export default function CartPage() {
                           <div className="mt-2 flex flex-wrap gap-1">
                             {getPrintSummary(item).map((print) => (
                               <span key={`${print.printAreaId}:${print.printSizeId}`}
-                                className="inline-flex items-center rounded-full border border-black/[0.08] px-2 py-0.5 font-mono text-[10px] uppercase tracking-[0.54px] text-black/55">
+                                className="inline-flex flex-col rounded-lg border border-black/[0.08] px-2 py-1 text-[10px] text-black/55">
                                 {print.printAreaName} · {print.printSizeName}
-                              </span>
-                            ))}
-                          </div>
-                        ) : null}
-                        {item.printPositions && item.printPositions.length > 0 ? (
-                          <div className="mt-1 flex flex-wrap gap-1">
-                            {item.printPositions.map((pp) => (
-                              <span key={pp.position}
-                                className="inline-flex items-center rounded-full border border-black/[0.08] px-2 py-0.5 font-mono text-[10px] uppercase tracking-[0.54px] text-black/50">
-                                {pp.position.replace(/([A-Z])/g, ' $1').trim()}
+                                {print.uploadedAssetUrl && <span className="text-green-600">Design uploaded</span>}
+                                {print.designNote && <span className="normal-case tracking-normal text-black/45">{print.designNote}</span>}
                               </span>
                             ))}
                           </div>

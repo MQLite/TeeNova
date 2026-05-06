@@ -92,7 +92,7 @@ public class TeeNovaDataSeedContributor : IDataSeedContributor, ITransientDepend
 
     // Neck Label is intentionally excluded from seed data (business decision).
     // Small Chest, Large Back, Neck Label Size are intentionally excluded from PrintSize seed.
-    private static readonly (string Name, string Code, int LegacyValue)[] PrintAreaSeedData =
+    private static readonly (string Name, string Code, int SortOrder)[] PrintAreaSeedData =
     [
         ("Front Center", "FRONT_CENTER", 0),
         ("Back Center",  "BACK_CENTER",  1),
@@ -127,17 +127,16 @@ public class TeeNovaDataSeedContributor : IDataSeedContributor, ITransientDepend
 
     private async Task SeedPrintAreasAsync()
     {
-        foreach (var (name, code, legacyValue) in PrintAreaSeedData)
+        foreach (var (name, code, sortOrder) in PrintAreaSeedData)
         {
             if (!await _printAreaRepository.AnyAsync(a => a.Code == code))
             {
                 await _printAreaRepository.InsertAsync(
                     new PrintArea(Guid.NewGuid(), name, code)
                     {
-                        LegacyPositionValue = legacyValue,
-                        SortOrder           = legacyValue,
-                        BasePrice           = 0m,
-                        IsActive            = true,
+                        SortOrder = sortOrder,
+                        BasePrice = 0m,
+                        IsActive  = true,
                     },
                     autoSave: true);
             }
@@ -410,7 +409,6 @@ public class TeeNovaDataSeedContributor : IDataSeedContributor, ITransientDepend
             var item = new OrderItem(Item1Id, Order1Id,
                 classic.Id, variant.Id, classic.Name, $"{variant.Color} / {variant.Size}",
                 3, classic.BasePrice + variant.PriceAdjustment);
-            item.UpsertPositionAsset(Guid.NewGuid(), PrintPosition.FrontCenter, Asset1Id, baseUrl + "/images/products/classic-tee.svg", "Sarah's custom birthday design");
             order.AddItem(item);
             order.UpdateStatus(OrderStatus.Paid);
             order.UpdateStatus(OrderStatus.Reviewing);
@@ -427,11 +425,10 @@ public class TeeNovaDataSeedContributor : IDataSeedContributor, ITransientDepend
             var order = new Order(Order2Id, "Auckland FC", "admin@aucklandfc.co.nz",
                 new ShippingAddress("Auckland FC", "55 Albert Street", "Auckland", "Auckland", "1010", "NZ",
                     phone: "+64 9 358 1234"))
-            { Notes = "Team jersey order 鈥?logo on front, number on back. Needed ASAP.", CreationTime = now.AddDays(-2) };
+            { Notes = "Team jersey order — logo on front, number on back. Needed ASAP.", CreationTime = now.AddDays(-2) };
             var item = new OrderItem(Item2Id, Order2Id,
                 classic.Id, variant.Id, classic.Name, $"{variant.Color} / {variant.Size}",
                 10, classic.BasePrice + variant.PriceAdjustment);
-            item.UpsertPositionAsset(Guid.NewGuid(), PrintPosition.FrontCenter, Asset2Id, baseUrl + "/images/products/classic-tee.svg", "Club crest 鈥?high-res file provided");
             order.AddItem(item);
             order.UpdateStatus(OrderStatus.Paid);
             order.UpdateStatus(OrderStatus.Reviewing);
@@ -446,11 +443,10 @@ public class TeeNovaDataSeedContributor : IDataSeedContributor, ITransientDepend
             var order = new Order(Order3Id, "Riverside Community Church", "events@riversidechurch.org.nz",
                 new ShippingAddress("Riverside Community Church", "88 Henderson Valley Road",
                     "Henderson", "Auckland", "0612", "NZ"))
-            { Notes = "Annual family fun day shirts 鈥?needed by 5 April. Print on front and back.", CreationTime = now.AddDays(-3) };
+            { Notes = "Annual family fun day shirts — needed by 5 April. Print on front and back.", CreationTime = now.AddDays(-3) };
             var item = new OrderItem(Item3Id, Order3Id,
                 classic.Id, variant.Id, classic.Name, $"{variant.Color} / {variant.Size}",
                 25, classic.BasePrice + variant.PriceAdjustment);
-            item.UpsertPositionAsset(Guid.NewGuid(), PrintPosition.FrontCenter);
             order.AddItem(item);
             order.UpdateStatus(OrderStatus.Paid);
             order.UpdateStatus(OrderStatus.Reviewing);
@@ -467,7 +463,6 @@ public class TeeNovaDataSeedContributor : IDataSeedContributor, ITransientDepend
             var item = new OrderItem(Item4Id, Order4Id,
                 oversized.Id, variant.Id, oversized.Name, $"{variant.Color} / {variant.Size}",
                 1, oversized.BasePrice + variant.PriceAdjustment);
-            item.UpsertPositionAsset(Guid.NewGuid(), PrintPosition.FrontCenter, designNote: "Minimalist line-art design 鈥?see uploaded file");
             order.AddItem(item);
             order.UpdateStatus(OrderStatus.Paid);
             order.UpdateStatus(OrderStatus.Reviewing);
@@ -484,11 +479,10 @@ public class TeeNovaDataSeedContributor : IDataSeedContributor, ITransientDepend
             var order = new Order(Order5Id, "James Patel", "james.patel@gmail.com",
                 new ShippingAddress("James Patel", "7 Queen Street", "Onehunga", "Auckland", "1061", "NZ",
                     phone: "+64 21 456 7890"))
-            { Notes = "Small chest logo 鈥?design file attached. Please confirm placement before printing.", CreationTime = now.AddDays(-5) };
+            { Notes = "Small chest logo — design file attached. Please confirm placement before printing.", CreationTime = now.AddDays(-5) };
             var item = new OrderItem(Item5Id, Order5Id,
                 premium.Id, variant.Id, premium.Name, $"{variant.Color} / {variant.Size}",
                 2, premium.BasePrice + variant.PriceAdjustment);
-            item.UpsertPositionAsset(Guid.NewGuid(), PrintPosition.LeftChest, Asset3Id, baseUrl + "/images/products/premium-tee.svg", "Company logo 鈥?left chest, ~8cm wide");
             order.AddItem(item);
             order.UpdateStatus(OrderStatus.Paid);
             await _orderRepository.InsertAsync(order, autoSave: true);
@@ -502,18 +496,16 @@ public class TeeNovaDataSeedContributor : IDataSeedContributor, ITransientDepend
                 new ShippingAddress("Wilson & Associates Ltd", "Level 3, 90 Symonds Street",
                     "Grafton", "Auckland", "1023", "NZ",
                     phone: "+64 9 123 4567"))
-            { Notes = "Company staff uniforms 鈥?urgent, need by Friday. Two colour variants.", CreationTime = now.AddDays(-6) };
+            { Notes = "Company staff uniforms — urgent, need by Friday. Two colour variants.", CreationTime = now.AddDays(-6) };
 
             var itemA = new OrderItem(Item6aId, Order6Id,
                 premium.Id, variantS.Id, premium.Name, $"{variantS.Color} / {variantS.Size}",
                 3, premium.BasePrice + variantS.PriceAdjustment);
-            itemA.UpsertPositionAsset(Guid.NewGuid(), PrintPosition.LeftChest, Asset4Id, baseUrl + "/images/products/premium-tee.svg");
             order.AddItem(itemA);
 
             var itemB = new OrderItem(Item6bId, Order6Id,
                 premium.Id, variantM.Id, premium.Name, $"{variantM.Color} / {variantM.Size}",
                 2, premium.BasePrice + variantM.PriceAdjustment);
-            itemB.UpsertPositionAsset(Guid.NewGuid(), PrintPosition.LeftChest);
             order.AddItem(itemB);
 
             await _orderRepository.InsertAsync(order, autoSave: true);

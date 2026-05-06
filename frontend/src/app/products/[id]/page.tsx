@@ -4,13 +4,11 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import Link from 'next/link'
 import { useParams } from 'next/navigation'
 import { catalogApi } from '@/api/catalog'
-import { customizationApi } from '@/api/customization'
 import { filesApi } from '@/api/files'
 import { pricingApi } from '@/api/pricing'
 import { printConfigApi } from '@/api/print-config'
 import { PricingBreakdownPanel } from '@/components/products/PricingBreakdownPanel'
 import { PrintAreaSelector } from '@/components/products/PrintAreaSelector'
-import { PrintPositionSelector } from '@/components/products/PrintPositionSelector'
 import { PrintSizeSelector } from '@/components/products/PrintSizeSelector'
 import { useCartStore } from '@/features/cart/cart-store'
 import { filterImagesForColor } from '@/lib/image-utils'
@@ -19,8 +17,6 @@ import type {
   PriceCalculationResponse,
   PrintArea,
   PrintAreaSizeOption,
-  PrintPosition,
-  PrintPositionOption,
   Product,
   UploadedAsset,
 } from '@/types'
@@ -62,18 +58,17 @@ export default function ProductDetailPage() {
   const addItem = useCartStore((state) => state.addItem)
 
   const [product, setProduct] = useState<Product | null>(null)
-  const [positions, setPositions] = useState<PrintPositionOption[]>([])
-  const [selectedPositions, setSelectedPositions] = useState<number[]>([])
-  const [positionUploads, setPositionUploads] = useState<Record<number, UploadedAsset>>({})
-  const [positionNotes, setPositionNotes] = useState<Record<number, string>>({})
-  const [uploadingPosition, setUploadingPosition] = useState<number | null>(null)
-  const [dragOverPosition, setDragOverPosition] = useState<number | null>(null)
   const [printAreas, setPrintAreas] = useState<PrintArea[]>([])
   const [selectedPrintAreas, setSelectedPrintAreas] = useState<string[]>([])
   const [printSizeByArea, setPrintSizeByArea] = useState<Record<string, string | undefined>>({})
   const [allowedSizesByArea, setAllowedSizesByArea] = useState<Record<string, PrintAreaSizeOption[]>>({})
   const [allowedSizesLoadingByArea, setAllowedSizesLoadingByArea] = useState<Record<string, boolean>>({})
   const [allowedSizesErrorByArea, setAllowedSizesErrorByArea] = useState<Record<string, string | undefined>>({})
+  const [printAreaUploads, setPrintAreaUploads] = useState<Record<string, UploadedAsset | undefined>>({})
+  const [printAreaNotes, setPrintAreaNotes] = useState<Record<string, string>>({})
+  const [printAreaUploadErrors, setPrintAreaUploadErrors] = useState<Record<string, string | undefined>>({})
+  const [uploadingPrintAreaId, setUploadingPrintAreaId] = useState<string | null>(null)
+  const [dragOverPrintAreaId, setDragOverPrintAreaId] = useState<string | null>(null)
   const selectedPrintAreasRef = useRef<string[]>([])
   const loadingAreasRef = useRef<Set<string>>(new Set())
   const [loading, setLoading] = useState(true)
@@ -199,19 +194,14 @@ export default function ProductDetailPage() {
 
     Promise.all([
       catalogApi.getProduct(id),
-      customizationApi.getPrintPositions(),
       printConfigApi.getAreas(),
     ])
-      .then(([loadedProduct, loadedPositions, loadedAreas]) => {
+      .then(([loadedProduct, loadedAreas]) => {
         if (!isMounted) return
 
         setProduct(loadedProduct)
-        setPositions(loadedPositions)
         setPrintAreas(loadedAreas)
         setSelectedColor(loadedProduct.variants[0]?.color ?? null)
-
-        const front = loadedPositions.find((position) => position.name === 'FrontCenter')
-        if (front) setSelectedPositions([front.value])
       })
       .catch((error) => {
         if (!isMounted) return
@@ -372,20 +362,32 @@ export default function ProductDetailPage() {
     return () => window.clearTimeout(timeout)
   }, [addedToCart])
 
-  async function handleFileUpload(file: File, positionValue: number) {
-    setUploadingPosition(positionValue)
+  async function handlePrintAreaFileUpload(areaId: string, file: File) {
+    setUploadingPrintAreaId(areaId)
+    setPrintAreaUploadErrors((prev) => ({ ...prev, [areaId]: undefined }))
     try {
       const asset = await filesApi.upload(file)
-      setPositionUploads((prev) => ({ ...prev, [positionValue]: asset }))
+      setPrintAreaUploads((prev) => ({ ...prev, [areaId]: asset }))
+    } catch (error) {
+      setPrintAreaUploads((prev) => ({ ...prev, [areaId]: undefined }))
+      setPrintAreaUploadErrors((prev) => ({
+        ...prev,
+        [areaId]: error instanceof Error ? error.message : 'Could not upload this design. Please try again.',
+      }))
     } finally {
-      setUploadingPosition(null)
+      setUploadingPrintAreaId(null)
     }
   }
 
-  function removePositionUpload(positionValue: number) {
-    setPositionUploads((prev) => {
+  function removePrintAreaUpload(areaId: string) {
+    setPrintAreaUploads((prev) => {
       const next = { ...prev }
-      delete next[positionValue]
+      delete next[areaId]
+      return next
+    })
+    setPrintAreaUploadErrors((prev) => {
+      const next = { ...prev }
+      delete next[areaId]
       return next
     })
   }
@@ -424,6 +426,27 @@ export default function ProductDetailPage() {
         removed.forEach((id) => delete next[id])
         return next
       })
+      setPrintAreaUploads((prev) => {
+        const next = { ...prev }
+        removed.forEach((id) => delete next[id])
+        return next
+      })
+      setPrintAreaNotes((prev) => {
+        const next = { ...prev }
+        removed.forEach((id) => delete next[id])
+        return next
+      })
+      setPrintAreaUploadErrors((prev) => {
+        const next = { ...prev }
+        removed.forEach((id) => delete next[id])
+        return next
+      })
+      if (removed.includes(uploadingPrintAreaId ?? '')) {
+        setUploadingPrintAreaId(null)
+      }
+      if (removed.includes(dragOverPrintAreaId ?? '')) {
+        setDragOverPrintAreaId(null)
+      }
     }
   }
 
@@ -464,11 +487,17 @@ export default function ProductDetailPage() {
           throw new Error('Print configuration is incomplete.')
         }
 
+        const asset = printAreaUploads[areaId]
+        const note = printAreaNotes[areaId]?.trim()
+
         return {
           printAreaId: area.id,
           printAreaName: area.name,
           printSizeId: sizeOption.printSize.id,
           printSizeName: sizeOption.printSize.name,
+          uploadedAssetId: asset?.assetId,
+          uploadedAssetUrl: asset?.fileUrl,
+          designNote: note || undefined,
         }
       })
 
@@ -478,21 +507,6 @@ export default function ProductDetailPage() {
           printSizeId: print.printSizeId,
         })),
       )
-
-      const printPositions = selectedPositions
-        .map((positionValue) => {
-          const positionName = positions.find((position) => position.value === positionValue)?.name as PrintPosition | undefined
-          const asset = positionUploads[positionValue]
-          return positionName
-            ? {
-                position: positionName,
-                uploadedAssetId: asset?.assetId,
-                uploadedAssetUrl: asset?.fileUrl,
-                designNote: positionNotes[positionValue] || undefined,
-              }
-            : null
-        })
-        .filter((position): position is NonNullable<typeof position> => position !== null)
 
       selectedVariantLines.forEach((line) => {
         const pricing = pricingByVariantId[line.variantId]
@@ -511,7 +525,6 @@ export default function ProductDetailPage() {
           unitPrice: pricing.unitPrice,
           quantity: line.quantity,
           prints,
-          printPositions,
         })
       })
 
@@ -703,42 +716,31 @@ export default function ProductDetailPage() {
             </div>
 
             <div className="card p-6">
-              <div className="mb-4 flex items-center justify-between gap-3">
-                <div>
-                  <p className="text-sm text-black" style={{ fontWeight: 480, letterSpacing: '-0.14px' }}>
-                    Legacy Design Upload
-                  </p>
-                  <p className="mt-1 font-mono text-[10px] uppercase tracking-[0.54px] text-black/45">
-                    Legacy print-position flow kept separate in this phase
-                  </p>
-                </div>
-              </div>
-              <PrintPositionSelector
-                positions={positions}
-                selected={selectedPositions}
-                onChange={setSelectedPositions}
-              />
-            </div>
-
-            <div className="card p-6">
               <p className="mb-4 text-sm text-black" style={{ fontWeight: 480, letterSpacing: '-0.14px' }}>
                 Upload Designs
               </p>
-              {selectedPositions.length === 0 ? (
+              {selectedAreaDetails.length === 0 ? (
                 <p className="rounded-lg border border-dashed border-black/[0.12] py-6 text-center text-sm text-black/55" style={{ letterSpacing: '-0.14px' }}>
-                  Select a print position above first
+                  Select a print area above first
                 </p>
               ) : (
                 <div className="space-y-3">
-                  {selectedPositions.map((positionValue) => {
-                    const positionLabel = positions.find((position) => position.value === positionValue)?.displayLabel ?? ''
-                    const asset = positionUploads[positionValue]
-                    const isUploading = uploadingPosition === positionValue
-                    const isDragOver = dragOverPosition === positionValue
+                  {selectedAreaDetails.map((area) => {
+                    const selectedSizeId = printSizeByArea[area.id]
+                    const selectedSize = allowedSizesByArea[area.id]?.find((option) => option.printSizeId === selectedSizeId)?.printSize
+                    const asset = printAreaUploads[area.id]
+                    const uploadError = printAreaUploadErrors[area.id]
+                    const isUploading = uploadingPrintAreaId === area.id
+                    const isDragOver = dragOverPrintAreaId === area.id
 
                     return (
-                      <div key={positionValue} className="space-y-2 rounded-lg border border-black/[0.08] p-3">
-                        <p className="font-mono text-[11px] uppercase tracking-[0.54px] text-black/55">{positionLabel}</p>
+                      <div key={area.id} className="space-y-2 rounded-lg border border-black/[0.08] p-3">
+                        <div>
+                          <p className="font-mono text-[11px] uppercase tracking-[0.54px] text-black/55">{area.name}</p>
+                          <p className="mt-0.5 text-xs text-black/45" style={{ letterSpacing: '-0.14px' }}>
+                            {selectedSize ? selectedSize.name : 'Choose a print size above'}
+                          </p>
+                        </div>
                         <div className="flex items-center gap-2">
                           <label
                             className={`flex flex-1 cursor-pointer items-center gap-2 rounded-lg border border-dashed px-3 py-2 transition-colors ${
@@ -750,14 +752,14 @@ export default function ProductDetailPage() {
                             }`}
                             onDragOver={(event) => {
                               event.preventDefault()
-                              setDragOverPosition(positionValue)
+                              setDragOverPrintAreaId(area.id)
                             }}
-                            onDragLeave={() => setDragOverPosition(null)}
+                            onDragLeave={() => setDragOverPrintAreaId(null)}
                             onDrop={(event) => {
                               event.preventDefault()
-                              setDragOverPosition(null)
+                              setDragOverPrintAreaId(null)
                               const file = event.dataTransfer.files[0]
-                              if (file) handleFileUpload(file, positionValue)
+                              if (file) handlePrintAreaFileUpload(area.id, file)
                             }}
                           >
                             <input
@@ -766,7 +768,7 @@ export default function ProductDetailPage() {
                               className="hidden"
                               onChange={(event) => {
                                 const file = event.target.files?.[0]
-                                if (file) handleFileUpload(file, positionValue)
+                                if (file) handlePrintAreaFileUpload(area.id, file)
                               }}
                             />
                             {isUploading ? (
@@ -796,7 +798,7 @@ export default function ProductDetailPage() {
                           {asset && (
                             <button
                               type="button"
-                              onClick={() => removePositionUpload(positionValue)}
+                              onClick={() => removePrintAreaUpload(area.id)}
                               className="shrink-0 text-black/25 transition-colors hover:text-red-500"
                             >
                               <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
@@ -807,11 +809,16 @@ export default function ProductDetailPage() {
                         </div>
                         <textarea
                           rows={2}
-                          value={positionNotes[positionValue] ?? ''}
-                          onChange={(event) => setPositionNotes((prev) => ({ ...prev, [positionValue]: event.target.value }))}
+                          value={printAreaNotes[area.id] ?? ''}
+                          onChange={(event) => setPrintAreaNotes((prev) => ({ ...prev, [area.id]: event.target.value }))}
                           placeholder="Describe your design requirements..."
                           className="form-input resize-none text-xs"
                         />
+                        {uploadError && (
+                          <p className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700">
+                            {uploadError}
+                          </p>
+                        )}
                       </div>
                     )
                   })}
@@ -947,7 +954,7 @@ export default function ProductDetailPage() {
               <button
                 type="button"
                 onClick={handleAddToCart}
-                disabled={pricingLoading || uploadingPosition !== null}
+                disabled={pricingLoading || uploadingPrintAreaId !== null}
                 className="btn-black w-full py-3 text-sm disabled:opacity-40"
               >
                 {addedToCart

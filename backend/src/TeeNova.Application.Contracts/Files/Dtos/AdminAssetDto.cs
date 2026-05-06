@@ -17,6 +17,6 @@ public class AdminAssetDto
     public string? LinkedCustomerName { get; set; }
     public Guid? LinkedOrderItemId { get; set; }
     public string? LinkedProductName { get; set; }
-    public string? PrintPosition { get; set; }
+    public string? PrintAreaName { get; set; }
     public string? DesignNote { get; set; }
 }

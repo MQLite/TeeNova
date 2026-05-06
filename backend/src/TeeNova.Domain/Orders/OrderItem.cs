@@ -1,5 +1,4 @@
 using System;
-using TeeNova.Customization;
 using Volo.Abp.Domain.Entities;
 using System.Collections.Generic;
 using System.Linq;
@@ -20,7 +19,6 @@ public class OrderItem : Entity<Guid>
     public int Quantity { get; set; }
     public decimal UnitPrice { get; set; }
 
-    public List<OrderItemPositionAsset> PositionAssets { get; private set; } = [];
     public List<OrderItemPrint> Prints { get; private set; } = [];
 
     // Future: DesignProjectId, TemplateId, CropFrameData (JSON)
@@ -54,41 +52,28 @@ public class OrderItem : Entity<Guid>
         string printSizeCode,
         decimal printSizePrice,
         int sortOrder = 0,
-        string? notes = null)
+        string? notes = null,
+        Guid? uploadedAssetId = null,
+        string? uploadedAssetUrl = null,
+        string? designNote = null)
     {
         Prints.Add(new OrderItemPrint(
             id, Id,
             printAreaId, printAreaName, printAreaCode, printAreaPrice,
             printSizeId, printSizeName, printSizeCode, printSizePrice,
-            sortOrder, notes));
+            sortOrder, notes, uploadedAssetId, uploadedAssetUrl, designNote));
     }
 
-    public void SetPositionAssets(IEnumerable<OrderItemPositionAsset> positionAssets)
+    public OrderItemPrint UpdatePrintDesign(
+        Guid printId,
+        Guid? uploadedAssetId,
+        string? uploadedAssetUrl,
+        string? designNote)
     {
-        PositionAssets.Clear();
-        PositionAssets.AddRange(positionAssets);
-    }
+        var print = Prints.FirstOrDefault(p => p.Id == printId)
+            ?? throw new Volo.Abp.Domain.Entities.EntityNotFoundException(typeof(OrderItemPrint), printId);
 
-    public void UpsertPositionAsset(
-        Guid id,
-        PrintPosition position,
-        Guid? uploadedAssetId = null,
-        string? uploadedAssetUrl = null,
-        string? designNote = null)
-    {
-        var existing = PositionAssets.FirstOrDefault(p => p.Position == position);
-        if (existing == null)
-        {
-            PositionAssets.Add(new OrderItemPositionAsset(
-                id,
-                Id,
-                position,
-                uploadedAssetId,
-                uploadedAssetUrl,
-                designNote));
-            return;
-        }
-
-        existing.Update(uploadedAssetId, uploadedAssetUrl, designNote);
+        print.UpdateDesign(uploadedAssetId, uploadedAssetUrl, designNote);
+        return print;
     }
 }

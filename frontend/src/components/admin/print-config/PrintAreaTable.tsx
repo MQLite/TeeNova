@@ -1,4 +1,4 @@
-'use client'
+﻿'use client'
 
 import { Badge } from '@/components/ui/Badge'
 import { Button } from '@/components/ui/Button'
@@ -27,7 +27,7 @@ export function PrintAreaTable({ areas, onEdit, onDeactivate, onReactivate }: Pr
       <table className="min-w-full divide-y divide-black/[0.06]">
         <thead className="bg-black/[0.02]">
           <tr>
-            {['Name', 'Code', 'Base Price', 'Sort', 'Legacy', 'Status', ''].map((h) => (
+            {['Name', 'Code', 'Base Price', 'Sort', 'Status', ''].map((h) => (
               <th
                 key={h}
                 className="px-4 py-3 text-left font-mono text-[10px] uppercase tracking-[0.54px] text-black/45"
@@ -50,13 +50,6 @@ export function PrintAreaTable({ areas, onEdit, onDeactivate, onReactivate }: Pr
                 ${area.basePrice.toFixed(2)}
               </td>
               <td className="px-4 py-3 text-sm text-black/55">{area.sortOrder}</td>
-              <td className="px-4 py-3">
-                {area.legacyPositionValue != null ? (
-                  <span className="font-mono text-[11px] text-black/40">{area.legacyPositionValue}</span>
-                ) : (
-                  <span className="text-black/25">—</span>
-                )}
-              </td>
               <td className="px-4 py-3">
                 <Badge color={area.isActive ? 'green' : 'gray'}>
                   {area.isActive ? 'Active' : 'Inactive'}
@@ -85,3 +78,4 @@ export function PrintAreaTable({ areas, onEdit, onDeactivate, onReactivate }: Pr
     </div>
   )
 }
+

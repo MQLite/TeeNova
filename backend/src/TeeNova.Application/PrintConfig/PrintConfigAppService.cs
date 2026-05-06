@@ -57,17 +57,11 @@ public class PrintConfigAppService : ApplicationService, IPrintConfigAppService
         if (await _areaRepository.AnyAsync(a => a.Code == code))
             throw new UserFriendlyException($"A print area with code '{code}' already exists.");
 
-        if (input.LegacyPositionValue.HasValue &&
-            await _areaRepository.AnyAsync(a => a.LegacyPositionValue == input.LegacyPositionValue.Value))
-            throw new UserFriendlyException(
-                $"A print area with legacy position value {input.LegacyPositionValue.Value} already exists.");
-
         var area = new PrintArea(GuidGenerator.Create(), input.Name.Trim(), code)
         {
-            BasePrice           = input.BasePrice,
-            IsActive            = input.IsActive,
-            SortOrder           = input.SortOrder,
-            LegacyPositionValue = input.LegacyPositionValue,
+            BasePrice = input.BasePrice,
+            IsActive  = input.IsActive,
+            SortOrder = input.SortOrder,
         };
 
         await _areaRepository.InsertAsync(area, autoSave: true);
@@ -82,18 +76,11 @@ public class PrintConfigAppService : ApplicationService, IPrintConfigAppService
         if (await _areaRepository.AnyAsync(a => a.Code == code && a.Id != id))
             throw new UserFriendlyException($"A print area with code '{code}' already exists.");
 
-        if (input.LegacyPositionValue.HasValue &&
-            await _areaRepository.AnyAsync(
-                a => a.LegacyPositionValue == input.LegacyPositionValue.Value && a.Id != id))
-            throw new UserFriendlyException(
-                $"A print area with legacy position value {input.LegacyPositionValue.Value} already exists.");
-
-        area.Name               = input.Name.Trim();
-        area.Code               = code;
-        area.BasePrice          = input.BasePrice;
-        area.IsActive           = input.IsActive;
-        area.SortOrder          = input.SortOrder;
-        area.LegacyPositionValue = input.LegacyPositionValue;
+        area.Name      = input.Name.Trim();
+        area.Code      = code;
+        area.BasePrice = input.BasePrice;
+        area.IsActive  = input.IsActive;
+        area.SortOrder = input.SortOrder;
 
         await _areaRepository.UpdateAsync(area, autoSave: true);
         return ObjectMapper.Map<PrintArea, PrintAreaDto>(area);

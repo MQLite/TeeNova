@@ -38,7 +38,6 @@ public class Order : FullAuditedAggregateRoot<Guid>
     public string? AdminNotes { get; set; }
     public bool IsApprovedForPrinting { get; private set; }
     public bool IsDesignReviewed { get; private set; }
-    public bool IsPrintPositionConfirmed { get; private set; }
     public bool IsFileDownloaded { get; private set; }
     public bool IsGarmentConfirmed { get; private set; }
     public bool IsReadyToPrint { get; private set; }
@@ -128,13 +127,11 @@ public class Order : FullAuditedAggregateRoot<Guid>
 
     public void UpdatePreparationChecklist(
         bool isDesignReviewed,
-        bool isPrintPositionConfirmed,
         bool isFileDownloaded,
         bool isGarmentConfirmed,
         bool isReadyToPrint)
     {
         IsDesignReviewed = isDesignReviewed;
-        IsPrintPositionConfirmed = isPrintPositionConfirmed;
         IsFileDownloaded = isFileDownloaded;
         IsGarmentConfirmed = isGarmentConfirmed;
         IsReadyToPrint = isReadyToPrint;
