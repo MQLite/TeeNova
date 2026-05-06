@@ -1,11 +1,9 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
-using System.IO;
 using System.Threading.Tasks;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
-using TeeNova.Customization;
 using TeeNova.Orders.Dtos;
 using TeeNova.Pricing;
 using TeeNova.PrintConfig;
@@ -19,7 +17,6 @@ public class OrderAppService : ApplicationService, IOrderAppService
 {
     private readonly IRepository<Order, Guid>              _orderRepository;
     private readonly IRepository<Catalog.Product, Guid>    _productRepository;
-    private readonly IRepository<UploadedAsset, Guid>      _assetRepository;
     private readonly IRepository<OrderTimelineEntry, Guid> _timelineRepository;
     private readonly IRepository<PrintArea, Guid>          _printAreaRepository;
     private readonly IRepository<PrintSize, Guid>          _printSizeRepository;
@@ -28,7 +25,6 @@ public class OrderAppService : ApplicationService, IOrderAppService
     public OrderAppService(
         IRepository<Order, Guid>              orderRepository,
         IRepository<Catalog.Product, Guid>    productRepository,
-        IRepository<UploadedAsset, Guid>      assetRepository,
         IRepository<OrderTimelineEntry, Guid> timelineRepository,
         IRepository<PrintArea, Guid>          printAreaRepository,
         IRepository<PrintSize, Guid>          printSizeRepository,
@@ -36,7 +32,6 @@ public class OrderAppService : ApplicationService, IOrderAppService
     {
         _orderRepository      = orderRepository;
         _productRepository    = productRepository;
-        _assetRepository      = assetRepository;
         _timelineRepository   = timelineRepository;
         _printAreaRepository  = printAreaRepository;
         _printSizeRepository  = printSizeRepository;
@@ -90,9 +85,6 @@ public class OrderAppService : ApplicationService, IOrderAppService
                 product.Name, variantLabel,
                 itemDto.Quantity, unitPrice);
 
-            if (itemDto.PrintPositions?.Count > 0)
-                SyncPositionAssets(item, itemDto.PrintPositions);
-
             AddPrintsToItem(item, loadedPrints);
 
             order.AddItem(item);
@@ -121,8 +113,6 @@ public class OrderAppService : ApplicationService, IOrderAppService
         var query = await _orderRepository.GetQueryableAsync();
         var order = await query
             .Include(o => o.Items)
-            .ThenInclude(i => i.PositionAssets)
-            .Include(o => o.Items)
             .ThenInclude(i => i.Prints)
             .FirstOrDefaultAsync(o => o.Id == id);
 
@@ -131,7 +121,6 @@ public class OrderAppService : ApplicationService, IOrderAppService
 
         var dto = ObjectMapper.Map<Order, OrderDto>(order);
         dto.DisplayStatus = GetDisplayStatus(order.Status);
-        await EnrichPositionAssetsAsync(dto);
         await EnrichTimelineAsync(dto);
         return dto;
     }
@@ -140,8 +129,6 @@ public class OrderAppService : ApplicationService, IOrderAppService
     {
         var query = await _orderRepository.GetQueryableAsync();
         query = query
-            .Include(o => o.Items)
-            .ThenInclude(i => i.PositionAssets)
             .Include(o => o.Items)
             .ThenInclude(i => i.Prints);
 
@@ -159,42 +146,34 @@ public class OrderAppService : ApplicationService, IOrderAppService
         foreach (var (dto, order) in dtos.Zip(orders))
         {
             dto.DisplayStatus = GetDisplayStatus(order.Status);
-            await EnrichPositionAssetsAsync(dto);
         }
 
         return new PagedResultDto<OrderDto>(totalCount, dtos);
     }
 
-    public async Task<OrderItemDto> UpdateItemDesignAsync(Guid orderId, Guid itemId, UpdateOrderItemDesignDto input)
+    public async Task<OrderDto> UpdatePrintDesignAsync(Guid orderId, Guid printId, UpdateOrderItemPrintDesignDto input)
     {
         var query = await _orderRepository.GetQueryableAsync();
         var order = await query
-            .Include(o => o.Items)
-            .ThenInclude(i => i.PositionAssets)
             .Include(o => o.Items)
             .ThenInclude(i => i.Prints)
             .FirstOrDefaultAsync(o => o.Id == orderId)
             ?? throw new Volo.Abp.Domain.Entities.EntityNotFoundException(typeof(Order), orderId);
 
-        if (order.Status == OrderStatus.Cancelled)
-        {
-            throw new Volo.Abp.BusinessException("TeeNova:Order:CancelledOrderImmutable")
-                .WithData("OrderId", orderId);
-        }
+        EnsureOrderMutable(order);
 
-        var item = order.Items.FirstOrDefault(i => i.Id == itemId)
-            ?? throw new Volo.Abp.Domain.Entities.EntityNotFoundException(typeof(OrderItem), itemId);
+        var item = order.Items.FirstOrDefault(i => i.Prints.Any(p => p.Id == printId))
+            ?? throw new Volo.Abp.Domain.Entities.EntityNotFoundException(typeof(OrderItemPrint), printId);
 
-        item.UpsertPositionAsset(
-            GuidGenerator.Create(),
-            input.Position,
+        item.UpdatePrintDesign(
+            printId,
             input.UploadedAssetId,
             input.UploadedAssetUrl,
             input.DesignNote);
 
         await _orderRepository.UpdateAsync(order, autoSave: true);
 
-        return ObjectMapper.Map<OrderItem, OrderItemDto>(item);
+        return await GetAsync(orderId);
     }
 
     public async Task<OrderDto> UpdateStatusAsync(Guid id, UpdateOrderStatusDto input)
@@ -283,7 +262,6 @@ public class OrderAppService : ApplicationService, IOrderAppService
         EnsureOrderMutable(order);
         order.UpdatePreparationChecklist(
             input.IsDesignReviewed,
-            input.IsPrintPositionConfirmed,
             input.IsFileDownloaded,
             input.IsGarmentConfirmed,
             input.IsReadyToPrint);
@@ -347,50 +325,6 @@ public class OrderAppService : ApplicationService, IOrderAppService
             .ToList();
     }
 
-    private async Task EnrichPositionAssetsAsync(OrderDto orderDto)
-    {
-        var assetIds = orderDto.Items
-            .SelectMany(i => i.PositionAssets)
-            .Where(p => p.UploadedAssetId.HasValue)
-            .Select(p => p.UploadedAssetId!.Value)
-            .Distinct()
-            .ToList();
-
-        if (assetIds.Count == 0) return;
-
-        var assets = await _assetRepository.GetListAsync(a => assetIds.Contains(a.Id));
-        var assetMap = assets.ToDictionary(a => a.Id);
-
-        foreach (var item in orderDto.Items)
-        {
-            foreach (var posAsset in item.PositionAssets)
-            {
-                if (posAsset.UploadedAssetId.HasValue &&
-                    assetMap.TryGetValue(posAsset.UploadedAssetId.Value, out var asset))
-                {
-                    posAsset.OriginalFileName = asset.OriginalFileName;
-                    posAsset.FileName = TryGetFileName(asset.StoredFileUrl);
-                    posAsset.FileSizeBytes = asset.FileSizeBytes;
-                }
-            }
-        }
-    }
-
-    private static string? TryGetFileName(string? fileUrl)
-    {
-        if (string.IsNullOrWhiteSpace(fileUrl))
-        {
-            return null;
-        }
-
-        if (Uri.TryCreate(fileUrl, UriKind.Absolute, out var uri))
-        {
-            return Path.GetFileName(uri.AbsolutePath);
-        }
-
-        return Path.GetFileName(fileUrl);
-    }
-
     /// <summary>
     /// Loads and validates PrintArea + PrintSize for each requested print.
     /// Returns a list of loaded entity pairs; prices are used for unit price
@@ -423,7 +357,12 @@ public class OrderAppService : ApplicationService, IOrderAppService
                     .WithData("PrintSizeName", size.Name);
 
             pairs.Add((area, size));
-            result.Add(new LoadedOrderItemPrint(area, size));
+            result.Add(new LoadedOrderItemPrint(
+                area,
+                size,
+                dto.UploadedAssetId,
+                dto.UploadedAssetUrl,
+                dto.DesignNote));
         }
 
         // Validate that each (PrintArea, PrintSize) pair has an active PrintAreaSizeOption.
@@ -440,38 +379,25 @@ public class OrderAppService : ApplicationService, IOrderAppService
     private void AddPrintsToItem(OrderItem item, IReadOnlyList<LoadedOrderItemPrint> prints)
     {
         var sortOrder = 0;
-        foreach (var (area, size) in prints)
+        foreach (var print in prints)
         {
             item.AddPrint(
                 GuidGenerator.Create(),
-                area.Id, area.Name, area.Code, area.BasePrice,
-                size.Id, size.Name, size.Code, size.BasePrice,
-                sortOrder++);
+                print.Area.Id, print.Area.Name, print.Area.Code, print.Area.BasePrice,
+                print.Size.Id, print.Size.Name, print.Size.Code, print.Size.BasePrice,
+                sortOrder++,
+                uploadedAssetId: print.UploadedAssetId,
+                uploadedAssetUrl: print.UploadedAssetUrl,
+                designNote: print.DesignNote);
         }
     }
 
-    private record LoadedOrderItemPrint(PrintArea Area, PrintSize Size);
-
-    private static void SyncPositionAssets(OrderItem item, IEnumerable<CreateOrderItemPositionDto> positions)
-    {
-        item.SetPositionAssets(
-            positions.Select(position => new OrderItemPositionAsset(
-                Guid.NewGuid(),
-                item.Id,
-                ParsePosition(position.Position),
-                position.AssetId,
-                position.AssetUrl,
-                position.DesignNote)));
-    }
-
-    private static PrintPosition ParsePosition(string rawPosition)
-    {
-        if (Enum.TryParse<PrintPosition>(rawPosition, ignoreCase: true, out var position))
-            return position;
-
-        throw new Volo.Abp.BusinessException("TeeNova:Order:InvalidPrintPosition")
-            .WithData("Position", rawPosition);
-    }
+    private record LoadedOrderItemPrint(
+        PrintArea Area,
+        PrintSize Size,
+        Guid? UploadedAssetId,
+        string? UploadedAssetUrl,
+        string? DesignNote);
 
     private async Task<OrderDto> ChangeStatusAsync(Guid id, OrderStatus newStatus)
     {

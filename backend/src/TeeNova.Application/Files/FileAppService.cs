@@ -39,20 +39,20 @@ public class FileAppService : ApplicationService, IFileAppService
     private readonly IRepository<UploadedAsset, Guid> _assetRepository;
     private readonly IRepository<Order, Guid> _orderRepository;
     private readonly IRepository<OrderItem, Guid> _orderItemRepository;
-    private readonly IRepository<OrderItemPositionAsset, Guid> _orderItemPositionAssetRepository;
+    private readonly IRepository<OrderItemPrint, Guid> _orderItemPrintRepository;
 
     public FileAppService(
         IFileStorageService storageService,
         IRepository<UploadedAsset, Guid> assetRepository,
         IRepository<Order, Guid> orderRepository,
         IRepository<OrderItem, Guid> orderItemRepository,
-        IRepository<OrderItemPositionAsset, Guid> orderItemPositionAssetRepository)
+        IRepository<OrderItemPrint, Guid> orderItemPrintRepository)
     {
         _storageService = storageService;
         _assetRepository = assetRepository;
         _orderRepository = orderRepository;
         _orderItemRepository = orderItemRepository;
-        _orderItemPositionAssetRepository = orderItemPositionAssetRepository;
+        _orderItemPrintRepository = orderItemPrintRepository;
     }
 
     /// <summary>
@@ -150,7 +150,7 @@ public class FileAppService : ApplicationService, IFileAppService
 
         var allAssetIds = allAssets.Select(a => a.Id).ToList();
 
-        var referencedIds = (await _orderItemPositionAssetRepository.GetListAsync(
+        var referencedIds = (await _orderItemPrintRepository.GetListAsync(
                 p => p.UploadedAssetId != null && allAssetIds.Contains(p.UploadedAssetId!.Value)))
             .Select(p => p.UploadedAssetId!.Value)
             .ToHashSet();
@@ -188,13 +188,13 @@ public class FileAppService : ApplicationService, IFileAppService
         var assetList = assets.ToList();
         var assetIds = assetList.Select(a => a.Id).ToList();
 
-        // Fetch order items that reference any of these assets
-        var positionAssetQuery = await _orderItemPositionAssetRepository.GetQueryableAsync();
-        var matchedPositionAssets = await positionAssetQuery
+        // Fetch OrderItemPrint records that reference any of these assets
+        var printQuery = await _orderItemPrintRepository.GetQueryableAsync();
+        var matchedPrints = await printQuery
             .Where(p => p.UploadedAssetId != null && assetIds.Contains(p.UploadedAssetId.Value))
             .ToListAsync();
 
-        var itemIds = matchedPositionAssets.Select(p => p.OrderItemId)
+        var itemIds = matchedPrints.Select(p => p.OrderItemId)
             .Distinct()
             .ToList();
 
@@ -213,18 +213,18 @@ public class FileAppService : ApplicationService, IFileAppService
         }
 
         var orderMap = orders.ToDictionary(o => o.Id);
-        var positionAssetsByAssetId = matchedPositionAssets.ToLookup(p => p.UploadedAssetId!.Value);
+        var printsByAssetId = matchedPrints.ToLookup(p => p.UploadedAssetId!.Value);
         var itemMap = matchedItems.ToDictionary(i => i.Id);
 
         return assetList.Select(asset =>
         {
-            var positionAsset = positionAssetsByAssetId[asset.Id].FirstOrDefault();
-            var item = positionAsset != null
-                ? itemMap.GetValueOrDefault(positionAsset.OrderItemId)
+            var print = printsByAssetId[asset.Id].FirstOrDefault();
+            var item = print != null
+                ? itemMap.GetValueOrDefault(print.OrderItemId)
                 : null;
             Order? order = item != null && orderMap.TryGetValue(item.OrderId, out var o) ? o : null;
 
-            return MapToDto(asset, item, order, positionAsset);
+            return MapToDto(asset, item, order, print);
         }).ToList();
     }
 
@@ -232,7 +232,7 @@ public class FileAppService : ApplicationService, IFileAppService
         UploadedAsset asset,
         OrderItem? item,
         Order? order,
-        OrderItemPositionAsset? positionAsset)
+        OrderItemPrint? print)
         => new()
         {
             Id = asset.Id,
@@ -247,7 +247,7 @@ public class FileAppService : ApplicationService, IFileAppService
             LinkedCustomerName = order?.CustomerName,
             LinkedOrderItemId = item?.Id,
             LinkedProductName = item?.ProductName,
-            PrintPosition = positionAsset?.Position.ToString(),
-            DesignNote = positionAsset?.DesignNote,
+            PrintAreaName = print?.PrintAreaName,
+            DesignNote = print?.DesignNote,
         };
 }

@@ -96,12 +96,11 @@ export default function PrintConfigPage() {
   async function handleReactivateArea(area: PrintArea) {
     try {
       await printConfigApi.updateArea(area.id, {
-        name:               area.name,
-        code:               area.code,
-        basePrice:          area.basePrice,
-        sortOrder:          area.sortOrder,
-        isActive:           true,
-        legacyPositionValue: area.legacyPositionValue,
+        name:      area.name,
+        code:      area.code,
+        basePrice: area.basePrice,
+        sortOrder: area.sortOrder,
+        isActive:  true,
       })
       showToast(`"${area.name}" reactivated.`)
       await loadAreas()

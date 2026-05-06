@@ -45,13 +45,11 @@ public class TeeNovaApplicationAutoMapperProfile : Profile
             .ForMember(d => d.Timeline, o => o.Ignore());
         CreateMap<OrderTimelineEntry, OrderTimelineEntryDto>();
         CreateMap<OrderItem, OrderItemDto>()
-            .ForMember(d => d.PositionAssets, o => o.MapFrom(s => s.PositionAssets))
             .ForMember(d => d.Prints, o => o.MapFrom(s => s.Prints));
-        CreateMap<OrderItemPrint, OrderItemPrintDto>();
-        CreateMap<OrderItemPositionAsset, OrderItemPositionAssetDto>()
-            .ForMember(d => d.OriginalFileName, o => o.Ignore())
-            .ForMember(d => d.FileName, o => o.Ignore())
-            .ForMember(d => d.FileSizeBytes, o => o.Ignore());
+        CreateMap<OrderItemPrint, OrderItemPrintDto>()
+            .ForMember(d => d.UploadedAssetId, o => o.MapFrom(s => s.UploadedAssetId))
+            .ForMember(d => d.UploadedAssetUrl, o => o.MapFrom(s => s.UploadedAssetUrl))
+            .ForMember(d => d.DesignNote, o => o.MapFrom(s => s.DesignNote));
         CreateMap<ShippingAddress, ShippingAddressDto>();
 
         // UploadedAsset

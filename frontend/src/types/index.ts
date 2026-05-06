@@ -43,12 +43,6 @@ export interface Product {
 
 // ─── Customization ────────────────────────────────────────────────────────────
 
-export interface PrintPositionOption {
-  value: number
-  name: string
-  displayLabel: string
-}
-
 export interface PrintArea {
   id: string
   name: string
@@ -56,7 +50,6 @@ export interface PrintArea {
   basePrice: number
   isActive: boolean
   sortOrder: number
-  legacyPositionValue?: number | null
 }
 
 export interface PrintSize {
@@ -83,7 +76,6 @@ export interface CreateUpdatePrintAreaInput {
   basePrice: number
   isActive: boolean
   sortOrder: number
-  legacyPositionValue?: number | null
 }
 
 export interface CreateUpdatePrintSizeInput {
@@ -132,15 +124,6 @@ export interface PriceCalculationResponse {
   currency: string
 }
 
-export type PrintPosition =
-  | 'FrontCenter'
-  | 'BackCenter'
-  | 'LeftChest'
-  | 'RightChest'
-  | 'LeftSleeve'
-  | 'RightSleeve'
-  | 'NeckLabel'
-
 // ─── Files ────────────────────────────────────────────────────────────────────
 
 export interface UploadedAsset {
@@ -188,26 +171,8 @@ export interface ShippingAddress {
   phone?: string
 }
 
-export interface OrderItemPositionEntry {
-  position: PrintPosition
-  assetUrl?: string
-  assetId?: string
-  designNote?: string
-}
-
-export interface OrderItemPositionAsset {
-  id: string
-  position: PrintPosition
-  uploadedAssetId: string | null
-  uploadedAssetUrl: string | null
-  designNote: string | null
-  originalFileName: string | null
-  fileName: string | null
-  fileSizeBytes: number | null
-}
-
 export interface OrderItemPrint {
-  id?: string
+  id: string
   printAreaId: string
   printAreaName: string
   printAreaCode?: string
@@ -218,6 +183,9 @@ export interface OrderItemPrint {
   printSizePrice?: number
   sortOrder?: number
   notes?: string | null
+  uploadedAssetId?: string | null
+  uploadedAssetUrl?: string | null
+  designNote?: string | null
 }
 
 export interface OrderItem {
@@ -229,7 +197,6 @@ export interface OrderItem {
   quantity: number
   unitPrice: number
   lineTotal: number
-  positionAssets: OrderItemPositionAsset[]
   prints?: OrderItemPrint[]
 }
 
@@ -240,7 +207,6 @@ export interface Order {
   displayStatus: string
   isApprovedForPrinting: boolean
   isDesignReviewed: boolean
-  isPrintPositionConfirmed: boolean
   isFileDownloaded: boolean
   isGarmentConfirmed: boolean
   isReadyToPrint: boolean
@@ -258,18 +224,14 @@ export interface Order {
 
 // ─── Cart (client-side) ───────────────────────────────────────────────────────
 
-export interface PrintPositionUpload {
-  position: PrintPosition
-  uploadedAssetId?: string
-  uploadedAssetUrl?: string
-  designNote?: string
-}
-
 export interface CartItemPrint {
   printAreaId: string
   printAreaName: string
   printSizeId: string
   printSizeName: string
+  uploadedAssetId?: string
+  uploadedAssetUrl?: string
+  designNote?: string
 }
 
 export interface CartItem {
@@ -283,7 +245,6 @@ export interface CartItem {
   unitPrice: number
   quantity: number
   prints?: CartItemPrint[]
-  printPositions?: PrintPositionUpload[]
 }
 
 // ─── Dashboard ────────────────────────────────────────────────────────────────
@@ -332,7 +293,7 @@ export interface AdminAsset {
   linkedCustomerName: string | null
   linkedOrderItemId: string | null
   linkedProductName: string | null
-  printPosition: string | null
+  printAreaName: string | null
   designNote: string | null
 }
 

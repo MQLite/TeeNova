@@ -6,7 +6,6 @@ import clsx from 'clsx'
 
 type ChecklistKey =
   | 'isDesignReviewed'
-  | 'isPrintPositionConfirmed'
   | 'isFileDownloaded'
   | 'isGarmentConfirmed'
   | 'isReadyToPrint'
@@ -43,7 +42,6 @@ export function ChecklistItem({ label, description, checked, disabled, onChange 
 
 const ITEMS: Array<{ key: ChecklistKey; label: string; description: string }> = [
   { key: 'isDesignReviewed', label: 'Design reviewed', description: 'Artwork quality and composition have been checked.' },
-  { key: 'isPrintPositionConfirmed', label: 'Print position confirmed', description: 'Placement and print areas are aligned with the order.' },
   { key: 'isFileDownloaded', label: 'File downloaded', description: 'The print file has been downloaded or staged for production.' },
   { key: 'isGarmentConfirmed', label: 'Garment / variant confirmed', description: 'Size, color, and garment selection have been verified.' },
   { key: 'isReadyToPrint', label: 'Ready to print', description: 'Final pre-production signoff has been recorded.' },
@@ -97,7 +95,6 @@ export function PreparationChecklist({
 function pickChecklist(order: Order): Pick<Order, ChecklistKey> {
   return {
     isDesignReviewed: order.isDesignReviewed,
-    isPrintPositionConfirmed: order.isPrintPositionConfirmed,
     isFileDownloaded: order.isFileDownloaded,
     isGarmentConfirmed: order.isGarmentConfirmed,
     isReadyToPrint: order.isReadyToPrint,

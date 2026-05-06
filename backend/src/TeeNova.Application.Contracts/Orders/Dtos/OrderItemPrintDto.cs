@@ -18,4 +18,8 @@ public class OrderItemPrintDto
 
     public int SortOrder { get; set; }
     public string? Notes { get; set; }
+
+    public Guid? UploadedAssetId { get; set; }
+    public string? UploadedAssetUrl { get; set; }
+    public string? DesignNote { get; set; }
 }

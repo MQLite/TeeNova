@@ -29,6 +29,9 @@ public class OrderItemPrint : Entity<Guid>
     // ── Ordering / metadata ───────────────────────────────────────────────────
     public int SortOrder { get; private set; }
     public string? Notes { get; private set; }
+    public Guid? UploadedAssetId { get; private set; }
+    public string? UploadedAssetUrl { get; private set; }
+    public string? DesignNote { get; private set; }
 
     protected OrderItemPrint() { }
 
@@ -44,7 +47,10 @@ public class OrderItemPrint : Entity<Guid>
         string printSizeCode,
         decimal printSizePrice,
         int sortOrder = 0,
-        string? notes = null)
+        string? notes = null,
+        Guid? uploadedAssetId = null,
+        string? uploadedAssetUrl = null,
+        string? designNote = null)
         : base(id)
     {
         OrderItemId = orderItemId;
@@ -58,5 +64,18 @@ public class OrderItemPrint : Entity<Guid>
         PrintSizePrice = printSizePrice;
         SortOrder = sortOrder;
         Notes = notes;
+        UploadedAssetId = uploadedAssetId;
+        UploadedAssetUrl = uploadedAssetUrl;
+        DesignNote = designNote;
+    }
+
+    public void UpdateDesign(
+        Guid? uploadedAssetId,
+        string? uploadedAssetUrl,
+        string? designNote)
+    {
+        UploadedAssetId = uploadedAssetId;
+        UploadedAssetUrl = uploadedAssetUrl;
+        DesignNote = designNote;
     }
 }

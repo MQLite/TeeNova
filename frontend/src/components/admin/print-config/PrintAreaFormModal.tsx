@@ -1,4 +1,4 @@
-'use client'
+﻿'use client'
 
 import { useEffect, useState } from 'react'
 import { Modal } from '@/components/ui/Modal'
@@ -77,7 +77,6 @@ export function PrintAreaFormModal({ open, onClose, editTarget, onSaved }: Props
       basePrice,
       isActive: values.isActive,
       sortOrder,
-      legacyPositionValue: editTarget?.legacyPositionValue ?? null,
     }
 
     setSaving(true)
@@ -183,22 +182,6 @@ export function PrintAreaFormModal({ open, onClose, editTarget, onSaved }: Props
             />
           </button>
         </div>
-
-        {/* LegacyPositionValue — read-only display */}
-        {editTarget?.legacyPositionValue != null && (
-          <div className="rounded-2xl border border-amber-100 bg-amber-50 px-4 py-3">
-            <p className="font-mono text-[10px] uppercase tracking-[0.54px] text-amber-700/70">
-              Legacy mapping
-            </p>
-            <p className="mt-0.5 text-sm text-amber-800">
-              PrintPosition enum value: <span className="font-mono">{editTarget.legacyPositionValue}</span>
-            </p>
-            <p className="mt-0.5 text-xs text-amber-700/60">
-              This field maps to the legacy system. Do not change it casually.
-            </p>
-          </div>
-        )}
-
         <div className="flex items-center justify-end gap-2 pt-1">
           <Button type="button" variant="white" size="sm" onClick={onClose} disabled={saving}>
             Cancel
@@ -211,3 +194,4 @@ export function PrintAreaFormModal({ open, onClose, editTarget, onSaved }: Props
     </Modal>
   )
 }
+

@@ -1,4 +1,4 @@
-'use client'
+﻿'use client'
 
 import { useEffect, useRef, useState } from 'react'
 import Link from 'next/link'
@@ -10,19 +10,17 @@ import { Button } from '@/components/ui/Button'
 import { OrderActionPanel } from '@/components/admin/OrderActionPanel'
 import { OrderStatusBadge, STATUS_CONFIG } from '@/components/admin/OrderStatusBadge'
 import { SkeletonBlock } from '@/components/admin/LoadingSkeleton'
-import { ImageZoomModal } from '@/components/admin/ImageZoomModal'
 import { NotesPanel } from '@/components/admin/NotesPanel'
 import { OrderTimeline } from '@/components/admin/OrderTimeline'
 import { FulfillmentPanel } from '@/components/admin/FulfillmentPanel'
 import { CompletionBanner } from '@/components/admin/CompletionBanner'
-import { FileInfoCard } from '@/components/admin/FileInfoCard'
 import { PreparationChecklist } from '@/components/admin/PreparationChecklist'
 import { NotificationPanel } from '@/components/admin/NotificationPanel'
 import { DownloadDesignButton } from '@/components/orders/DownloadDesignButton'
-import type { Order, OrderItem, OrderItemPositionAsset, OrderStatus, PrintPosition } from '@/types'
+import type { Order, OrderItem, OrderItemPrint, OrderStatus } from '@/types'
 import clsx from 'clsx'
 
-// ── Constants ─────────────────────────────────────────────────────────────────
+// 鈹€鈹€ Constants 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
 
 const PIPELINE: OrderStatus[] = ['Pending', 'Paid', 'Reviewing', 'Printing', 'Ready', 'Completed']
 
@@ -36,60 +34,19 @@ const TRANSITIONS: Record<OrderStatus, OrderStatus[]> = {
   Completed:    [],
 }
 
-// Position label → short readable form for display
-const POSITION_LABELS: Record<string, string> = {
-  FrontCenter:  'Front Center',
-  BackCenter:   'Back Center',
-  LeftChest:    'Left Chest',
-  RightChest:   'Right Chest',
-  LeftSleeve:   'Left Sleeve',
-  RightSleeve:  'Right Sleeve',
-  NeckLabel:    'Neck Label',
+
+// 鈹€鈹€ Helpers 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
+
+function getFileNameFromUrl(url: string | null | undefined) {
+  if (!url) return null
+  try {
+    return decodeURIComponent(url.split('/').pop() ?? 'design')
+  } catch {
+    return url.split('/').pop() ?? 'design'
+  }
 }
 
-// Position → body area shorthand for badge
-const POSITION_AREA: Record<string, string> = {
-  FrontCenter:  'Front',
-  BackCenter:   'Back',
-  LeftChest:    'L. Chest',
-  RightChest:   'R. Chest',
-  LeftSleeve:   'L. Sleeve',
-  RightSleeve:  'R. Sleeve',
-  NeckLabel:    'Neck',
-}
-
-// Minimum file sizes considered "likely printable" for raster images (bytes)
-const LOW_RES_THRESHOLD_BYTES = 150 * 1024  // 150 KB
-
-// ── Helpers ───────────────────────────────────────────────────────────────────
-
-function formatFileSize(bytes: number) {
-  if (bytes < 1024) return `${bytes} B`
-  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(0)} KB`
-  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`
-}
-
-function isRasterImage(fileName: string | null): boolean {
-  if (!fileName) return false
-  const ext = fileName.split('.').pop()?.toLowerCase()
-  return ['jpg', 'jpeg', 'png', 'webp'].includes(ext ?? '')
-}
-
-function isVectorOrPrint(fileName: string | null): boolean {
-  if (!fileName) return false
-  const ext = fileName.split('.').pop()?.toLowerCase()
-  return ['svg', 'ai', 'pdf'].includes(ext ?? '')
-}
-
-// ── Sub-components ────────────────────────────────────────────────────────────
-
-function PrintPositionBadge({ position }: { position: string }) {
-  return (
-    <span className="inline-flex items-center gap-1 rounded-full border border-black/[0.10] bg-black/[0.03] px-2.5 py-0.5 font-mono text-[10px] uppercase tracking-[0.54px] text-black/60">
-      {POSITION_AREA[position] ?? position.replace(/([A-Z])/g, ' $1').trim()}
-    </span>
-  )
-}
+// 鈹€鈹€ Sub-components 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
 
 function getPrintSummary(item: OrderItem) {
   return item.prints ?? []
@@ -123,48 +80,32 @@ function formatMoney(value: number) {
   return `$${value.toFixed(2)}`
 }
 
-function QualityWarning({ asset }: { asset: OrderItemPositionAsset }) {
-  if (!asset.uploadedAssetUrl) return null
-  if (isVectorOrPrint(asset.originalFileName)) return null  // vectors are always fine
-  if (!isRasterImage(asset.originalFileName)) return null   // unknown type, skip warning
-  if (asset.fileSizeBytes !== null && asset.fileSizeBytes >= LOW_RES_THRESHOLD_BYTES) return null
-
-  const reason = asset.fileSizeBytes !== null
-    ? `File size is only ${formatFileSize(asset.fileSizeBytes)} — may lack detail for large prints`
-    : 'Unable to verify file size'
-
-  return (
-    <div className="mt-2 flex items-start gap-1.5 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2">
-      <svg className="mt-0.5 h-3.5 w-3.5 flex-shrink-0 text-amber-600" viewBox="0 0 20 20" fill="currentColor">
-        <path fillRule="evenodd" d="M8.485 2.495c.673-1.167 2.357-1.167 3.03 0l6.28 10.875c.673 1.167-.17 2.625-1.516 2.625H3.72c-1.347 0-2.189-1.458-1.515-2.625L8.485 2.495zM10 5a.75.75 0 01.75.75v3.5a.75.75 0 01-1.5 0v-3.5A.75.75 0 0110 5zm0 9a1 1 0 100-2 1 1 0 000 2z" clipRule="evenodd" />
-      </svg>
-      <p className="text-[11px] text-amber-700" style={{ letterSpacing: '-0.14px' }}>
-        <span style={{ fontWeight: 480 }}>Low resolution warning</span>{' '}
-        — {reason}
-      </p>
-    </div>
-  )
-}
-
-function DesignCard({
-  asset,
-  onZoom,
+function PrintDesignCard({
+  print,
+  disabled,
   onReplace,
+  onClear,
 }: {
-  asset: OrderItemPositionAsset
-  onZoom: () => void
-  onReplace?: (assetId: string, assetUrl: string) => Promise<void>
+  print: OrderItemPrint
+  disabled: boolean
+  onReplace: (print: OrderItemPrint, assetId: string, assetUrl: string) => Promise<void>
+  onClear: (print: OrderItemPrint) => Promise<void>
 }) {
   const inputRef = useRef<HTMLInputElement>(null)
   const [uploading, setUploading] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const fileName = getFileNameFromUrl(print.uploadedAssetUrl)
 
   async function handleFile(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0]
     if (!file) return
     setUploading(true)
+    setError(null)
     try {
       const result = await filesApi.upload(file)
-      await onReplace?.(result.assetId, result.fileUrl)
+      await onReplace(print, result.assetId, result.fileUrl)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not replace this design.')
     } finally {
       setUploading(false)
       if (inputRef.current) inputRef.current.value = ''
@@ -173,113 +114,82 @@ function DesignCard({
 
   return (
     <div className="overflow-hidden rounded-lg border border-black/[0.08] bg-white">
-      {/* Thumbnail / preview */}
-      <div className="relative bg-black/[0.025]">
-        {asset.uploadedAssetUrl ? (
-          <button
-            type="button"
-            onClick={onZoom}
-            className="group relative block w-full"
-            title="Click to zoom"
-          >
-            {/* eslint-disable-next-line @next/next/no-img-element */}
+      <div className="flex gap-3 p-3">
+        <div className="flex h-20 w-20 shrink-0 items-center justify-center overflow-hidden rounded-lg border border-black/[0.08] bg-black/[0.02]">
+          {print.uploadedAssetUrl ? (
+            // eslint-disable-next-line @next/next/no-img-element
             <img
-              src={asset.uploadedAssetUrl}
-              alt={`Design: ${POSITION_LABELS[asset.position] ?? asset.position}`}
-              className="h-44 w-full object-contain p-3 transition-transform duration-200 group-hover:scale-105"
+              src={print.uploadedAssetUrl}
+              alt={`Design for ${print.printAreaName}`}
+              className="h-full w-full object-contain p-1"
             />
-            {/* Zoom hint overlay */}
-            <div className="absolute inset-0 flex items-center justify-center opacity-0 transition-opacity group-hover:opacity-100">
-              <div className="rounded-full bg-black/60 p-2">
-                <svg className="h-5 w-5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-5.197-5.197m0 0A7.5 7.5 0 105.196 5.196a7.5 7.5 0 0010.607 10.607zM10.5 7.5v6m3-3h-6" />
-                </svg>
-              </div>
-            </div>
-          </button>
-        ) : (
-          <div className="flex h-44 items-center justify-center">
-            <div className="flex flex-col items-center gap-2 text-black/20">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.5} className="h-10 w-10">
-                <path strokeLinecap="round" strokeLinejoin="round" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
-              </svg>
-              <span className="font-mono text-[10px] uppercase tracking-[0.54px]">No file</span>
-            </div>
-          </div>
-        )}
-      </div>
-
-      {/* Info strip */}
-      <div className="border-t border-black/[0.06] px-3 py-2.5">
-        <div className="flex items-center justify-between gap-2">
-          <PrintPositionBadge position={asset.position} />
-          {asset.fileSizeBytes !== null && (
-            <span className="font-mono text-[10px] uppercase tracking-[0.54px] text-black/35">
-              {formatFileSize(asset.fileSizeBytes)}
-            </span>
+          ) : (
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.5} className="h-8 w-8 text-black/20">
+              <path strokeLinecap="round" strokeLinejoin="round" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+            </svg>
           )}
         </div>
-
-        {asset.originalFileName && (
-          <p className="mt-1 truncate text-[11px] text-black/45" style={{ letterSpacing: '-0.14px' }}
-             title={asset.originalFileName}>
-            {asset.originalFileName}
-          </p>
-        )}
-
-        {asset.designNote && (
-          <div className="mt-1.5 rounded-md border border-amber-100 bg-amber-50 px-2 py-1.5">
-            <p className="text-[10px] font-mono uppercase tracking-[0.54px] text-amber-600 mb-0.5">Design note</p>
-            <p className="text-[11px] leading-snug text-amber-700" style={{ letterSpacing: '-0.14px' }}>
-              {asset.designNote}
-            </p>
+        <div className="min-w-0 flex-1">
+          <div className="flex flex-wrap items-center gap-1.5">
+            <span className="rounded-full border border-black/[0.08] px-2 py-0.5 font-mono text-[10px] uppercase tracking-[0.54px] text-black/55">
+              {print.printAreaName}
+            </span>
+            <span className="rounded-full border border-black/[0.08] px-2 py-0.5 font-mono text-[10px] uppercase tracking-[0.54px] text-black/45">
+              {print.printSizeName}
+            </span>
           </div>
-        )}
-
-        <QualityWarning asset={asset} />
-
-        {asset.uploadedAssetUrl && (
-          <div className="mt-2 flex items-center gap-1.5">
-            <DownloadDesignButton
-              url={asset.uploadedAssetUrl}
-              fileName={asset.originalFileName}
-              compact
+          <p className="mt-2 text-xs text-black/55" style={{ letterSpacing: '-0.14px' }}>
+            {print.uploadedAssetUrl ? 'Design uploaded' : 'No design uploaded'}
+          </p>
+          {fileName && (
+            <p className="mt-0.5 truncate text-[11px] text-black/40" title={fileName}>
+              {fileName}
+            </p>
+          )}
+          {print.designNote && (
+            <div className="mt-2 rounded-md border border-amber-100 bg-amber-50 px-2 py-1.5">
+              <p className="text-[10px] font-mono uppercase tracking-[0.54px] text-amber-600 mb-0.5">Design note</p>
+              <p className="text-[11px] leading-snug text-amber-700" style={{ letterSpacing: '-0.14px' }}>
+                {print.designNote}
+              </p>
+            </div>
+          )}
+          {error && (
+            <p className="mt-2 rounded-md border border-red-200 bg-red-50 px-2 py-1.5 text-[11px] text-red-700">
+              {error}
+            </p>
+          )}
+          <div className="mt-2 flex flex-wrap items-center gap-1.5">
+            {print.uploadedAssetUrl && (
+              <DownloadDesignButton url={print.uploadedAssetUrl} fileName={fileName} compact />
+            )}
+            <input
+              ref={inputRef}
+              type="file"
+              accept="image/*,.pdf,.ai,.svg"
+              className="hidden"
+              onChange={handleFile}
             />
-            {onReplace && (
-              <>
-                <input
-                  ref={inputRef}
-                  type="file"
-                  accept="image/*,.pdf,.ai,.svg"
-                  className="hidden"
-                  onChange={handleFile}
-                />
-                <button
-                  type="button"
-                  disabled={uploading}
-                  onClick={() => inputRef.current?.click()}
-                  className={clsx(
-                    'inline-flex flex-1 items-center justify-center gap-1 rounded-[50px] border border-dashed font-mono text-[10px] uppercase tracking-[0.54px] transition-colors',
-                    uploading
-                      ? 'cursor-not-allowed border-black/[0.08] text-black/25'
-                      : 'border-black/[0.15] text-black/45 hover:border-black/30 hover:text-black',
-                    'py-1',
-                  )}
-                >
-                  {uploading ? (
-                    <>
-                      <svg className="h-3 w-3 animate-spin" viewBox="0 0 24 24" fill="none">
-                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z" />
-                      </svg>
-                      Uploading
-                    </>
-                  ) : 'Replace'}
-                </button>
-              </>
+            <button
+              type="button"
+              disabled={disabled || uploading}
+              onClick={() => inputRef.current?.click()}
+              className="inline-flex flex-1 items-center justify-center rounded-[50px] border border-dashed border-black/[0.15] px-2 py-1 font-mono text-[10px] uppercase tracking-[0.54px] text-black/45 transition-colors hover:border-black/30 hover:text-black disabled:cursor-not-allowed disabled:opacity-40"
+            >
+              {uploading ? 'Uploading' : print.uploadedAssetUrl ? 'Replace' : 'Upload'}
+            </button>
+            {print.uploadedAssetUrl && (
+              <button
+                type="button"
+                disabled={disabled || uploading}
+                onClick={() => onClear(print)}
+                className="inline-flex items-center justify-center rounded-[50px] border border-black/[0.10] px-2 py-1 font-mono text-[10px] uppercase tracking-[0.54px] text-black/40 transition-colors hover:border-red-200 hover:text-red-600 disabled:cursor-not-allowed disabled:opacity-40"
+              >
+                Clear
+              </button>
             )}
           </div>
-        )}
+        </div>
       </div>
     </div>
   )
@@ -305,7 +215,7 @@ function DetailSkeleton() {
   )
 }
 
-// ── Page ──────────────────────────────────────────────────────────────────────
+// 鈹€鈹€ Page 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
 
 export default function AdminOrderDetailPage() {
   const { id } = useParams<{ id: string }>()
@@ -316,45 +226,41 @@ export default function AdminOrderDetailPage() {
   const [recordingNotification, setRecordingNotification] = useState(false)
   const [toast, setToast] = useState<string | null>(null)
   const [toastTone, setToastTone] = useState<'success' | 'error'>('success')
-  const [zoomAsset, setZoomAsset] = useState<OrderItemPositionAsset | null>(null)
 
   useEffect(() => {
     ordersApi.getById(id).then(setOrder).finally(() => setLoading(false))
   }, [id])
 
-  // ── Action handlers ──────────────────────────────────────────────────────
+  // 鈹€鈹€ Action handlers 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
 
-  async function handlePositionDesignUpdate(
-    itemId: string,
-    position: PrintPosition,
-    assetId: string,
-    assetUrl: string,
-  ) {
+  async function handlePrintDesignReplace(print: OrderItemPrint, assetId: string, assetUrl: string) {
     if (!order) return
     try {
-      await ordersApi.updateItemDesign(order.id, itemId, {
-        position,
+      const updated = await ordersApi.updatePrintDesign(order.id, print.id, {
         uploadedAssetId: assetId,
         uploadedAssetUrl: assetUrl,
+        designNote: print.designNote,
       })
-      setOrder((prev) =>
-        prev ? {
-          ...prev,
-          items: prev.items.map((i) =>
-            i.id === itemId ? {
-              ...i,
-              positionAssets: i.positionAssets.map((p) =>
-                p.position === position
-                  ? { ...p, uploadedAssetId: assetId, uploadedAssetUrl: assetUrl }
-                  : p,
-              ),
-            } : i,
-          ),
-        } : prev,
-      )
-      showToast('Design replaced')
+      setOrder(updated)
+      showToast('Print design replaced')
     } catch {
-      showToast('Cannot modify a cancelled order', 'error')
+      showToast('Could not replace print design', 'error')
+      throw new Error('Could not replace print design')
+    }
+  }
+
+  async function handlePrintDesignClear(print: OrderItemPrint) {
+    if (!order) return
+    try {
+      const updated = await ordersApi.updatePrintDesign(order.id, print.id, {
+        uploadedAssetId: null,
+        uploadedAssetUrl: null,
+        designNote: print.designNote ?? null,
+      })
+      setOrder(updated)
+      showToast('Print design cleared')
+    } catch {
+      showToast('Could not clear print design', 'error')
     }
   }
 
@@ -372,7 +278,6 @@ export default function AdminOrderDetailPage() {
 
   async function handleChecklistUpdate(payload: Pick<Order,
     'isDesignReviewed' |
-    'isPrintPositionConfirmed' |
     'isFileDownloaded' |
     'isGarmentConfirmed' |
     'isReadyToPrint'
@@ -450,7 +355,7 @@ export default function AdminOrderDetailPage() {
       setOrder(updated)
       showToast('Printing started')
     } catch {
-      showToast('Cannot start printing — design must be approved first', 'error')
+      showToast('Cannot start printing 鈥?design must be approved first', 'error')
     } finally {
       setUpdating(false)
     }
@@ -504,7 +409,7 @@ export default function AdminOrderDetailPage() {
     setTimeout(() => setToast(null), 3000)
   }
 
-  // ── Render ───────────────────────────────────────────────────────────────
+  // 鈹€鈹€ Render 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
 
   if (loading) return <DetailSkeleton />
 
@@ -530,16 +435,6 @@ export default function AdminOrderDetailPage() {
   const isTerminal = isCompleted || isCancelled
   const pipelineIdx = PIPELINE.indexOf(order.status)
 
-  const allPositionAssets = order.items.flatMap((i) => i.positionAssets)
-  const hasAnyDesign = allPositionAssets.some((p) => p.uploadedAssetUrl)
-  const lowResCount = allPositionAssets.filter(
-    (p) => p.uploadedAssetUrl &&
-           isRasterImage(p.originalFileName) &&
-           !isVectorOrPrint(p.originalFileName) &&
-           p.fileSizeBytes !== null &&
-           p.fileSizeBytes < LOW_RES_THRESHOLD_BYTES,
-  ).length
-
   return (
     <div className="admin-page admin-stack">
       {/* Toast */}
@@ -550,16 +445,6 @@ export default function AdminOrderDetailPage() {
         )}>
           {toast}
         </div>
-      )}
-
-      {/* Image zoom modal */}
-      {zoomAsset?.uploadedAssetUrl && (
-        <ImageZoomModal
-          url={zoomAsset.uploadedAssetUrl}
-          fileName={zoomAsset.originalFileName}
-          position={zoomAsset.position}
-          onClose={() => setZoomAsset(null)}
-        />
       )}
 
       {/* Page header */}
@@ -577,15 +462,6 @@ export default function AdminOrderDetailPage() {
               {order.orderNumber}
             </h1>
             <OrderStatusBadge status={order.status} />
-            {/* Low-res alert in header */}
-            {lowResCount > 0 && (
-              <span className="inline-flex items-center gap-1 rounded-full border border-amber-200 bg-amber-50 px-2.5 py-0.5 font-mono text-[10px] uppercase tracking-[0.54px] text-amber-700">
-                <svg className="h-3 w-3" viewBox="0 0 20 20" fill="currentColor">
-                  <path fillRule="evenodd" d="M8.485 2.495c.673-1.167 2.357-1.167 3.03 0l6.28 10.875c.673 1.167-.17 2.625-1.516 2.625H3.72c-1.347 0-2.189-1.458-1.515-2.625L8.485 2.495zM10 5a.75.75 0 01.75.75v3.5a.75.75 0 01-1.5 0v-3.5A.75.75 0 0110 5zm0 9a1 1 0 100-2 1 1 0 000 2z" clipRule="evenodd" />
-                </svg>
-                {lowResCount} low-res
-              </span>
-            )}
           </div>
           <p className="mt-0.5 font-mono text-[11px] uppercase tracking-[0.54px] text-black/45">
             Placed {new Date(order.creationTime).toLocaleString('en-NZ', { dateStyle: 'medium', timeStyle: 'short' })}
@@ -593,7 +469,7 @@ export default function AdminOrderDetailPage() {
         </div>
       </div>
 
-      {/* Activation panel — shown only while in early stages */}
+      {/* Activation panel 鈥?shown only while in early stages */}
       {!isCancelled && !isCompleted && (
         <OrderActionPanel
           status={order.status}
@@ -639,7 +515,7 @@ export default function AdminOrderDetailPage() {
             })}
           </div>
 
-          {/* Fulfillment actions — shown for Printing and Ready states */}
+          {/* Fulfillment actions 鈥?shown for Printing and Ready states */}
           {order.status === 'Printing' && (
             <div className="mt-5 flex flex-wrap items-center gap-2 border-t border-black/[0.08] pt-4">
               <Button size="sm" loading={updating} onClick={handleMarkReady}>
@@ -675,10 +551,10 @@ export default function AdminOrderDetailPage() {
         </div>
       )}
 
-      {/* ── Main two-column layout ── */}
+      {/* 鈹€鈹€ Main two-column layout 鈹€鈹€ */}
       <div className="grid grid-cols-1 gap-6 xl:grid-cols-[320px_1fr]">
 
-        {/* ── LEFT: meta + notes ── */}
+        {/* 鈹€鈹€ LEFT: meta + notes 鈹€鈹€ */}
         <div className="space-y-4">
 
           {/* Customer */}
@@ -753,7 +629,6 @@ export default function AdminOrderDetailPage() {
             onSaved={(notes) => setOrder((prev) => prev ? { ...prev, adminNotes: notes } : prev)}
           />
 
-          <FileInfoCard items={order.items} />
 
           <PreparationChecklist
             order={order}
@@ -780,7 +655,7 @@ export default function AdminOrderDetailPage() {
             </Card>
           )}
 
-          {/* Fulfillment info — always visible once order is past Reviewing */}
+          {/* Fulfillment info 鈥?always visible once order is past Reviewing */}
           {!['Pending', 'Paid', 'Reviewing'].includes(order.status) && !isCancelled && (
             <FulfillmentPanel
               deliveryMethod={order.deliveryMethod}
@@ -811,7 +686,7 @@ export default function AdminOrderDetailPage() {
 
         </div>
 
-        {/* ── RIGHT: design review workstation ── */}
+        {/* 鈹€鈹€ RIGHT: design review workstation 鈹€鈹€ */}
         <div className="space-y-6">
 
           {/* Order totals summary */}
@@ -822,7 +697,7 @@ export default function AdminOrderDetailPage() {
               </h2>
               <span className="font-mono text-[11px] uppercase tracking-[0.54px] text-black/50">
                 {order.items.length} item{order.items.length !== 1 ? 's' : ''}
-                {' · '}
+                {' 路 '}
                 <span className="text-black" style={{ fontWeight: 540 }}>${order.totalAmount.toFixed(2)}</span>
               </span>
             </CardHeader>
@@ -846,177 +721,37 @@ export default function AdminOrderDetailPage() {
                           {getPrintSummary(item).map((print) => (
                             <span key={`${print.printAreaId}:${print.printSizeId}`}
                               className="inline-flex items-center rounded-full border border-black/[0.08] px-2 py-0.5 font-mono text-[10px] uppercase tracking-[0.54px] text-black/55">
-                              {print.printAreaName} · {print.printSizeName}
+                              {print.printAreaName} 路 {print.printSizeName}
                             </span>
                           ))}
-                          {item.positionAssets.map((p) => (
-                            <PrintPositionBadge key={p.id} position={p.position} />
-                          ))}
                         </div>
-                      </div>
-                      <div className="flex-shrink-0 text-right">
-                        <p className="text-sm text-black" style={{ fontWeight: 540 }}>
-                          {formatMoney(getLineTotal(item))}
-                        </p>
-                        <p className="font-mono text-[10px] uppercase tracking-[0.54px] text-black/45">
-                          {formatMoney(item.unitPrice)} each
-                        </p>
                       </div>
                     </div>
 
-                    <div className="px-5 pb-4">
-                      <details className="rounded-lg border border-black/[0.08] bg-black/[0.02]">
-                        <summary className="flex cursor-pointer list-none items-center justify-between gap-3 px-4 py-3">
-                          <div>
-                            <p className="text-sm text-black" style={{ fontWeight: 480, letterSpacing: '-0.14px' }}>
-                              Pricing Details
-                            </p>
-                            <p className="mt-0.5 font-mono text-[10px] uppercase tracking-[0.54px] text-black/45">
-                              Snapshot-based breakdown for this order item
-                            </p>
-                          </div>
-                          <span className="font-mono text-[10px] uppercase tracking-[0.54px] text-black/45">
-                            Expand
-                          </span>
-                        </summary>
-
-                        <div className="border-t border-black/[0.08] px-4 py-4">
-                          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
-                            <div className="rounded-lg border border-black/[0.08] bg-white px-3 py-2.5">
-                              <p className="font-mono text-[10px] uppercase tracking-[0.54px] text-black/45">
-                                Stored unit price
-                              </p>
-                              <p className="mt-1 text-sm text-black" style={{ fontWeight: 540 }}>
-                                {formatMoney(item.unitPrice)}
-                              </p>
-                            </div>
-                            <div className="rounded-lg border border-black/[0.08] bg-white px-3 py-2.5">
-                              <p className="font-mono text-[10px] uppercase tracking-[0.54px] text-black/45">
-                                Quantity
-                              </p>
-                              <p className="mt-1 text-sm text-black" style={{ fontWeight: 540 }}>
-                                {item.quantity}
-                              </p>
-                            </div>
-                            <div className="rounded-lg border border-black/[0.08] bg-white px-3 py-2.5">
-                              <p className="font-mono text-[10px] uppercase tracking-[0.54px] text-black/45">
-                                Total print add-ons
-                              </p>
-                              <p className="mt-1 text-sm text-black" style={{ fontWeight: 540 }}>
-                                {formatMoney(getTotalPrintAddOns(item))}
-                              </p>
-                            </div>
-                            <div className="rounded-lg border border-black/[0.08] bg-white px-3 py-2.5">
-                              <p className="font-mono text-[10px] uppercase tracking-[0.54px] text-black/45">
-                                Line total
-                              </p>
-                              <p className="mt-1 text-sm text-black" style={{ fontWeight: 540 }}>
-                                {formatMoney(getLineTotal(item))}
-                              </p>
-                            </div>
-                          </div>
-
-                          {getPrintSummary(item).length > 0 ? (
-                            <>
-                              <div className="mt-4 rounded-lg border border-black/[0.08] bg-white px-3 py-3">
-                                <div className="flex items-start justify-between gap-3">
-                                  <div>
-                                    <p className="text-sm text-black" style={{ fontWeight: 480, letterSpacing: '-0.14px' }}>
-                                      Product + variant portion (inferred)
-                                    </p>
-                                    <p className="mt-0.5 text-xs text-black/55" style={{ letterSpacing: '-0.14px' }}>
-                                      Base product and variant adjustment are grouped because separate snapshots are not stored on this order.
-                                    </p>
-                                  </div>
-                                  <p className="text-sm text-black" style={{ fontWeight: 540 }}>
-                                    {formatMoney(getInferredProductAndVariantPortion(item))}
-                                  </p>
-                                </div>
-                              </div>
-
-                              <div className="mt-4 space-y-2">
-                                {getPrintSummary(item)
-                                  .slice()
-                                  .sort((a, b) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0))
-                                  .map((itemPrint) => (
-                                    <div
-                                      key={itemPrint.id ?? `${itemPrint.printAreaId}:${itemPrint.printSizeId}`}
-                                      className="rounded-lg border border-black/[0.08] bg-white px-3 py-3"
-                                    >
-                                      <div className="flex items-start justify-between gap-3">
-                                        <div className="min-w-0 flex-1">
-                                          <p className="text-sm text-black" style={{ fontWeight: 480, letterSpacing: '-0.14px' }}>
-                                            {itemPrint.printAreaName}
-                                            {itemPrint.printAreaCode ? ` (${itemPrint.printAreaCode})` : ''}
-                                          </p>
-                                          <p className="mt-0.5 text-xs text-black/55" style={{ letterSpacing: '-0.14px' }}>
-                                            Print area add-on
-                                          </p>
-                                        </div>
-                                        <p className="text-sm text-black" style={{ fontWeight: 540 }}>
-                                          {formatMoney(getPrintAreaPrice(itemPrint))}
-                                        </p>
-                                      </div>
-                                      <div className="mt-3 flex items-start justify-between gap-3">
-                                        <div className="min-w-0 flex-1">
-                                          <p className="text-sm text-black" style={{ fontWeight: 480, letterSpacing: '-0.14px' }}>
-                                            {itemPrint.printSizeName}
-                                            {itemPrint.printSizeCode ? ` (${itemPrint.printSizeCode})` : ''}
-                                          </p>
-                                          <p className="mt-0.5 text-xs text-black/55" style={{ letterSpacing: '-0.14px' }}>
-                                            Print size add-on
-                                          </p>
-                                        </div>
-                                        <p className="text-sm text-black" style={{ fontWeight: 540 }}>
-                                          {formatMoney(getPrintSizePrice(itemPrint))}
-                                        </p>
-                                      </div>
-                                      <div className="mt-3 flex items-center justify-between border-t border-black/[0.08] pt-3">
-                                        <span className="font-mono text-[10px] uppercase tracking-[0.54px] text-black/45">
-                                          Print entry total
-                                        </span>
-                                        <span className="text-sm text-black" style={{ fontWeight: 540 }}>
-                                          {formatMoney(getPrintEntryTotal(itemPrint))}
-                                        </span>
-                                      </div>
-                                    </div>
-                                  ))}
-                              </div>
-                            </>
-                          ) : (
-                            <div
-                              className="mt-4 rounded-lg border border-dashed border-black/[0.10] bg-white px-4 py-3 text-sm text-black/55"
-                              style={{ letterSpacing: '-0.14px' }}
-                            >
-                              No print add-ons.
-                            </div>
-                          )}
-                        </div>
-                      </details>
-                    </div>
-
-                    {/* Design cards grid */}
-                    {item.positionAssets.length > 0 && (
+                    {/* Print-area design cards */}
+                    {getPrintSummary(item).length > 0 && (
                       <div className="px-5 pb-4">
                         <p className="mb-2 font-mono text-[10px] uppercase tracking-[0.54px] text-black/40">
-                          Design Files — {item.positionAssets.length} position{item.positionAssets.length !== 1 ? 's' : ''}
+                          Print Design Files
                         </p>
                         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
-                          {item.positionAssets.map((asset) => (
-                            <DesignCard
-                              key={asset.id}
-                              asset={asset}
-                              onZoom={() => setZoomAsset(asset)}
-                              onReplace={isCancelled ? undefined : async (assetId, assetUrl) =>
-                                handlePositionDesignUpdate(item.id, asset.position as PrintPosition, assetId, assetUrl)
-                              }
-                            />
-                          ))}
+                          {getPrintSummary(item)
+                            .slice()
+                            .sort((a, b) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0))
+                            .map((print) => (
+                              <PrintDesignCard
+                                key={print.id}
+                                print={print}
+                                disabled={isCancelled}
+                                onReplace={handlePrintDesignReplace}
+                                onClear={handlePrintDesignClear}
+                              />
+                            ))}
                         </div>
                       </div>
                     )}
 
-                    {item.positionAssets.length === 0 && (
+                    {getPrintSummary(item).length === 0 && (
                       <div className="px-5 pb-4">
                         <div className="rounded-lg border border-dashed border-black/[0.10] bg-black/[0.02] px-4 py-4 text-center font-mono text-[11px] uppercase tracking-[0.54px] text-black/35">
                           No design files attached to this item.
@@ -1029,37 +764,10 @@ export default function AdminOrderDetailPage() {
             </CardBody>
           </Card>
 
-          {/* Print readiness summary */}
-          {hasAnyDesign && (
-            <div className={clsx(
-              'rounded-lg border p-4',
-              lowResCount > 0
-                ? 'border-amber-200 bg-amber-50'
-                : 'border-black/[0.08] bg-black/[0.02]',
-            )}>
-              <div className="flex items-center gap-2">
-                {lowResCount > 0 ? (
-                  <svg className="h-4 w-4 flex-shrink-0 text-amber-600" viewBox="0 0 20 20" fill="currentColor">
-                    <path fillRule="evenodd" d="M8.485 2.495c.673-1.167 2.357-1.167 3.03 0l6.28 10.875c.673 1.167-.17 2.625-1.516 2.625H3.72c-1.347 0-2.189-1.458-1.515-2.625L8.485 2.495zM10 5a.75.75 0 01.75.75v3.5a.75.75 0 01-1.5 0v-3.5A.75.75 0 0110 5zm0 9a1 1 0 100-2 1 1 0 000 2z" clipRule="evenodd" />
-                  </svg>
-                ) : (
-                  <svg className="h-4 w-4 flex-shrink-0 text-black/40" viewBox="0 0 20 20" fill="currentColor">
-                    <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.857-9.809a.75.75 0 00-1.214-.882l-3.483 4.79-1.88-1.88a.75.75 0 10-1.06 1.061l2.5 2.5a.75.75 0 001.137-.089l4-5.5z" clipRule="evenodd" />
-                  </svg>
-                )}
-                <p className={clsx(
-                  'text-sm',
-                  lowResCount > 0 ? 'text-amber-800' : 'text-black/60',
-                )} style={{ letterSpacing: '-0.14px' }}>
-                  {lowResCount > 0
-                    ? `${lowResCount} design file${lowResCount !== 1 ? 's' : ''} may be too low resolution for print. Review before proceeding.`
-                    : 'All design files appear suitable for print.'}
-                </p>
-              </div>
-            </div>
-          )}
         </div>
       </div>
     </div>
   )
 }
+
+
