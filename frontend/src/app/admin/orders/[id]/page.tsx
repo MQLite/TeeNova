@@ -355,7 +355,7 @@ export default function AdminOrderDetailPage() {
       setOrder(updated)
       showToast('Printing started')
     } catch {
-      showToast('Cannot start printing 鈥?design must be approved first', 'error')
+      showToast('Cannot start printing — design must be approved first', 'error')
     } finally {
       setUpdating(false)
     }
@@ -697,7 +697,7 @@ export default function AdminOrderDetailPage() {
               </h2>
               <span className="font-mono text-[11px] uppercase tracking-[0.54px] text-black/50">
                 {order.items.length} item{order.items.length !== 1 ? 's' : ''}
-                {' 路 '}
+                {' · '}
                 <span className="text-black" style={{ fontWeight: 540 }}>${order.totalAmount.toFixed(2)}</span>
               </span>
             </CardHeader>
@@ -721,7 +721,7 @@ export default function AdminOrderDetailPage() {
                           {getPrintSummary(item).map((print) => (
                             <span key={`${print.printAreaId}:${print.printSizeId}`}
                               className="inline-flex items-center rounded-full border border-black/[0.08] px-2 py-0.5 font-mono text-[10px] uppercase tracking-[0.54px] text-black/55">
-                              {print.printAreaName} 路 {print.printSizeName}
+                              {print.printAreaName} · {print.printSizeName}
                             </span>
                           ))}
                         </div>
