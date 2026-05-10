@@ -12,7 +12,11 @@ interface ImageCardProps {
   onDeleteRequest: (id: string) => void
   onDeleteConfirm: (id: string) => void
   onDeleteCancel: () => void
-  onColorSave: (id: string, color: string | null) => void
+  onColorSave?: (id: string, color: string | null) => void
+  // Grouped image manager props — when set, replaces the free-text color input
+  showColorMoveSelect?: boolean
+  variantColors?: string[]
+  onMoveColor?: (imageId: string, color: string | null) => Promise<void>
 }
 
 export function ImageCard({
@@ -25,9 +29,13 @@ export function ImageCard({
   onDeleteConfirm,
   onDeleteCancel,
   onColorSave,
+  showColorMoveSelect = false,
+  variantColors,
+  onMoveColor,
 }: ImageCardProps) {
   const [colorInput, setColorInput] = useState(image.color ?? '')
   const colorRef = useRef(image.color ?? '')
+  const [moving, setMoving] = useState(false)
 
   // Sync when the image prop changes (e.g. after a save)
   useEffect(() => {
@@ -36,12 +44,31 @@ export function ImageCard({
   }, [image.color])
 
   function commitColor() {
+    if (!onColorSave) return
     const trimmed = colorInput.trim()
     const next = trimmed === '' ? null : trimmed
     if (next !== image.color) {
       onColorSave(image.id, next)
     }
   }
+
+  async function handleMoveColor(newColor: string | null) {
+    if (!onMoveColor) return
+    setMoving(true)
+    try {
+      await onMoveColor(image.id, newColor)
+    } catch {
+      // error display is handled by the parent (ColorImageManager)
+    } finally {
+      setMoving(false)
+    }
+  }
+
+  // Find the canonical matching variant color (case-insensitive) for the select value.
+  // Falls back to '' (Default) if current image color isn't in the variant list.
+  const normalizedImageColor = (image.color ?? '').trim().toLowerCase()
+  const selectValue =
+    (variantColors ?? []).find((c) => c.trim().toLowerCase() === normalizedImageColor) ?? ''
 
   const isConfirmingDelete = confirmDeleteId === image.id
   const isDeleting = isConfirmingDelete && deleteLoading
@@ -61,25 +88,51 @@ export function ImageCard({
         )}
       </div>
 
-      {/* Color tag */}
-      <div className="px-3 py-2">
-        <input
-          type="text"
-          value={colorInput}
-          onChange={(e) => setColorInput(e.target.value)}
-          onBlur={commitColor}
-          onKeyDown={(e) => {
-            if (e.key === 'Enter') {
-              e.currentTarget.blur()
-            } else if (e.key === 'Escape') {
-              setColorInput(image.color ?? '')
-              e.currentTarget.blur()
-            }
-          }}
-          placeholder="Color tag…"
-          className="w-full rounded-lg border border-transparent bg-black/[0.03] px-2 py-1.5 font-mono text-[10px] uppercase tracking-[0.54px] text-black/55 placeholder-black/25 transition-colors focus:border-black/[0.12] focus:bg-white focus:outline-none"
-        />
-      </div>
+      {/* Color control — select (grouped context) or free-text input (legacy context) */}
+      {showColorMoveSelect ? (
+        <div className="px-3 py-2">
+          <select
+            value={selectValue}
+            onChange={(e) => {
+              const val = e.target.value
+              handleMoveColor(val === '' ? null : val)
+            }}
+            disabled={moving}
+            className="w-full cursor-pointer rounded-lg border border-transparent bg-black/[0.03] px-2 py-1.5 font-mono text-[10px] uppercase tracking-[0.54px] text-black/55 focus:border-black/[0.12] focus:bg-white focus:outline-none disabled:opacity-50"
+          >
+            <option value="">Default</option>
+            {(variantColors ?? []).map((c) => (
+              <option key={c} value={c}>
+                {c}
+              </option>
+            ))}
+          </select>
+          {moving && (
+            <p className="mt-1 font-mono text-[9px] uppercase tracking-[0.54px] text-black/35">
+              Moving…
+            </p>
+          )}
+        </div>
+      ) : (
+        <div className="px-3 py-2">
+          <input
+            type="text"
+            value={colorInput}
+            onChange={(e) => setColorInput(e.target.value)}
+            onBlur={commitColor}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') {
+                e.currentTarget.blur()
+              } else if (e.key === 'Escape') {
+                setColorInput(image.color ?? '')
+                e.currentTarget.blur()
+              }
+            }}
+            placeholder="Color tag…"
+            className="w-full rounded-lg border border-transparent bg-black/[0.03] px-2 py-1.5 font-mono text-[10px] uppercase tracking-[0.54px] text-black/55 placeholder-black/25 transition-colors focus:border-black/[0.12] focus:bg-white focus:outline-none"
+          />
+        </div>
+      )}
 
       {/* Actions */}
       <div className="px-3 pb-3">

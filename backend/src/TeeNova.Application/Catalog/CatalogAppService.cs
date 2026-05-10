@@ -299,4 +299,85 @@ public class CatalogAppService : ApplicationService, ICatalogAppService
 
     public Task<ProductVariantDto> UpdateStockAsync(Guid productId, Guid variantId, UpdateStockDto input)
         => throw new NotImplementedException("CatalogAppService.UpdateStockAsync is not yet implemented.");
+
+    public async Task<List<ProductVariantDto>> BulkSaveVariantsAsync(
+        Guid productId, BulkSaveProductVariantsDto input)
+    {
+        // Validate product exists
+        if (!await _productRepository.AnyAsync(p => p.Id == productId))
+            throw new EntityNotFoundException(typeof(Product), productId);
+
+        // Detect duplicate size/color pairs within the payload
+        var seenPairs = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var item in input.Variants)
+        {
+            var pairKey = $"{item.Size.Trim()}|{item.Color.Trim()}";
+            if (!seenPairs.Add(pairKey))
+                throw new UserFriendlyException(
+                    $"Duplicate size/color combination in request: '{item.Size.Trim()}' / '{item.Color.Trim()}'.");
+        }
+
+        // Process each item — all within the ABP unit of work (transaction)
+        foreach (var item in input.Variants)
+        {
+            if (item.Id.HasValue)
+            {
+                // Update existing variant
+                var variant = await _variantRepository.GetAsync(item.Id.Value);
+
+                if (variant.ProductId != productId)
+                    throw new EntityNotFoundException(typeof(ProductVariant), item.Id.Value);
+
+                // Only run duplicate check when size or color has changed
+                var sizeChanged  = !string.Equals(variant.Size,  item.Size,  StringComparison.Ordinal);
+                var colorChanged = !string.Equals(variant.Color, item.Color, StringComparison.Ordinal);
+                if (sizeChanged || colorChanged)
+                {
+                    var conflict = await _variantRepository.AnyAsync(
+                        v => v.ProductId == productId &&
+                             v.Size      == item.Size  &&
+                             v.Color     == item.Color &&
+                             v.Id        != item.Id.Value);
+                    if (conflict)
+                        throw new UserFriendlyException(
+                            $"A variant with size '{item.Size}' and color '{item.Color}' already exists for this product.");
+                }
+
+                variant.Sku             = item.Sku;
+                variant.Color           = item.Color;
+                variant.Size            = item.Size;
+                variant.PriceAdjustment = item.PriceAdjustment;
+                variant.StockQuantity   = item.StockQuantity;
+                variant.IsAvailable     = item.IsAvailable;
+
+                await _variantRepository.UpdateAsync(variant, autoSave: true);
+            }
+            else
+            {
+                // Create new variant — check no existing size/color for this product
+                var duplicateExists = await _variantRepository.AnyAsync(
+                    v => v.ProductId == productId &&
+                         v.Size      == item.Size  &&
+                         v.Color     == item.Color);
+
+                if (duplicateExists)
+                    throw new UserFriendlyException(
+                        $"A variant with size '{item.Size}' and color '{item.Color}' already exists for this product.");
+
+                var variant = new ProductVariant(
+                    GuidGenerator.Create(), productId, item.Sku, item.Color, item.Size)
+                {
+                    PriceAdjustment = item.PriceAdjustment,
+                    StockQuantity   = item.StockQuantity,
+                    IsAvailable     = item.IsAvailable,
+                };
+
+                await _variantRepository.InsertAsync(variant, autoSave: true);
+            }
+        }
+
+        // Return the full current variant list for this product
+        var allVariants = await _variantRepository.GetListAsync(v => v.ProductId == productId);
+        return ObjectMapper.Map<List<ProductVariant>, List<ProductVariantDto>>(allVariants);
+    }
 }

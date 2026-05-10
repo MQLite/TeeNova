@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.AspNetCore.Http;
@@ -31,4 +32,5 @@ public interface ICatalogAppService : IApplicationService
     Task<ProductVariantDto> UpdateVariantAsync(Guid productId, Guid variantId, UpdateProductVariantDto input);
     Task DeleteVariantAsync(Guid productId, Guid variantId);
     Task<ProductVariantDto> UpdateStockAsync(Guid productId, Guid variantId, UpdateStockDto input);
+    Task<List<ProductVariantDto>> BulkSaveVariantsAsync(Guid productId, BulkSaveProductVariantsDto input);
 }

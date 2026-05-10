@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.AspNetCore.Http;
@@ -87,4 +88,10 @@ public class CatalogController : TeeNovaControllerBase
     [HttpDelete("products/{productId:guid}/variants/{variantId:guid}")]
     public async Task DeleteVariantAsync(Guid productId, Guid variantId)
         => await _catalogAppService.DeleteVariantAsync(productId, variantId);
+
+    /// <summary>Bulk creates or updates variants for a product from a Size × Color matrix save.</summary>
+    [HttpPut("products/{productId:guid}/variants/bulk")]
+    public async Task<List<ProductVariantDto>> BulkSaveVariantsAsync(
+        Guid productId, [FromBody] BulkSaveProductVariantsDto input)
+        => await _catalogAppService.BulkSaveVariantsAsync(productId, input);
 }
