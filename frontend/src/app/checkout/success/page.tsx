@@ -46,7 +46,7 @@ function SuccessContent() {
 
   return (
     <div className="min-h-screen bg-white">
-      {/* Success hero 鈥?vibrant gradient */}
+      {/* Success hero - vibrant gradient */}
       <div className="hero-gradient py-16 text-center">
         <div className="mx-auto max-w-xl px-4">
           <div className="mx-auto mb-6 flex h-20 w-20 items-center justify-center rounded-full bg-white/20">
@@ -79,10 +79,10 @@ function SuccessContent() {
             </div>
             <div className="divide-y divide-black/[0.06]">
               {[
-                { step: '1', title: 'Order Review', desc: 'Our team reviews your design files and order details within 1 business day.', eta: 'Today鈥揟omorrow' },
-                { step: '2', title: 'Production', desc: 'Your custom T-shirts are printed and quality checked.', eta: '2鈥? business days' },
-                { step: '3', title: 'Dispatch', desc: 'Your order is packed and handed to NZ Post for delivery.', eta: '1鈥? business days' },
-                { step: '4', title: 'Delivered', desc: 'Your order arrives at your door. Enjoy your custom tee!', eta: '1鈥? business days' },
+                { step: '1', title: 'Order Review', desc: 'Our team reviews your design files and order details within 1 business day.', eta: 'Today-Tomorrow' },
+                { step: '2', title: 'Production', desc: 'Your custom T-shirts are printed and quality checked.', eta: '2-4 business days' },
+                { step: '3', title: 'Dispatch', desc: 'Your order is packed and handed to NZ Post for delivery.', eta: '1-2 business days' },
+                { step: '4', title: 'Delivered', desc: 'Your order arrives at your door. Enjoy your custom tee!', eta: '1-3 business days' },
               ].map(({ step, title, desc, eta }) => (
                 <div key={step} className="flex gap-4 px-6 py-4">
                   <div className="mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-black text-xs font-medium text-white">
@@ -124,14 +124,14 @@ function SuccessContent() {
                         {item.productName}
                       </p>
                       <p className="text-xs text-black/50" style={{ letterSpacing: '-0.14px' }}>
-                        {item.variantLabel} 脳 {item.quantity}
+                        {item.variantLabel} x {item.quantity}
                       </p>
                       {getPrintSummary(item).length > 0 && (
                         <div className="mt-1 flex flex-wrap gap-1">
                           {getPrintSummary(item).map((print) => (
                             <span key={print.id} className="inline-flex flex-col rounded-lg border border-black/[0.08] px-2 py-1 text-[10px] text-black/55">
                               <span className="font-mono uppercase tracking-[0.54px]">
-                                {print.printAreaName} 路 {print.printSizeName}
+                                {print.printAreaName} · {print.printSizeName}
                               </span>
                               {print.uploadedAssetUrl && <span className="text-green-600">Design uploaded</span>}
                               {print.designNote && <span className="normal-case tracking-normal text-black/45">{print.designNote}</span>}
@@ -156,7 +156,8 @@ function SuccessContent() {
           {!loading && order && (
             <div className="card flex items-start gap-3 px-5 py-4">
               <div className="mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-black/[0.06] text-xs">
-                鉁?              </div>
+                ✓
+              </div>
               <p className="text-sm text-black/60" style={{ letterSpacing: '-0.14px', fontWeight: 400 }}>
                 A confirmation has been sent to <strong className="text-black" style={{ fontWeight: 480 }}>{order.customerEmail}</strong>.
                 Please check your inbox and spam folder for updates.

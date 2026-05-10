@@ -21,6 +21,32 @@ export interface ProductVariant {
   isAvailable: boolean
 }
 
+export interface UpsertProductVariantItem {
+  id?: string
+  sku: string
+  color: string
+  size: string
+  priceAdjustment: number
+  stockQuantity: number
+  isAvailable: boolean
+}
+
+export interface BulkSaveProductVariantsPayload {
+  variants: UpsertProductVariantItem[]
+}
+
+export interface MatrixCell {
+  variantId?: string
+  size: string
+  color: string
+  /** Empty string means the field is blank/invalid and blocks save. */
+  priceAdjustment: number | ''
+  isAvailable: boolean
+  sku?: string
+  stockQuantity: number
+  isDirty: boolean
+}
+
 export interface ProductImage {
   id: string
   url: string
@@ -206,10 +232,6 @@ export interface Order {
   status: OrderStatus
   displayStatus: string
   isApprovedForPrinting: boolean
-  isDesignReviewed: boolean
-  isFileDownloaded: boolean
-  isGarmentConfirmed: boolean
-  isReadyToPrint: boolean
   deliveryMethod: DeliveryMethod | null
   customerName: string
   customerEmail: string

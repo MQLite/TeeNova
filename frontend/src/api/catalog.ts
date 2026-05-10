@@ -1,5 +1,12 @@
 import { apiClient } from '@/lib/api-client'
-import type { PagedResult, Product, ProductImage, ProductListItem, ProductVariant } from '@/types'
+import type {
+  BulkSaveProductVariantsPayload,
+  PagedResult,
+  Product,
+  ProductImage,
+  ProductListItem,
+  ProductVariant,
+} from '@/types'
 
 interface GetProductsParams {
   search?: string
@@ -84,6 +91,10 @@ export const catalogApi = {
 
   deleteVariant(productId: string, variantId: string): Promise<void> {
     return apiClient.delete(`/api/catalog/products/${productId}/variants/${variantId}`)
+  },
+
+  bulkSaveVariants(productId: string, payload: BulkSaveProductVariantsPayload): Promise<ProductVariant[]> {
+    return apiClient.put<ProductVariant[]>(`/api/catalog/products/${productId}/variants/bulk`, payload)
   },
 
   uploadProductImage(productId: string, file: File): Promise<ProductImage> {
