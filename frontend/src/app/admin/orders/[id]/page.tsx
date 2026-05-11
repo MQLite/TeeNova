@@ -14,7 +14,6 @@ import { NotesPanel } from '@/components/admin/NotesPanel'
 import { OrderTimeline } from '@/components/admin/OrderTimeline'
 import { FulfillmentPanel } from '@/components/admin/FulfillmentPanel'
 import { CompletionBanner } from '@/components/admin/CompletionBanner'
-import { PreparationChecklist } from '@/components/admin/PreparationChecklist'
 import { NotificationPanel } from '@/components/admin/NotificationPanel'
 import { DownloadDesignButton } from '@/components/orders/DownloadDesignButton'
 import type { Order, OrderItem, OrderItemPrint, OrderStatus } from '@/types'
@@ -222,7 +221,6 @@ export default function AdminOrderDetailPage() {
   const [order, setOrder] = useState<Order | null>(null)
   const [loading, setLoading] = useState(true)
   const [updating, setUpdating] = useState(false)
-  const [savingChecklist, setSavingChecklist] = useState(false)
   const [recordingNotification, setRecordingNotification] = useState(false)
   const [toast, setToast] = useState<string | null>(null)
   const [toastTone, setToastTone] = useState<'success' | 'error'>('success')
@@ -276,25 +274,6 @@ export default function AdminOrderDetailPage() {
     }
   }
 
-  async function handleChecklistUpdate(payload: Pick<Order,
-    'isDesignReviewed' |
-    'isFileDownloaded' |
-    'isGarmentConfirmed' |
-    'isReadyToPrint'
-  >) {
-    if (!order) return
-    setSavingChecklist(true)
-    try {
-      const updated = await ordersApi.updateChecklist(order.id, payload)
-      setOrder(updated)
-      showToast('Preparation checklist saved')
-    } catch {
-      showToast('Could not save preparation checklist', 'error')
-    } finally {
-      setSavingChecklist(false)
-    }
-  }
-
   async function handleRecordNotification() {
     if (!order) return
     setRecordingNotification(true)
@@ -333,29 +312,18 @@ export default function AdminOrderDetailPage() {
     }
   }
 
-  async function handleApproveForPrinting() {
-    if (!order) return
-    setUpdating(true)
-    try {
-      const updated = await ordersApi.approveForPrinting(order.id)
-      setOrder(updated)
-      showToast('Design approved for printing')
-    } catch {
-      showToast('Cannot approve at this stage', 'error')
-    } finally {
-      setUpdating(false)
-    }
-  }
-
   async function handleStartPrinting() {
     if (!order) return
     setUpdating(true)
     try {
+      if (!order.isApprovedForPrinting) {
+        await ordersApi.approveForPrinting(order.id)
+      }
       const updated = await ordersApi.startPrinting(order.id)
       setOrder(updated)
       showToast('Printing started')
     } catch {
-      showToast('Cannot start printing — design must be approved first', 'error')
+      showToast('Cannot start printing', 'error')
     } finally {
       setUpdating(false)
     }
@@ -473,11 +441,9 @@ export default function AdminOrderDetailPage() {
       {!isCancelled && !isCompleted && (
         <OrderActionPanel
           status={order.status}
-          isApprovedForPrinting={order.isApprovedForPrinting}
           loading={updating}
           onMarkPaid={handleMarkPaid}
           onStartReview={handleStartReview}
-          onApproveForPrinting={handleApproveForPrinting}
           onStartPrinting={handleStartPrinting}
         />
       )}
@@ -629,13 +595,6 @@ export default function AdminOrderDetailPage() {
             onSaved={(notes) => setOrder((prev) => prev ? { ...prev, adminNotes: notes } : prev)}
           />
 
-
-          <PreparationChecklist
-            order={order}
-            saving={savingChecklist}
-            disabled={isCancelled}
-            onChange={handleChecklistUpdate}
-          />
 
           <NotificationPanel
             canRecord={order.status === 'Ready'}

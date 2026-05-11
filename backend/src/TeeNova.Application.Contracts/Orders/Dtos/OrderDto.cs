@@ -14,10 +14,6 @@ public class OrderDto
     public string DisplayStatus { get; set; } = default!;
 
     public bool IsApprovedForPrinting { get; set; }
-    public bool IsDesignReviewed { get; set; }
-    public bool IsFileDownloaded { get; set; }
-    public bool IsGarmentConfirmed { get; set; }
-    public bool IsReadyToPrint { get; set; }
     public DeliveryMethod? DeliveryMethod { get; set; }
     public string CustomerName { get; set; } = default!;
     public string CustomerEmail { get; set; } = default!;
