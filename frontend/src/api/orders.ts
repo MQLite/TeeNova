@@ -53,18 +53,6 @@ export const ordersApi = {
     return apiClient.post(`/api/orders/${id}/reopen`)
   },
 
-  updateChecklist(
-    id: string,
-    payload: {
-      isDesignReviewed: boolean
-      isFileDownloaded: boolean
-      isGarmentConfirmed: boolean
-      isReadyToPrint: boolean
-    },
-  ): Promise<Order> {
-    return apiClient.put(`/api/orders/${id}/checklist`, payload)
-  },
-
   recordNotification(id: string): Promise<Order> {
     return apiClient.post(`/api/orders/${id}/record-notification`)
   },

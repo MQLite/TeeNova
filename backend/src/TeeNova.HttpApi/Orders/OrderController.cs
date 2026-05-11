@@ -45,10 +45,6 @@ public class OrderController : TeeNovaControllerBase
     public async Task<OrderDto> ReopenAsync(Guid id)
         => await _orderAppService.ReopenAsync(id);
 
-    [HttpPut("{id:guid}/checklist")]
-    public async Task<OrderDto> UpdateChecklistAsync(Guid id, [FromBody] UpdateOrderChecklistDto input)
-        => await _orderAppService.UpdateChecklistAsync(id, input);
-
     [HttpPost("{id:guid}/record-notification")]
     public async Task<OrderDto> RecordNotificationAsync(Guid id)
         => await _orderAppService.RecordNotificationAsync(id);

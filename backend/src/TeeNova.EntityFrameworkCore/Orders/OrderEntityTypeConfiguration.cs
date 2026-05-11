@@ -41,18 +41,6 @@ public class OrderEntityTypeConfiguration :
         builder.Property(o => o.IsApprovedForPrinting)
             .HasDefaultValue(false);
 
-        builder.Property(o => o.IsDesignReviewed)
-            .HasDefaultValue(false);
-
-        builder.Property(o => o.IsFileDownloaded)
-            .HasDefaultValue(false);
-
-        builder.Property(o => o.IsGarmentConfirmed)
-            .HasDefaultValue(false);
-
-        builder.Property(o => o.IsReadyToPrint)
-            .HasDefaultValue(false);
-
         builder.Property(o => o.DeliveryMethod)
             .HasConversion<string>()
             .HasMaxLength(32)

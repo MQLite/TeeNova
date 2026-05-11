@@ -256,21 +256,6 @@ public class OrderAppService : ApplicationService, IOrderAppService
         return await GetAsync(id);
     }
 
-    public async Task<OrderDto> UpdateChecklistAsync(Guid id, UpdateOrderChecklistDto input)
-    {
-        var order = await _orderRepository.GetAsync(id);
-        EnsureOrderMutable(order);
-        order.UpdatePreparationChecklist(
-            input.IsDesignReviewed,
-            input.IsFileDownloaded,
-            input.IsGarmentConfirmed,
-            input.IsReadyToPrint);
-
-        await _orderRepository.UpdateAsync(order, autoSave: true);
-
-        return await GetAsync(id);
-    }
-
     public async Task<OrderDto> RecordNotificationAsync(Guid id)
     {
         var order = await _orderRepository.GetAsync(id);

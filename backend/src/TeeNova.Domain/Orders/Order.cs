@@ -37,10 +37,6 @@ public class Order : FullAuditedAggregateRoot<Guid>
     public string? Notes { get; set; }
     public string? AdminNotes { get; set; }
     public bool IsApprovedForPrinting { get; private set; }
-    public bool IsDesignReviewed { get; private set; }
-    public bool IsFileDownloaded { get; private set; }
-    public bool IsGarmentConfirmed { get; private set; }
-    public bool IsReadyToPrint { get; private set; }
     public DeliveryMethod? DeliveryMethod { get; set; }
 
     private readonly List<OrderItem> _items = new();
@@ -123,18 +119,6 @@ public class Order : FullAuditedAggregateRoot<Guid>
         }
 
         Status = OrderStatus.Completed;
-    }
-
-    public void UpdatePreparationChecklist(
-        bool isDesignReviewed,
-        bool isFileDownloaded,
-        bool isGarmentConfirmed,
-        bool isReadyToPrint)
-    {
-        IsDesignReviewed = isDesignReviewed;
-        IsFileDownloaded = isFileDownloaded;
-        IsGarmentConfirmed = isGarmentConfirmed;
-        IsReadyToPrint = isReadyToPrint;
     }
 
     public void Reopen(DateTime now)
