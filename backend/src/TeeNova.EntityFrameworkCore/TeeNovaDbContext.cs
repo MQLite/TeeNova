@@ -1,6 +1,7 @@
 using Microsoft.EntityFrameworkCore;
 using TeeNova.Catalog;
 using TeeNova.Customization;
+using TeeNova.Notifications;
 using TeeNova.Orders;
 using TeeNova.PrintConfig;
 using TeeNova.Production;
@@ -33,6 +34,10 @@ public class TeeNovaDbContext : AbpDbContext<TeeNovaDbContext>
 
     // Production
     public DbSet<ProductionJob> ProductionJobs { get; set; }
+
+    // Notifications
+    public DbSet<EmailNotificationLog> EmailNotificationLogs { get; set; }
+    public DbSet<EmailSettings>        EmailSettings         { get; set; }
 
     public TeeNovaDbContext(DbContextOptions<TeeNovaDbContext> options)
         : base(options)

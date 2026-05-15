@@ -4,6 +4,7 @@ using System.Linq;
 using System.Threading.Tasks;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
+using TeeNova.Email;
 using TeeNova.Orders.Dtos;
 using TeeNova.Pricing;
 using TeeNova.PrintConfig;
@@ -21,6 +22,7 @@ public class OrderAppService : ApplicationService, IOrderAppService
     private readonly IRepository<PrintArea, Guid>          _printAreaRepository;
     private readonly IRepository<PrintSize, Guid>          _printSizeRepository;
     private readonly PrintConfigValidator                   _printConfigValidator;
+    private readonly IOrderEmailNotificationService         _orderEmailNotificationService;
 
     public OrderAppService(
         IRepository<Order, Guid>              orderRepository,
@@ -28,14 +30,16 @@ public class OrderAppService : ApplicationService, IOrderAppService
         IRepository<OrderTimelineEntry, Guid> timelineRepository,
         IRepository<PrintArea, Guid>          printAreaRepository,
         IRepository<PrintSize, Guid>          printSizeRepository,
-        PrintConfigValidator                  printConfigValidator)
+        PrintConfigValidator                  printConfigValidator,
+        IOrderEmailNotificationService        orderEmailNotificationService)
     {
-        _orderRepository      = orderRepository;
-        _productRepository    = productRepository;
-        _timelineRepository   = timelineRepository;
-        _printAreaRepository  = printAreaRepository;
-        _printSizeRepository  = printSizeRepository;
-        _printConfigValidator = printConfigValidator;
+        _orderRepository               = orderRepository;
+        _productRepository             = productRepository;
+        _timelineRepository            = timelineRepository;
+        _printAreaRepository           = printAreaRepository;
+        _printSizeRepository           = printSizeRepository;
+        _printConfigValidator          = printConfigValidator;
+        _orderEmailNotificationService = orderEmailNotificationService;
     }
 
     public async Task<OrderDto> CreateAsync(CreateOrderDto input)
@@ -104,6 +108,30 @@ public class OrderAppService : ApplicationService, IOrderAppService
 
         await AddTimelineEntryAsync(order.Id, OrderEventType.StatusChanged,
             "Order placed", order.Status);
+
+        // Email is best-effort. autoSave has flushed changes, but the UnitOfWork transaction
+        // may commit only after this method returns. For MVP we accept this small edge-case risk.
+        try
+        {
+            await _orderEmailNotificationService.SendOrderConfirmationAsync(order);
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex,
+                "[Email] Unexpected error while sending customer confirmation for order {OrderNumber}",
+                order.OrderNumber);
+        }
+
+        try
+        {
+            await _orderEmailNotificationService.SendAdminNewOrderNotificationAsync(order);
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex,
+                "[Email] Unexpected error while sending admin notification for order {OrderNumber}",
+                order.OrderNumber);
+        }
 
         return ObjectMapper.Map<Order, OrderDto>(order);
     }
@@ -229,6 +257,18 @@ public class OrderAppService : ApplicationService, IOrderAppService
         await AddTimelineEntryAsync(id, OrderEventType.StatusChanged,
             "Order marked as Ready", OrderStatus.Ready);
 
+        // Email is best-effort and must not block the status update.
+        try
+        {
+            await _orderEmailNotificationService.SendOrderReadyAsync(order);
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex,
+                "[Email] Unexpected error while sending ready notification for order {OrderNumber}",
+                order.OrderNumber);
+        }
+
         return await GetAsync(id);
     }
 
@@ -240,6 +280,18 @@ public class OrderAppService : ApplicationService, IOrderAppService
 
         await AddTimelineEntryAsync(id, OrderEventType.StatusChanged,
             "Order completed", OrderStatus.Completed);
+
+        // Email is best-effort and must not block the status update.
+        try
+        {
+            await _orderEmailNotificationService.SendOrderCompletedAsync(order);
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex,
+                "[Email] Unexpected error while sending completed notification for order {OrderNumber}",
+                order.OrderNumber);
+        }
 
         return await GetAsync(id);
     }

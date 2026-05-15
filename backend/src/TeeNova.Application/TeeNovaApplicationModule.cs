@@ -1,4 +1,6 @@
 using System.Threading.Tasks;
+using Microsoft.Extensions.DependencyInjection;
+using TeeNova.Email;
 using TeeNova.Files;
 using Volo.Abp;
 using Volo.Abp.Application;
@@ -23,6 +25,12 @@ public class TeeNovaApplicationModule : AbpModule
         {
             options.AddMaps<TeeNovaApplicationModule>();
         });
+
+        context.Services.Configure<EmailOptions>(
+            context.Services.GetConfiguration().GetSection("Email"));
+
+        context.Services.AddTransient<IEmailSettingsProvider, EmailSettingsProvider>();
+        context.Services.AddTransient<IOrderEmailNotificationService, OrderEmailNotificationService>();
     }
 
     public override async Task OnApplicationInitializationAsync(ApplicationInitializationContext context)
