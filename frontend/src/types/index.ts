@@ -319,6 +319,19 @@ export interface AdminAsset {
   designNote: string | null
 }
 
+// ─── Email Settings ───────────────────────────────────────────────────────────
+
+export interface EmailSettings {
+  adminNotificationEmail: string | null
+  replyToAddress: string | null
+  senderName: string | null
+  shopContactInfo: string | null
+  readyPickupMessage: string | null
+  readyShippingMessage: string | null
+  completedMessage: string | null
+  adminOrderBaseUrl: string | null
+}
+
 // ─── API Pagination ───────────────────────────────────────────────────────────
 
 export interface PagedResult<T> {
