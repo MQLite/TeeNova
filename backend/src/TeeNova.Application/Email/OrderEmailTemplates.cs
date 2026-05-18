@@ -113,7 +113,7 @@ public static class OrderEmailTemplates
             <body style="font-family:Arial,sans-serif;font-size:14px;color:#333;margin:0;padding:20px;background:#f4f4f4;">
             <table width="100%" cellpadding="0" cellspacing="0" style="max-width:600px;margin:0 auto;background:#fff;border-radius:6px;overflow:hidden;">
               <tr><td style="background:#2c3e50;padding:24px;text-align:center;">
-                <span style="color:#fff;font-size:20px;font-weight:bold;">TeeNova Print Shop</span>
+                <span style="color:#fff;font-size:20px;font-weight:bold;">Otahuhu Printing Shop</span>
               </td></tr>
               <tr><td style="padding:24px;">
             """);
@@ -256,7 +256,7 @@ public static class OrderEmailTemplates
     private static string BuildCustomerText(Order order, EmailSettingsSnapshot settings)
     {
         var sb = new StringBuilder();
-        sb.AppendLine("TeeNova Print Shop — Order Confirmed");
+        sb.AppendLine("Otahuhu Printing Shop — Order Confirmed");
         sb.AppendLine(new string('-', 40));
         sb.AppendLine($"Order Number : {order.OrderNumber}");
         sb.AppendLine($"Order Date   : {FormatDate(order.CreationTime)}");
@@ -360,7 +360,7 @@ public static class OrderEmailTemplates
     private static string BuildReadyText(Order order, EmailSettingsSnapshot settings)
     {
         var sb = new StringBuilder();
-        sb.AppendLine($"TeeNova Print Shop — Your order is ready — {order.OrderNumber}");
+        sb.AppendLine($"Otahuhu Printing Shop — Your order is ready — {order.OrderNumber}");
         sb.AppendLine(new string('-', 40));
         sb.AppendLine($"Customer     : {order.CustomerName}");
         sb.AppendLine($"Order Number : {order.OrderNumber}");
@@ -383,7 +383,7 @@ public static class OrderEmailTemplates
     private static string BuildCompletedText(Order order, EmailSettingsSnapshot settings)
     {
         var sb = new StringBuilder();
-        sb.AppendLine($"TeeNova Print Shop — Your order is complete — {order.OrderNumber}");
+        sb.AppendLine($"Otahuhu Printing Shop — Your order is complete — {order.OrderNumber}");
         sb.AppendLine(new string('-', 40));
         sb.AppendLine($"Customer     : {order.CustomerName}");
         sb.AppendLine($"Order Number : {order.OrderNumber}");
