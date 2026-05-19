@@ -2,18 +2,20 @@
 
 import { OrderStatusBadge } from '@/components/admin/OrderStatusBadge'
 import { Button } from '@/components/ui/Button'
-import type { OrderStatus } from '@/types'
+import type { OrderStatus, PaymentRequirementType } from '@/types'
 
 export function PaymentActionButton({
   loading,
+  disabled,
   onClick,
 }: {
   loading?: boolean
+  disabled?: boolean
   onClick: () => void
 }) {
   return (
-    <Button size="sm" loading={loading} onClick={onClick}>
-      Mark as Paid
+    <Button size="sm" loading={loading} disabled={disabled} onClick={onClick}>
+      Activate Order
     </Button>
   )
 }
@@ -38,12 +40,16 @@ export function OrderActionPanel({
   onMarkPaid,
   onStartReview,
   onStartPrinting,
+  paymentThresholdMet,
+  paymentRequirementType,
 }: {
   status: OrderStatus
   loading?: boolean
   onMarkPaid: () => void
   onStartReview: () => void
   onStartPrinting: () => void
+  paymentThresholdMet?: boolean
+  paymentRequirementType?: PaymentRequirementType
 }) {
   const isActivationPhase = status === 'Pending' || status === 'Paid'
   const isReviewPhase = status === 'Reviewing'
@@ -69,7 +75,20 @@ export function OrderActionPanel({
       <div className="mt-4 flex flex-wrap items-center gap-2 border-t border-black/[0.08] pt-4">
         {/* Activation phase */}
         {status === 'Pending' && (
-          <PaymentActionButton loading={loading} onClick={onMarkPaid} />
+          <div className="flex flex-wrap items-center gap-3">
+            <PaymentActionButton
+              loading={loading}
+              disabled={paymentThresholdMet === false}
+              onClick={onMarkPaid}
+            />
+            {paymentThresholdMet === false && (
+              <p className="text-xs text-black/45" style={{ letterSpacing: '-0.14px' }}>
+                {paymentRequirementType === 'DepositThenBalance'
+                  ? 'Required deposit has not been received yet.'
+                  : 'Full payment has not been received yet.'}
+              </p>
+            )}
+          </div>
         )}
         {status === 'Paid' && (
           <>

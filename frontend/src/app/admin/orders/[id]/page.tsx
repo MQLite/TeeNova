@@ -15,8 +15,10 @@ import { OrderTimeline } from '@/components/admin/OrderTimeline'
 import { FulfillmentPanel } from '@/components/admin/FulfillmentPanel'
 import { CompletionBanner } from '@/components/admin/CompletionBanner'
 import { NotificationPanel } from '@/components/admin/NotificationPanel'
+import { PaymentSection } from '@/components/admin/PaymentSection'
+import { RecordPaymentModal } from '@/components/admin/RecordPaymentModal'
 import { DownloadDesignButton } from '@/components/orders/DownloadDesignButton'
-import type { Order, OrderItem, OrderItemPrint, OrderStatus } from '@/types'
+import type { Order, OrderItem, OrderItemPrint, OrderStatus, RecordPaymentInput } from '@/types'
 import clsx from 'clsx'
 
 // 鈹€鈹€ Constants 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
@@ -222,6 +224,8 @@ export default function AdminOrderDetailPage() {
   const [loading, setLoading] = useState(true)
   const [updating, setUpdating] = useState(false)
   const [recordingNotification, setRecordingNotification] = useState(false)
+  const [recordPaymentOpen, setRecordPaymentOpen] = useState(false)
+  const [recordingPayment, setRecordingPayment] = useState(false)
   const [toast, setToast] = useState<string | null>(null)
   const [toastTone, setToastTone] = useState<'success' | 'error'>('success')
 
@@ -294,9 +298,25 @@ export default function AdminOrderDetailPage() {
     try {
       const updated = await ordersApi.markPaid(order.id)
       setOrder(updated)
-      showToast('Payment recorded')
+      showToast('Order activated')
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : null
+      showToast(msg ?? 'Payment threshold not met. Record sufficient payment first.', 'error')
     } finally {
       setUpdating(false)
+    }
+  }
+
+  async function handleRecordPayment(input: RecordPaymentInput) {
+    if (!order) return
+    setRecordingPayment(true)
+    try {
+      const updated = await ordersApi.recordPayment(order.id, input)
+      setOrder(updated)
+      setRecordPaymentOpen(false)
+      showToast('Payment recorded')
+    } finally {
+      setRecordingPayment(false)
     }
   }
 
@@ -377,6 +397,13 @@ export default function AdminOrderDetailPage() {
     setTimeout(() => setToast(null), 3000)
   }
 
+  function isPaymentRequirementMet(o: Order): boolean {
+    if (o.paymentRequirementType === 'DepositThenBalance') {
+      return o.requiredDepositAmount != null && o.paidAmount >= o.requiredDepositAmount
+    }
+    return o.paidAmount >= o.requiredPaymentAmount
+  }
+
   // 鈹€鈹€ Render 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
 
   if (loading) return <DetailSkeleton />
@@ -445,6 +472,8 @@ export default function AdminOrderDetailPage() {
           onMarkPaid={handleMarkPaid}
           onStartReview={handleStartReview}
           onStartPrinting={handleStartPrinting}
+          paymentThresholdMet={isPaymentRequirementMet(order)}
+          paymentRequirementType={order.paymentRequirementType}
         />
       )}
 
@@ -572,6 +601,12 @@ export default function AdminOrderDetailPage() {
               </address>
             </CardBody>
           </Card>
+
+          {/* Payment */}
+          <PaymentSection
+            order={order}
+            onRecordPayment={() => setRecordPaymentOpen(true)}
+          />
 
           {/* Customer notes */}
           {order.notes && (
@@ -725,8 +760,14 @@ export default function AdminOrderDetailPage() {
 
         </div>
       </div>
+
+      {/* Record Payment modal */}
+      <RecordPaymentModal
+        order={order}
+        open={recordPaymentOpen}
+        onClose={() => setRecordPaymentOpen(false)}
+        onSubmit={handleRecordPayment}
+      />
     </div>
   )
 }
-
-

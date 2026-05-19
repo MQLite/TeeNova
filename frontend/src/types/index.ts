@@ -172,11 +172,49 @@ export type OrderStatus =
 
 export type DeliveryMethod = 'Pickup' | 'Shipping'
 
+export type PaymentStatus =
+  | 'Unpaid'
+  | 'DepositRequired'
+  | 'DepositPaid'
+  | 'PartiallyPaid'
+  | 'Paid'
+  | 'Refunded'
+  | 'PaymentFailed'
+
+export type PaymentRequirementType =
+  | 'DepositThenBalance'
+  | 'FullPaymentRequired'
+
+export type ManualPaymentMethod =
+  | 'Cash'
+  | 'Eftpos'
+  | 'BankTransfer'
+  | 'Online'
+  | 'Other'
+
+export interface PaymentTransaction {
+  id: string
+  orderId: string
+  amount: number
+  method: ManualPaymentMethod
+  reference?: string | null
+  note?: string | null
+  creationTime: string
+}
+
+export interface RecordPaymentInput {
+  amount: number
+  method: ManualPaymentMethod
+  reference?: string | null
+  note?: string | null
+}
+
 export type OrderEventType =
   | 'StatusChanged'
   | 'ApprovedForPrinting'
   | 'AdminNoteAdded'
   | 'CustomerNotificationRecorded'
+  | 'PaymentReceived'
 
 export interface OrderTimelineEntry {
   id: string
@@ -242,6 +280,19 @@ export interface Order {
   adminNotes: string | null
   creationTime: string
   timeline: OrderTimelineEntry[]
+  // Payment fields
+  paymentStatus: PaymentStatus
+  paymentRequirementType: PaymentRequirementType
+  requiredDepositAmount: number | null
+  requiredPaymentAmount: number
+  paidAmount: number
+  balanceAmount: number
+  depositPaidAt: string | null
+  fullyPaidAt: string | null
+  lastPaymentMethod: ManualPaymentMethod | null
+  lastPaymentReference: string | null
+  lastPaymentNote: string | null
+  paymentTransactions: PaymentTransaction[]
 }
 
 // ─── Cart (client-side) ───────────────────────────────────────────────────────
