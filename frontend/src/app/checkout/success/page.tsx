@@ -1,9 +1,10 @@
-﻿'use client'
+'use client'
 
 import { Suspense, useEffect, useState } from 'react'
 import { useSearchParams } from 'next/navigation'
 import Link from 'next/link'
 import { ordersApi } from '@/api/orders'
+import { PaymentRequirementSummary } from '@/components/checkout/PaymentRequirementSummary'
 import type { Order, OrderItem } from '@/types'
 
 function getPrimaryPreview(item: OrderItem) {
@@ -46,7 +47,7 @@ function SuccessContent() {
 
   return (
     <div className="min-h-screen bg-white">
-      {/* Success hero - vibrant gradient */}
+      {/* Success hero */}
       <div className="hero-gradient py-16 text-center">
         <div className="mx-auto max-w-xl px-4">
           <div className="mx-auto mb-6 flex h-20 w-20 items-center justify-center rounded-full bg-white/20">
@@ -57,7 +58,7 @@ function SuccessContent() {
 
           <h1 className="display-section text-white mb-4">Order Placed!</h1>
           <p className="text-base text-white/70" style={{ letterSpacing: '-0.14px', fontWeight: 400 }}>
-            Thank you for your order. We&apos;ll get started on your custom T-shirt right away.
+            Your order has been received. Please arrange payment using the instructions below — we&apos;ll start processing once payment is confirmed.
           </p>
 
           {!loading && order && (
@@ -72,6 +73,28 @@ function SuccessContent() {
       <div className="mx-auto max-w-2xl px-4 py-10 sm:px-6">
         <div className="space-y-5">
 
+          {/* Payment Instructions — shown first, most important */}
+          {!loading && order && (
+            <div className="card overflow-hidden">
+              <div className="border-b border-black/[0.08] px-6 py-4">
+                <h2 className="text-sm text-black" style={{ fontWeight: 540, letterSpacing: '-0.26px' }}>Payment Instructions</h2>
+              </div>
+              <div className="p-6">
+                <PaymentRequirementSummary
+                  mode="success"
+                  deliveryMethod={order.deliveryMethod}
+                  totalAmount={order.totalAmount}
+                  paymentRequirementType={order.paymentRequirementType}
+                  requiredDepositAmount={order.requiredDepositAmount}
+                  requiredPaymentAmount={order.requiredPaymentAmount}
+                  balanceAmount={order.balanceAmount}
+                  paymentStatus={order.paymentStatus}
+                  orderNumber={order.orderNumber}
+                />
+              </div>
+            </div>
+          )}
+
           {/* What happens next */}
           <div className="card overflow-hidden">
             <div className="border-b border-black/[0.08] px-6 py-4">
@@ -79,10 +102,10 @@ function SuccessContent() {
             </div>
             <div className="divide-y divide-black/[0.06]">
               {[
-                { step: '1', title: 'Order Review', desc: 'Our team reviews your design files and order details within 1 business day.', eta: 'Today-Tomorrow' },
-                { step: '2', title: 'Production', desc: 'Your custom T-shirts are printed and quality checked.', eta: '2-4 business days' },
-                { step: '3', title: 'Dispatch', desc: 'Your order is packed and handed to NZ Post for delivery.', eta: '1-2 business days' },
-                { step: '4', title: 'Delivered', desc: 'Your order arrives at your door. Enjoy your custom tee!', eta: '1-3 business days' },
+                { step: '1', title: 'Payment Confirmation',  desc: 'Once we receive your payment, we will confirm your order and begin reviewing your design files.', eta: 'After payment' },
+                { step: '2', title: 'Production',            desc: 'Your custom T-shirts are printed and quality checked.',                                             eta: '2–4 business days' },
+                { step: '3', title: 'Dispatch / Pickup',     desc: 'Your order is packed and ready for pickup or dispatched via NZ Post.',                             eta: '1–2 business days' },
+                { step: '4', title: 'Delivered',             desc: 'Your order arrives. Enjoy your custom tee!',                                                       eta: '1–3 business days' },
               ].map(({ step, title, desc, eta }) => (
                 <div key={step} className="flex gap-4 px-6 py-4">
                   <div className="mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-black text-xs font-medium text-white">
@@ -98,6 +121,7 @@ function SuccessContent() {
             </div>
           </div>
 
+          {/* Order items */}
           {!loading && order && (
             <div className="card overflow-hidden">
               <div className="flex items-center justify-between border-b border-black/[0.08] px-6 py-4">
@@ -153,6 +177,7 @@ function SuccessContent() {
             </div>
           )}
 
+          {/* Confirmation email notice */}
           {!loading && order && (
             <div className="card flex items-start gap-3 px-5 py-4">
               <div className="mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-black/[0.06] text-xs">
@@ -180,4 +205,3 @@ function SuccessContent() {
     </div>
   )
 }
-

@@ -6,7 +6,8 @@ import Link from 'next/link'
 import { useCartStore } from '@/features/cart/cart-store'
 import { ordersApi } from '@/api/orders'
 import { Button } from '@/components/ui/Button'
-import type { CartItem, ShippingAddress } from '@/types'
+import { PaymentRequirementSummary } from '@/components/checkout/PaymentRequirementSummary'
+import type { CartItem, DeliveryMethod, ShippingAddress } from '@/types'
 
 function getPrintSummary(item: CartItem) {
   return item.prints ?? []
@@ -22,6 +23,7 @@ export default function CheckoutPage() {
   const [submitting, setSubmitting] = useState(false)
   const [submitted, setSubmitted] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [deliveryMethod, setDeliveryMethod] = useState<DeliveryMethod>('Pickup')
 
   const [form, setForm] = useState<ShippingAddress & { email: string }>({
     email: '',
@@ -74,6 +76,7 @@ export default function CheckoutPage() {
             designNote: print.designNote,
           })),
         })),
+        deliveryMethod,
       })
       setSubmitted(true)
       clearCart()
@@ -114,7 +117,7 @@ export default function CheckoutPage() {
             {/* ── Left: Form ── */}
             <div className="space-y-6 lg:col-span-2">
 
-              {/* Contact */}
+              {/* Step 1: Contact */}
               <div className="card overflow-hidden">
                 <div className="border-b border-black/[0.08] bg-black/[0.02] px-6 py-4 flex items-center gap-3">
                   <span className="flex h-7 w-7 items-center justify-center rounded-full bg-black text-xs font-medium text-white">1</span>
@@ -127,12 +130,61 @@ export default function CheckoutPage() {
                 </div>
               </div>
 
-              {/* Shipping */}
+              {/* Step 2: Delivery Method */}
               <div className="card overflow-hidden">
                 <div className="border-b border-black/[0.08] bg-black/[0.02] px-6 py-4 flex items-center gap-3">
                   <span className="flex h-7 w-7 items-center justify-center rounded-full bg-black text-xs font-medium text-white">2</span>
                   <h2 className="text-sm text-black" style={{ fontWeight: 540, letterSpacing: '-0.26px' }}>
-                    Shipping Address
+                    Delivery Method
+                  </h2>
+                </div>
+                <div className="p-6">
+                  <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                    {([
+                      { method: 'Pickup'   as DeliveryMethod, title: 'Pick Up',  desc: 'Collect your order from our shop. Deposit required.' },
+                      { method: 'Shipping' as DeliveryMethod, title: 'Shipping', desc: 'Delivered to your address. Full payment required.' },
+                    ] as const).map(({ method, title, desc }) => {
+                      const selected = deliveryMethod === method
+                      return (
+                        <label
+                          key={method}
+                          className={[
+                            'cursor-pointer rounded-xl border-2 p-4 transition-colors',
+                            selected
+                              ? 'border-black bg-black/[0.02]'
+                              : 'border-black/[0.10] hover:border-black/25',
+                          ].join(' ')}
+                        >
+                          <input
+                            type="radio"
+                            name="deliveryMethod"
+                            value={method}
+                            checked={selected}
+                            onChange={() => setDeliveryMethod(method)}
+                            className="sr-only"
+                          />
+                          <p
+                            className="text-sm text-black"
+                            style={{ fontWeight: selected ? 540 : 480, letterSpacing: '-0.14px' }}
+                          >
+                            {title}
+                          </p>
+                          <p className="mt-0.5 text-xs text-black/55" style={{ letterSpacing: '-0.14px' }}>
+                            {desc}
+                          </p>
+                        </label>
+                      )
+                    })}
+                  </div>
+                </div>
+              </div>
+
+              {/* Step 3: Address */}
+              <div className="card overflow-hidden">
+                <div className="border-b border-black/[0.08] bg-black/[0.02] px-6 py-4 flex items-center gap-3">
+                  <span className="flex h-7 w-7 items-center justify-center rounded-full bg-black text-xs font-medium text-white">3</span>
+                  <h2 className="text-sm text-black" style={{ fontWeight: 540, letterSpacing: '-0.26px' }}>
+                    {deliveryMethod === 'Pickup' ? 'Contact Address' : 'Shipping Address'}
                   </h2>
                 </div>
                 <div className="grid grid-cols-1 gap-4 p-6 sm:grid-cols-2">
@@ -147,26 +199,26 @@ export default function CheckoutPage() {
                 </div>
               </div>
 
-              {/* Payment placeholder */}
+              {/* Step 4: Payment */}
               <div className="card overflow-hidden">
                 <div className="border-b border-black/[0.08] bg-black/[0.02] px-6 py-4 flex items-center gap-3">
-                  <span className="flex h-7 w-7 items-center justify-center rounded-full bg-black/[0.15] text-xs font-medium text-black/50">3</span>
+                  <span className="flex h-7 w-7 items-center justify-center rounded-full bg-black text-xs font-medium text-white">4</span>
                   <h2 className="text-sm text-black" style={{ fontWeight: 540, letterSpacing: '-0.26px' }}>
                     Payment
                   </h2>
                 </div>
-                <div className="p-6">
-                  <div className="flex flex-col items-center gap-3 rounded-lg border-2 border-dashed border-black/[0.08] bg-black/[0.02] py-8 text-center">
-                    <div className="flex gap-2">
-                      {['VISA', 'MC', 'PayPal'].map(p => (
-                        <span key={p} className="rounded border border-black/[0.10] bg-white px-2 py-1 font-mono text-xs font-normal uppercase tracking-[0.54px] text-black/55">
-                          {p}
-                        </span>
-                      ))}
-                    </div>
-                    <p className="text-sm text-black/50" style={{ letterSpacing: '-0.14px' }}>Payment integration</p>
-                    <p className="font-mono text-[11px] uppercase tracking-[0.54px] text-black/45">Connect Stripe or another provider here</p>
+                <div className="space-y-4 p-6">
+                  <div
+                    className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800"
+                    style={{ letterSpacing: '-0.14px' }}
+                  >
+                    Online payment is not available yet. After submitting your order, please follow the payment instructions and we will confirm your order once payment is received.
                   </div>
+                  <PaymentRequirementSummary
+                    mode="checkout"
+                    deliveryMethod={deliveryMethod}
+                    totalAmount={subtotal}
+                  />
                 </div>
               </div>
 
@@ -237,7 +289,7 @@ export default function CheckoutPage() {
                   <div className="flex justify-between text-sm" style={{ letterSpacing: '-0.14px' }}>
                     <span className="text-black/50">Shipping</span>
                     <span className="text-green-600" style={{ fontWeight: 480 }}>
-                      {subtotal >= 100 ? 'FREE' : 'TBC'}
+                      {deliveryMethod === 'Pickup' ? 'N/A' : subtotal >= 100 ? 'FREE' : 'TBC'}
                     </span>
                   </div>
                   <div className="border-t border-black/[0.08] pt-2.5 flex justify-between">
@@ -252,12 +304,9 @@ export default function CheckoutPage() {
                   <Button type="submit" className="w-full" size="lg" loading={submitting}>
                     {submitting ? 'Placing Order…' : 'Place Order →'}
                   </Button>
-                  <div className="mt-3 flex items-center justify-center gap-1.5 font-mono text-[11px] uppercase tracking-[0.54px] text-black/45">
-                    <svg className="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                      <path strokeLinecap="round" strokeLinejoin="round" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
-                    </svg>
-                    Secure & encrypted
-                  </div>
+                  <p className="mt-3 text-center font-mono text-[11px] uppercase tracking-[0.54px] text-black/40">
+                    Payment arranged after order submission
+                  </p>
                 </div>
               </div>
             </div>
