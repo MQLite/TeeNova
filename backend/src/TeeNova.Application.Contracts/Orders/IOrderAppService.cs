@@ -22,4 +22,5 @@ public interface IOrderAppService : IApplicationService
     Task<OrderDto> StartPrintingAsync(Guid id);
     Task<OrderDto> MarkReadyAsync(Guid id);
     Task<OrderDto> CompleteAsync(Guid id);
+    Task<OrderDto> RecordPaymentAsync(Guid id, RecordPaymentDto input);
 }

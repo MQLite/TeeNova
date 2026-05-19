@@ -72,4 +72,8 @@ public class OrderController : TeeNovaControllerBase
     [HttpPost("{id:guid}/complete")]
     public async Task<OrderDto> CompleteAsync(Guid id)
         => await _orderAppService.CompleteAsync(id);
+
+    [HttpPost("{id:guid}/record-payment")]
+    public async Task<OrderDto> RecordPaymentAsync(Guid id, [FromBody] RecordPaymentDto input)
+        => await _orderAppService.RecordPaymentAsync(id, input);
 }
