@@ -39,6 +39,21 @@ public class Order : FullAuditedAggregateRoot<Guid>
     public bool IsApprovedForPrinting { get; private set; }
     public DeliveryMethod? DeliveryMethod { get; set; }
 
+    // ── Payment snapshot fields ───────────────────────────────────────────────
+    // Proper initialization (based on DeliveryMethod) is done in Phase 12A-2.
+    // Defaults here ensure non-null DB constraints are satisfied for new rows.
+    public PaymentStatus PaymentStatus { get; private set; } = PaymentStatus.Unpaid;
+    public PaymentRequirementType PaymentRequirementType { get; private set; } = PaymentRequirementType.FullPaymentRequired;
+    public decimal? RequiredDepositAmount { get; private set; }
+    public decimal RequiredPaymentAmount { get; private set; }
+    public decimal PaidAmount { get; private set; }
+    public decimal BalanceAmount { get; private set; }
+    public DateTime? DepositPaidAt { get; private set; }
+    public DateTime? FullyPaidAt { get; private set; }
+    public ManualPaymentMethod? LastPaymentMethod { get; private set; }
+    public string? LastPaymentReference { get; private set; }
+    public string? LastPaymentNote { get; private set; }
+
     private readonly List<OrderItem> _items = new();
     public IReadOnlyList<OrderItem> Items => _items.AsReadOnly();
 
@@ -146,6 +161,80 @@ public class Order : FullAuditedAggregateRoot<Guid>
         }
 
         Status = OrderStatus.Pending;
+    }
+
+    public void InitializePaymentRequirement()
+    {
+        RequiredPaymentAmount = TotalAmount;
+
+        if (DeliveryMethod == Orders.DeliveryMethod.Pickup)
+        {
+            PaymentRequirementType = PaymentRequirementType.DepositThenBalance;
+            RequiredDepositAmount  = Math.Ceiling(TotalAmount * 0.50m * 100m) / 100m;
+            PaymentStatus          = PaymentStatus.DepositRequired;
+        }
+        else
+        {
+            PaymentRequirementType = PaymentRequirementType.FullPaymentRequired;
+            RequiredDepositAmount  = null;
+            PaymentStatus          = PaymentStatus.Unpaid;
+        }
+
+        BalanceAmount        = TotalAmount;
+        PaidAmount           = 0m;
+        DepositPaidAt        = null;
+        FullyPaidAt          = null;
+        LastPaymentMethod    = null;
+        LastPaymentReference = null;
+        LastPaymentNote      = null;
+    }
+
+    public void ApplyPayment(decimal amount, ManualPaymentMethod method, string? reference, string? note, DateTime now)
+    {
+        if (amount <= 0)
+        {
+            throw new BusinessException("TeeNova:Order:PaymentAmountMustBePositive")
+                .WithData("Amount", amount);
+        }
+
+        if (amount > BalanceAmount)
+        {
+            throw new BusinessException("TeeNova:Order:PaymentExceedsBalance")
+                .WithData("BalanceAmount", BalanceAmount)
+                .WithData("Amount", amount);
+        }
+
+        PaidAmount            += amount;
+        BalanceAmount          = RequiredPaymentAmount - PaidAmount;
+        LastPaymentMethod      = method;
+        LastPaymentReference   = reference;
+        LastPaymentNote        = note;
+
+        if (PaidAmount >= RequiredPaymentAmount)
+        {
+            PaymentStatus = PaymentStatus.Paid;
+            FullyPaidAt   = now;
+            if (DepositPaidAt == null)
+                DepositPaidAt = now;
+        }
+        else if (PaymentRequirementType == PaymentRequirementType.DepositThenBalance
+            && RequiredDepositAmount.HasValue
+            && PaidAmount >= RequiredDepositAmount.Value)
+        {
+            if (DepositPaidAt == null)
+                DepositPaidAt = now;
+            PaymentStatus = PaymentStatus.DepositPaid;
+        }
+        else if (PaidAmount > 0m)
+        {
+            PaymentStatus = PaymentStatus.PartiallyPaid;
+        }
+        else
+        {
+            PaymentStatus = PaymentRequirementType == PaymentRequirementType.DepositThenBalance
+                ? PaymentStatus.DepositRequired
+                : PaymentStatus.Unpaid;
+        }
     }
 
     private void RecalculateTotal()

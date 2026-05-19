@@ -24,6 +24,20 @@ public class OrderDto
     public string? AdminNotes { get; set; }
     public DateTime CreationTime { get; set; }
     public List<OrderTimelineEntryDto> Timeline { get; set; } = new();
+
+    // Payment fields
+    public PaymentStatus PaymentStatus { get; set; }
+    public PaymentRequirementType PaymentRequirementType { get; set; }
+    public decimal? RequiredDepositAmount { get; set; }
+    public decimal RequiredPaymentAmount { get; set; }
+    public decimal PaidAmount { get; set; }
+    public decimal BalanceAmount { get; set; }
+    public DateTime? DepositPaidAt { get; set; }
+    public DateTime? FullyPaidAt { get; set; }
+    public ManualPaymentMethod? LastPaymentMethod { get; set; }
+    public string? LastPaymentReference { get; set; }
+    public string? LastPaymentNote { get; set; }
+    public List<PaymentTransactionDto> PaymentTransactions { get; set; } = new();
 }
 
 public class ShippingAddressDto

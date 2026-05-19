@@ -16,26 +16,29 @@ namespace TeeNova.Orders;
 
 public class OrderAppService : ApplicationService, IOrderAppService
 {
-    private readonly IRepository<Order, Guid>              _orderRepository;
-    private readonly IRepository<Catalog.Product, Guid>    _productRepository;
-    private readonly IRepository<OrderTimelineEntry, Guid> _timelineRepository;
-    private readonly IRepository<PrintArea, Guid>          _printAreaRepository;
-    private readonly IRepository<PrintSize, Guid>          _printSizeRepository;
-    private readonly PrintConfigValidator                   _printConfigValidator;
-    private readonly IOrderEmailNotificationService         _orderEmailNotificationService;
+    private readonly IRepository<Order, Guid>               _orderRepository;
+    private readonly IRepository<Catalog.Product, Guid>     _productRepository;
+    private readonly IRepository<OrderTimelineEntry, Guid>  _timelineRepository;
+    private readonly IRepository<PaymentTransaction, Guid>  _paymentTransactionRepository;
+    private readonly IRepository<PrintArea, Guid>           _printAreaRepository;
+    private readonly IRepository<PrintSize, Guid>           _printSizeRepository;
+    private readonly PrintConfigValidator                    _printConfigValidator;
+    private readonly IOrderEmailNotificationService          _orderEmailNotificationService;
 
     public OrderAppService(
-        IRepository<Order, Guid>              orderRepository,
-        IRepository<Catalog.Product, Guid>    productRepository,
-        IRepository<OrderTimelineEntry, Guid> timelineRepository,
-        IRepository<PrintArea, Guid>          printAreaRepository,
-        IRepository<PrintSize, Guid>          printSizeRepository,
-        PrintConfigValidator                  printConfigValidator,
-        IOrderEmailNotificationService        orderEmailNotificationService)
+        IRepository<Order, Guid>               orderRepository,
+        IRepository<Catalog.Product, Guid>     productRepository,
+        IRepository<OrderTimelineEntry, Guid>  timelineRepository,
+        IRepository<PaymentTransaction, Guid>  paymentTransactionRepository,
+        IRepository<PrintArea, Guid>           printAreaRepository,
+        IRepository<PrintSize, Guid>           printSizeRepository,
+        PrintConfigValidator                   printConfigValidator,
+        IOrderEmailNotificationService         orderEmailNotificationService)
     {
         _orderRepository               = orderRepository;
         _productRepository             = productRepository;
         _timelineRepository            = timelineRepository;
+        _paymentTransactionRepository  = paymentTransactionRepository;
         _printAreaRepository           = printAreaRepository;
         _printSizeRepository           = printSizeRepository;
         _printConfigValidator          = printConfigValidator;
@@ -104,6 +107,7 @@ public class OrderAppService : ApplicationService, IOrderAppService
                 unitPrice * itemDto.Quantity);
         }
 
+        order.InitializePaymentRequirement();
         await _orderRepository.InsertAsync(order, autoSave: true);
 
         await AddTimelineEntryAsync(order.Id, OrderEventType.StatusChanged,
@@ -150,6 +154,7 @@ public class OrderAppService : ApplicationService, IOrderAppService
         var dto = ObjectMapper.Map<Order, OrderDto>(order);
         dto.DisplayStatus = GetDisplayStatus(order.Status);
         await EnrichTimelineAsync(dto);
+        await EnrichPaymentTransactionsAsync(dto);
         return dto;
     }
 
@@ -219,7 +224,79 @@ public class OrderAppService : ApplicationService, IOrderAppService
     }
 
     public async Task<OrderDto> MarkPaidAsync(Guid id)
-        => await ChangeStatusAsync(id, OrderStatus.Paid);
+    {
+        var order = await _orderRepository.GetAsync(id);
+
+        if (order.PaymentRequirementType == PaymentRequirementType.FullPaymentRequired
+            && order.PaymentStatus != PaymentStatus.Paid)
+        {
+            throw new Volo.Abp.BusinessException("TeeNova:Order:FullPaymentNotMet")
+                .WithData("RequiredPaymentAmount", order.RequiredPaymentAmount)
+                .WithData("PaidAmount", order.PaidAmount);
+        }
+
+        if (order.PaymentRequirementType == PaymentRequirementType.DepositThenBalance
+            && order.PaidAmount < order.RequiredDepositAmount)
+        {
+            throw new Volo.Abp.BusinessException("TeeNova:Order:DepositPaymentNotMet")
+                .WithData("RequiredDepositAmount", order.RequiredDepositAmount)
+                .WithData("PaidAmount", order.PaidAmount);
+        }
+
+        order.UpdateStatus(OrderStatus.Paid);
+        await _orderRepository.UpdateAsync(order, autoSave: true);
+
+        await AddTimelineEntryAsync(id, OrderEventType.StatusChanged,
+            "Order marked as paid", OrderStatus.Paid);
+
+        return await GetAsync(id);
+    }
+
+    public async Task<OrderDto> RecordPaymentAsync(Guid id, RecordPaymentDto input)
+    {
+        var order = await _orderRepository.GetAsync(id);
+
+        if (order.Status == OrderStatus.Cancelled)
+        {
+            throw new Volo.Abp.BusinessException("TeeNova:Order:CancelledOrderImmutable")
+                .WithData("OrderId", order.Id);
+        }
+
+        if (order.Status == OrderStatus.Completed)
+        {
+            throw new Volo.Abp.BusinessException("TeeNova:Order:CannotRecordPaymentForCompletedOrder")
+                .WithData("OrderId", order.Id);
+        }
+
+        var reference = string.IsNullOrWhiteSpace(input.Reference) ? null : input.Reference.Trim();
+        var note      = string.IsNullOrWhiteSpace(input.Note)      ? null : input.Note.Trim();
+
+        if (input.Amount > order.BalanceAmount)
+        {
+            throw new Volo.Abp.BusinessException("TeeNova:Order:PaymentExceedsBalance")
+                .WithData("BalanceAmount", order.BalanceAmount)
+                .WithData("Amount", input.Amount);
+        }
+
+        order.ApplyPayment(input.Amount, input.Method, reference, note, Clock.Now);
+
+        var transaction = new PaymentTransaction(
+            GuidGenerator.Create(), order.Id,
+            input.Amount, input.Method, reference, note);
+
+        await _paymentTransactionRepository.InsertAsync(transaction, autoSave: false);
+        await _orderRepository.UpdateAsync(order, autoSave: true);
+
+        var timelineDesc = string.IsNullOrEmpty(reference)
+            ? $"Payment of {input.Amount:C} recorded via {input.Method}."
+            : $"Payment of {input.Amount:C} recorded via {input.Method}. Ref: {reference}.";
+
+        await AddTimelineEntryAsync(id, OrderEventType.PaymentReceived,
+            timelineDesc,
+            order.Status);
+
+        return await GetAsync(id);
+    }
 
     public async Task<OrderDto> StartReviewAsync(Guid id)
         => await ChangeStatusAsync(id, OrderStatus.Reviewing);
@@ -359,6 +436,17 @@ public class OrderAppService : ApplicationService, IOrderAppService
         orderDto.Timeline = entries
             .OrderBy(e => e.CreationTime)
             .Select(e => ObjectMapper.Map<OrderTimelineEntry, OrderTimelineEntryDto>(e))
+            .ToList();
+    }
+
+    private async Task EnrichPaymentTransactionsAsync(OrderDto orderDto)
+    {
+        var transactions = await _paymentTransactionRepository.GetListAsync(
+            t => t.OrderId == orderDto.Id);
+
+        orderDto.PaymentTransactions = transactions
+            .OrderBy(t => t.CreationTime)
+            .Select(t => ObjectMapper.Map<PaymentTransaction, PaymentTransactionDto>(t))
             .ToList();
     }
 

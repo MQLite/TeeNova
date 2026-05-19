@@ -59,6 +59,46 @@ public class OrderEntityTypeConfiguration :
             sa.Property(a => a.Phone).HasMaxLength(32);
         });
 
+        // Payment snapshot fields
+        builder.Property(o => o.PaymentStatus)
+            .HasConversion<string>()
+            .HasMaxLength(32)
+            .HasDefaultValue(PaymentStatus.Unpaid);
+
+        // No HasDefaultValue here — CLR default (DepositThenBalance=0) is used for migration
+        // column addition. The backfill SQL sets the correct value for all existing rows,
+        // and Phase 12A-2 always sets the value explicitly in CreateOrderAsync.
+        builder.Property(o => o.PaymentRequirementType)
+            .HasConversion<string>()
+            .HasMaxLength(32);
+
+        builder.Property(o => o.RequiredDepositAmount)
+            .HasColumnType("decimal(18,4)");
+
+        builder.Property(o => o.RequiredPaymentAmount)
+            .HasColumnType("decimal(18,4)");
+
+        builder.Property(o => o.PaidAmount)
+            .HasColumnType("decimal(18,4)");
+
+        builder.Property(o => o.BalanceAmount)
+            .HasColumnType("decimal(18,4)");
+
+        // DepositPaidAt and FullyPaidAt are DateTime? — EF infers datetime2 nullable, no config needed.
+
+        builder.Property(o => o.LastPaymentMethod)
+            .HasConversion<string>()
+            .HasMaxLength(32)
+            .IsRequired(false);
+
+        builder.Property(o => o.LastPaymentReference)
+            .HasMaxLength(256);
+
+        builder.Property(o => o.LastPaymentNote)
+            .HasMaxLength(1000);
+
+        builder.HasIndex(o => o.PaymentStatus);
+
         builder.HasMany(o => o.Items)
             .WithOne()
             .HasForeignKey(i => i.OrderId)
