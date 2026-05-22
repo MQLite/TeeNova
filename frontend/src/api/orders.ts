@@ -1,5 +1,14 @@
 import { apiClient } from '@/lib/api-client'
-import type { DeliveryMethod, Order, OrderStatus, PagedResult, RecordPaymentInput, ShippingAddress } from '@/types'
+import type {
+  CreateOnlinePaymentSessionInput,
+  DeliveryMethod,
+  OnlinePaymentSession,
+  Order,
+  OrderStatus,
+  PagedResult,
+  RecordPaymentInput,
+  ShippingAddress,
+} from '@/types'
 
 export interface CreateOrderItemPrintPayload {
   printAreaId: string
@@ -80,6 +89,13 @@ export const ordersApi = {
 
   recordPayment(orderId: string, input: RecordPaymentInput): Promise<Order> {
     return apiClient.post(`/api/orders/${orderId}/record-payment`, input)
+  },
+
+  createOnlinePaymentSession(
+    orderId: string,
+    input: CreateOnlinePaymentSessionInput,
+  ): Promise<OnlinePaymentSession> {
+    return apiClient.post(`/api/app/order/${orderId}/online-payment-session`, input)
   },
 
   updatePrintDesign(

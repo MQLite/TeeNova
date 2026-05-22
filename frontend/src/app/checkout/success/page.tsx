@@ -31,6 +31,9 @@ export default function CheckoutSuccessPage() {
 function SuccessContent() {
   const searchParams = useSearchParams()
   const orderId = searchParams.get('orderId')
+  const mockProvider = searchParams.get('mockProvider')
+  const mockSessionId = searchParams.get('mockSessionId')
+  const isOnlineReturn = !!(mockProvider || mockSessionId)
 
   const [order, setOrder] = useState<Order | null>(null)
   const [loading, setLoading] = useState(true)
@@ -58,7 +61,9 @@ function SuccessContent() {
 
           <h1 className="display-section text-white mb-4">Order Placed!</h1>
           <p className="text-base text-white/70" style={{ letterSpacing: '-0.14px', fontWeight: 400 }}>
-            Your order has been received. Please arrange payment using the instructions below — we&apos;ll start processing once payment is confirmed.
+            {isOnlineReturn
+              ? "Your order has been received. Payment confirmation may take a moment — please check your order status below."
+              : "Your order has been received. Please arrange payment using the instructions below — we’ll start processing once payment is confirmed."}
           </p>
 
           {!loading && order && (
@@ -73,8 +78,29 @@ function SuccessContent() {
       <div className="mx-auto max-w-2xl px-4 py-10 sm:px-6">
         <div className="space-y-5">
 
-          {/* Payment Instructions — shown first, most important */}
-          {!loading && order && (
+          {/* Online payment confirmation pending notice */}
+          {isOnlineReturn && (
+            <div className="rounded-2xl border border-amber-200 bg-amber-50 px-6 py-5">
+              <p className="mb-2 font-mono text-[11px] uppercase tracking-[0.54px] text-amber-700">
+                Online payment confirmation pending
+              </p>
+              <p className="text-sm text-amber-800" style={{ letterSpacing: '-0.14px' }}>
+                Your online payment session was created. Payment is only confirmed after the payment
+                provider notifies us. Please check your order status below or contact the shop if you
+                are unsure.
+              </p>
+              {!loading && order && (
+                <div className="mt-3">
+                  <Link href={`/orders/${order.id}`} className="text-sm text-amber-700 underline">
+                    Check your order status →
+                  </Link>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Payment Instructions — manual orders only */}
+          {!isOnlineReturn && !loading && order && (
             <div className="card overflow-hidden">
               <div className="border-b border-black/[0.08] px-6 py-4">
                 <h2 className="text-sm text-black" style={{ fontWeight: 540, letterSpacing: '-0.26px' }}>Payment Instructions</h2>

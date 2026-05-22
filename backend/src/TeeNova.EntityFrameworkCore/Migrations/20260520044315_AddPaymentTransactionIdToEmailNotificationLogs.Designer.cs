@@ -3,6 +3,7 @@ using System;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Metadata;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using TeeNova.EntityFrameworkCore;
 using Volo.Abp.EntityFrameworkCore;
@@ -12,9 +13,11 @@ using Volo.Abp.EntityFrameworkCore;
 namespace TeeNova.Migrations
 {
     [DbContext(typeof(TeeNovaDbContext))]
-    partial class TeeNovaDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260520044315_AddPaymentTransactionIdToEmailNotificationLogs")]
+    partial class AddPaymentTransactionIdToEmailNotificationLogs
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -662,99 +665,6 @@ namespace TeeNova.Migrations
                     b.HasIndex("OrderId");
 
                     b.ToTable("PaymentTransactions", "teenova");
-                });
-
-            modelBuilder.Entity("TeeNova.Payments.OnlinePaymentSession", b =>
-                {
-                    b.Property<Guid>("Id")
-                        .HasColumnType("uniqueidentifier");
-
-                    b.Property<decimal>("Amount")
-                        .HasColumnType("decimal(18,4)");
-
-                    b.Property<DateTime?>("CompletedAt")
-                        .HasColumnType("datetime2");
-
-                    b.Property<DateTime>("CreationTime")
-                        .HasColumnType("datetime2")
-                        .HasColumnName("CreationTime");
-
-                    b.Property<Guid?>("CreatorId")
-                        .HasColumnType("uniqueidentifier")
-                        .HasColumnName("CreatorId");
-
-                    b.Property<string>("Currency")
-                        .IsRequired()
-                        .HasMaxLength(10)
-                        .HasColumnType("nvarchar(10)");
-
-                    b.Property<string>("LastProviderEventId")
-                        .HasMaxLength(256)
-                        .HasColumnType("nvarchar(256)");
-
-                    b.Property<Guid>("OrderId")
-                        .HasColumnType("uniqueidentifier");
-
-                    b.Property<string>("OrderNumber")
-                        .IsRequired()
-                        .HasMaxLength(50)
-                        .HasColumnType("nvarchar(50)");
-
-                    b.Property<Guid?>("PaymentTransactionId")
-                        .HasColumnType("uniqueidentifier");
-
-                    b.Property<string>("Provider")
-                        .IsRequired()
-                        .HasMaxLength(32)
-                        .HasColumnType("nvarchar(32)");
-
-                    b.Property<string>("ProviderCheckoutUrl")
-                        .IsRequired()
-                        .HasMaxLength(2048)
-                        .HasColumnType("nvarchar(2048)");
-
-                    b.Property<string>("ProviderPaymentId")
-                        .HasMaxLength(256)
-                        .HasColumnType("nvarchar(256)");
-
-                    b.Property<string>("ProviderSessionId")
-                        .IsRequired()
-                        .HasMaxLength(256)
-                        .HasColumnType("nvarchar(256)");
-
-                    b.Property<string>("Purpose")
-                        .IsRequired()
-                        .HasMaxLength(32)
-                        .HasColumnType("nvarchar(32)");
-
-                    b.Property<string>("RawProviderStatus")
-                        .HasMaxLength(256)
-                        .HasColumnType("nvarchar(256)");
-
-                    b.Property<string>("Status")
-                        .IsRequired()
-                        .HasMaxLength(32)
-                        .HasColumnType("nvarchar(32)");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("LastProviderEventId")
-                        .HasDatabaseName("IX_OnlinePaymentSessions_LastProviderEventId");
-
-                    b.HasIndex("OrderId")
-                        .HasDatabaseName("IX_OnlinePaymentSessions_OrderId");
-
-                    b.HasIndex("ProviderPaymentId")
-                        .HasDatabaseName("IX_OnlinePaymentSessions_ProviderPaymentId");
-
-                    b.HasIndex("ProviderSessionId")
-                        .IsUnique()
-                        .HasDatabaseName("IX_OnlinePaymentSessions_ProviderSessionId");
-
-                    b.HasIndex("Status")
-                        .HasDatabaseName("IX_OnlinePaymentSessions_Status");
-
-                    b.ToTable("OnlinePaymentSessions", "teenova");
                 });
 
             modelBuilder.Entity("TeeNova.PrintConfig.PrintArea", b =>

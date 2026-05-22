@@ -139,6 +139,34 @@ public class OrderEmailNotificationService : IOrderEmailNotificationService
         await SendWithLoggingAsync(order.Id, eventType, recipient, subject, htmlBody, textBody, settings);
     }
 
+    public async Task SendPaymentReceiptAsync(Order order, PaymentTransaction transaction)
+    {
+        var settings  = await _settingsProvider.GetEffectiveSettingsAsync();
+        var recipient = order.CustomerEmail;
+        var eventType = EmailEventTypes.PaymentRecorded;
+
+        if (string.IsNullOrWhiteSpace(recipient))
+        {
+            _logger.LogWarning(
+                "[Email] Skipping {EventType} for order {OrderNumber}: CustomerEmail is empty.",
+                eventType, order.OrderNumber);
+            return;
+        }
+
+        if (!IsSmtpConfigured(settings))
+        {
+            _logger.LogWarning(
+                "[Email] Skipping {EventType} for order {OrderNumber}: SMTP is not configured.",
+                eventType, order.OrderNumber);
+            return;
+        }
+
+        var (subject, htmlBody, textBody) = OrderEmailTemplates.BuildPaymentReceiptEmail(order, transaction, settings);
+
+        await SendWithLoggingAsync(
+            order.Id, eventType, recipient, subject, htmlBody, textBody, settings, transaction.Id);
+    }
+
     // ── Private helpers ───────────────────────────────────────────────────────
 
     private async Task SendWithLoggingAsync(
@@ -148,11 +176,12 @@ public class OrderEmailNotificationService : IOrderEmailNotificationService
         string                subject,
         string                htmlBody,
         string                textBody,
-        EmailSettingsSnapshot settings)
+        EmailSettingsSnapshot settings,
+        Guid?                 paymentTransactionId = null)
     {
         // Idempotency check: a Sent record blocks resending.
         // Failed records do not block retry.
-        if (await HasBeenSentAsync(orderId, eventType, recipient))
+        if (await HasBeenSentAsync(orderId, eventType, recipient, paymentTransactionId))
         {
             _logger.LogInformation(
                 "[Email] Duplicate skipped: {EventType} already sent for order {OrderId} to {Recipient}.",
@@ -169,7 +198,7 @@ public class OrderEmailNotificationService : IOrderEmailNotificationService
                 eventType, orderId, recipient);
 
             await WriteLogAsync(EmailNotificationLog.Sent(
-                _guidGenerator.Create(), orderId, eventType, recipient, subject));
+                _guidGenerator.Create(), orderId, eventType, recipient, subject, paymentTransactionId));
         }
         catch (Exception ex)
         {
@@ -178,19 +207,24 @@ public class OrderEmailNotificationService : IOrderEmailNotificationService
                 eventType, orderId, recipient);
 
             await WriteLogAsync(EmailNotificationLog.Failed(
-                _guidGenerator.Create(), orderId, eventType, recipient, subject, ex.Message));
+                _guidGenerator.Create(), orderId, eventType, recipient, subject, ex.Message, paymentTransactionId));
         }
     }
 
-    private async Task<bool> HasBeenSentAsync(Guid orderId, string eventType, string recipient)
+    private async Task<bool> HasBeenSentAsync(
+        Guid   orderId,
+        string eventType,
+        string recipient,
+        Guid?  paymentTransactionId = null)
     {
         try
         {
             var exists = await _logRepository.AnyAsync(e =>
-                e.OrderId   == orderId   &&
-                e.EventType == eventType &&
-                e.Recipient == recipient &&
-                e.Status    == EmailSendStatus.Sent);
+                e.OrderId              == orderId              &&
+                e.EventType            == eventType            &&
+                e.Recipient            == recipient            &&
+                e.PaymentTransactionId == paymentTransactionId &&
+                e.Status               == EmailSendStatus.Sent);
 
             return exists;
         }

@@ -225,7 +225,6 @@ export default function AdminOrderDetailPage() {
   const [updating, setUpdating] = useState(false)
   const [recordingNotification, setRecordingNotification] = useState(false)
   const [recordPaymentOpen, setRecordPaymentOpen] = useState(false)
-  const [recordingPayment, setRecordingPayment] = useState(false)
   const [toast, setToast] = useState<string | null>(null)
   const [toastTone, setToastTone] = useState<'success' | 'error'>('success')
 
@@ -309,14 +308,13 @@ export default function AdminOrderDetailPage() {
 
   async function handleRecordPayment(input: RecordPaymentInput) {
     if (!order) return
-    setRecordingPayment(true)
     try {
       const updated = await ordersApi.recordPayment(order.id, input)
       setOrder(updated)
       setRecordPaymentOpen(false)
       showToast('Payment recorded')
-    } finally {
-      setRecordingPayment(false)
+    } catch {
+      showToast('Failed to record payment', 'error')
     }
   }
 

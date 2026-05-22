@@ -2,9 +2,30 @@ import Link from 'next/link'
 import { ordersApi } from '@/api/orders'
 import { Badge } from '@/components/ui/Badge'
 import { DownloadDesignButton } from '@/components/orders/DownloadDesignButton'
-import type { OrderItem, OrderStatus } from '@/types'
+import { PayOnlinePanel } from '@/components/orders/PayOnlinePanel'
+import type { OrderItem, OrderStatus, PaymentStatus } from '@/types'
 
 export const metadata = { title: 'Order Details' }
+
+const paymentStatusLabels: Record<PaymentStatus, string> = {
+  Unpaid:          'Unpaid',
+  DepositRequired: 'Deposit Required',
+  PartiallyPaid:   'Partially Paid',
+  DepositPaid:     'Deposit Paid',
+  Paid:            'Paid in Full',
+  Refunded:        'Refunded',
+  PaymentFailed:   'Payment Failed',
+}
+
+const paymentStatusColors: Record<PaymentStatus, 'gray' | 'blue' | 'yellow' | 'green' | 'red'> = {
+  Unpaid:          'gray',
+  DepositRequired: 'yellow',
+  PartiallyPaid:   'blue',
+  DepositPaid:     'blue',
+  Paid:            'green',
+  Refunded:        'gray',
+  PaymentFailed:   'red',
+}
 
 const statusColors: Record<OrderStatus, 'gray' | 'blue' | 'yellow' | 'green' | 'purple' | 'red'> = {
   Pending: 'gray',
@@ -174,6 +195,50 @@ export default async function OrderDetailPage({ params }: PageProps) {
             </div>
           </div>
 
+          {/* Payment */}
+          <div className="card overflow-hidden">
+            <div className="flex items-center justify-between border-b border-black/[0.08] px-6 py-4">
+              <h2 className="text-sm text-black" style={{ fontWeight: 540, letterSpacing: '-0.26px' }}>Payment</h2>
+              <Badge color={paymentStatusColors[order.paymentStatus]}>
+                {paymentStatusLabels[order.paymentStatus]}
+              </Badge>
+            </div>
+            <div className="space-y-4 p-6">
+              {/* Financial breakdown */}
+              <div className="space-y-2 rounded-2xl border border-black/[0.06] bg-black/[0.02] px-4 py-3">
+                <PayRow label="Order Total"      value={order.totalAmount} />
+                {order.paymentRequirementType === 'DepositThenBalance' && order.requiredDepositAmount != null && (
+                  <PayRow label="Deposit Required" value={order.requiredDepositAmount} />
+                )}
+                <PayRow label="Amount Paid"      value={order.paidAmount} />
+                <PayRow label="Balance Remaining" value={order.balanceAmount} highlight={order.balanceAmount > 0} />
+              </div>
+
+              {/* Contextual message */}
+              {order.paymentStatus === 'Paid' ? (
+                <p className="text-sm text-black/55" style={{ letterSpacing: '-0.14px' }}>
+                  Your order is fully paid.
+                </p>
+              ) : order.status !== 'Cancelled' && (
+                <p className="text-sm text-black/55" style={{ letterSpacing: '-0.14px' }}>
+                  {order.paymentRequirementType === 'DepositThenBalance'
+                    ? (order.paymentStatus === 'DepositPaid'
+                        ? 'Your deposit has been received. The remaining balance is due at pickup.'
+                        : 'A deposit is required before we begin processing your order.')
+                    : 'Full payment is required before we begin processing your order.'}
+                </p>
+              )}
+
+              {/* Pay Online panel — shown only when payment is due */}
+              <PayOnlinePanel
+                orderId={order.id}
+                balanceAmount={order.balanceAmount}
+                orderStatus={order.status}
+                paymentStatus={order.paymentStatus}
+              />
+            </div>
+          </div>
+
           {/* Shipping & Contact */}
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
             <div className="card overflow-hidden">
@@ -236,6 +301,20 @@ export default async function OrderDetailPage({ params }: PageProps) {
           </div>
         </div>
       </div>
+    </div>
+  )
+}
+
+function PayRow({ label, value, highlight }: { label: string; value: number; highlight?: boolean }) {
+  return (
+    <div className="flex items-center justify-between">
+      <span className="font-mono text-[10px] uppercase tracking-[0.54px] text-black/40">{label}</span>
+      <span
+        className={highlight ? 'text-sm text-black' : 'text-sm text-black/70'}
+        style={highlight ? { fontWeight: 540, letterSpacing: '-0.14px' } : { letterSpacing: '-0.14px' }}
+      >
+        ${value.toFixed(2)}
+      </span>
     </div>
   )
 }

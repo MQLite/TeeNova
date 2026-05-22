@@ -1,11 +1,14 @@
 using System;
 using System.Collections.Generic;
+using System.Globalization;
 using System.Linq;
 using System.Threading.Tasks;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 using TeeNova.Email;
 using TeeNova.Orders.Dtos;
+using TeeNova.Payments;
 using TeeNova.Pricing;
 using TeeNova.PrintConfig;
 using Volo.Abp.Application.Dtos;
@@ -22,27 +25,36 @@ public class OrderAppService : ApplicationService, IOrderAppService
     private readonly IRepository<PaymentTransaction, Guid>  _paymentTransactionRepository;
     private readonly IRepository<PrintArea, Guid>           _printAreaRepository;
     private readonly IRepository<PrintSize, Guid>           _printSizeRepository;
+    private readonly IRepository<OnlinePaymentSession, Guid> _onlinePaymentSessionRepository;
     private readonly PrintConfigValidator                    _printConfigValidator;
     private readonly IOrderEmailNotificationService          _orderEmailNotificationService;
+    private readonly IOptions<OnlinePaymentOptions>          _onlinePaymentOptions;
+    private readonly IOnlinePaymentProviderResolver          _onlinePaymentProviderResolver;
 
     public OrderAppService(
-        IRepository<Order, Guid>               orderRepository,
-        IRepository<Catalog.Product, Guid>     productRepository,
-        IRepository<OrderTimelineEntry, Guid>  timelineRepository,
-        IRepository<PaymentTransaction, Guid>  paymentTransactionRepository,
-        IRepository<PrintArea, Guid>           printAreaRepository,
-        IRepository<PrintSize, Guid>           printSizeRepository,
-        PrintConfigValidator                   printConfigValidator,
-        IOrderEmailNotificationService         orderEmailNotificationService)
+        IRepository<Order, Guid>                orderRepository,
+        IRepository<Catalog.Product, Guid>      productRepository,
+        IRepository<OrderTimelineEntry, Guid>   timelineRepository,
+        IRepository<PaymentTransaction, Guid>   paymentTransactionRepository,
+        IRepository<PrintArea, Guid>            printAreaRepository,
+        IRepository<PrintSize, Guid>            printSizeRepository,
+        IRepository<OnlinePaymentSession, Guid> onlinePaymentSessionRepository,
+        PrintConfigValidator                    printConfigValidator,
+        IOrderEmailNotificationService          orderEmailNotificationService,
+        IOptions<OnlinePaymentOptions>          onlinePaymentOptions,
+        IOnlinePaymentProviderResolver          onlinePaymentProviderResolver)
     {
-        _orderRepository               = orderRepository;
-        _productRepository             = productRepository;
-        _timelineRepository            = timelineRepository;
-        _paymentTransactionRepository  = paymentTransactionRepository;
-        _printAreaRepository           = printAreaRepository;
-        _printSizeRepository           = printSizeRepository;
-        _printConfigValidator          = printConfigValidator;
-        _orderEmailNotificationService = orderEmailNotificationService;
+        _orderRepository                = orderRepository;
+        _productRepository              = productRepository;
+        _timelineRepository             = timelineRepository;
+        _paymentTransactionRepository   = paymentTransactionRepository;
+        _printAreaRepository            = printAreaRepository;
+        _printSizeRepository            = printSizeRepository;
+        _onlinePaymentSessionRepository = onlinePaymentSessionRepository;
+        _printConfigValidator           = printConfigValidator;
+        _orderEmailNotificationService  = orderEmailNotificationService;
+        _onlinePaymentOptions           = onlinePaymentOptions;
+        _onlinePaymentProviderResolver  = onlinePaymentProviderResolver;
     }
 
     public async Task<OrderDto> CreateAsync(CreateOrderDto input)
@@ -247,7 +259,7 @@ public class OrderAppService : ApplicationService, IOrderAppService
         await _orderRepository.UpdateAsync(order, autoSave: true);
 
         await AddTimelineEntryAsync(id, OrderEventType.StatusChanged,
-            "Order marked as paid", OrderStatus.Paid);
+            "Order activated", OrderStatus.Paid);
 
         return await GetAsync(id);
     }
@@ -294,6 +306,18 @@ public class OrderAppService : ApplicationService, IOrderAppService
         await AddTimelineEntryAsync(id, OrderEventType.PaymentReceived,
             timelineDesc,
             order.Status);
+
+        // Email is best-effort and must not block payment recording.
+        try
+        {
+            await _orderEmailNotificationService.SendPaymentReceiptAsync(order, transaction);
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex,
+                "[Email] Unexpected error while sending payment receipt for order {OrderNumber}",
+                order.OrderNumber);
+        }
 
         return await GetAsync(id);
     }
@@ -403,12 +427,186 @@ public class OrderAppService : ApplicationService, IOrderAppService
         return await GetAsync(id);
     }
 
+    public async Task<OnlinePaymentSessionDto> CreateOnlinePaymentSessionAsync(
+        Guid id, CreateOnlinePaymentSessionDto input)
+    {
+        var order = await _orderRepository.GetAsync(id);
+
+        if (order.Status == OrderStatus.Cancelled)
+            throw new Volo.Abp.BusinessException("TeeNova:Payment:OnlinePaymentInvalidOrderState")
+                .WithData("OrderId", order.Id)
+                .WithData("Reason", "Order is cancelled");
+
+        if (order.Status == OrderStatus.Completed)
+            throw new Volo.Abp.BusinessException("TeeNova:Payment:OnlinePaymentInvalidOrderState")
+                .WithData("OrderId", order.Id)
+                .WithData("Reason", "Order is completed");
+
+        if (string.IsNullOrWhiteSpace(order.CustomerEmail))
+            throw new Volo.Abp.BusinessException("TeeNova:Payment:OnlinePaymentInvalidOrderState")
+                .WithData("OrderId", order.Id)
+                .WithData("Reason", "CustomerEmail is missing");
+
+        var opts = _onlinePaymentOptions.Value;
+
+        if (!opts.Enabled)
+            throw new Volo.Abp.BusinessException("TeeNova:Payment:OnlinePaymentsDisabled");
+
+        // Determine provider: prefer explicit input, fall back to default.
+        var selectedProvider = (input.Provider.HasValue && input.Provider.Value != PaymentProvider.None)
+            ? input.Provider.Value
+            : opts.DefaultProvider;
+
+        if (selectedProvider == PaymentProvider.None)
+            throw new Volo.Abp.BusinessException("TeeNova:Payment:PaymentProviderNotSelected");
+
+        // If config entry explicitly disables the provider, reject early.
+        if (opts.Providers.TryGetValue(selectedProvider.ToString(), out var providerOpts)
+            && !providerOpts.Enabled)
+        {
+            throw new Volo.Abp.BusinessException("TeeNova:Payment:PaymentProviderDisabled")
+                .WithData("Provider", selectedProvider);
+        }
+
+        if (string.IsNullOrWhiteSpace(opts.SuccessReturnBaseUrl)
+            || string.IsNullOrWhiteSpace(opts.CancelReturnBaseUrl))
+        {
+            throw new Volo.Abp.BusinessException("TeeNova:Payment:OnlinePaymentReturnUrlNotConfigured");
+        }
+
+        var (purpose, amount) = CalculatePaymentPurposeAndAmount(order, input.Purpose);
+
+        var currency   = string.IsNullOrWhiteSpace(opts.Currency) ? "NZD" : opts.Currency.ToUpperInvariant();
+        var successUrl = $"{opts.SuccessReturnBaseUrl.TrimEnd('/')}?orderId={order.Id}&orderNumber={Uri.EscapeDataString(order.OrderNumber)}";
+        var cancelUrl  = $"{opts.CancelReturnBaseUrl.TrimEnd('/')}?orderId={order.Id}&orderNumber={Uri.EscapeDataString(order.OrderNumber)}";
+
+        var request = new CreateOnlinePaymentProviderSessionRequest
+        {
+            OrderId       = order.Id,
+            OrderNumber   = order.OrderNumber,
+            Provider      = selectedProvider,
+            Purpose       = purpose,
+            Amount        = amount,
+            Currency      = currency,
+            CustomerEmail = order.CustomerEmail,
+            SuccessUrl    = successUrl,
+            CancelUrl     = cancelUrl,
+            Metadata      = new Dictionary<string, string>
+            {
+                ["orderId"]     = order.Id.ToString(),
+                ["orderNumber"] = order.OrderNumber,
+                ["purpose"]     = purpose.ToString(),
+                ["provider"]    = selectedProvider.ToString(),
+                ["amount"]      = amount.ToString(CultureInfo.InvariantCulture),
+            },
+        };
+
+        IOnlinePaymentProvider provider;
+        try
+        {
+            provider = _onlinePaymentProviderResolver.Resolve(selectedProvider);
+        }
+        catch (InvalidOperationException ex)
+        {
+            Logger.LogWarning(ex,
+                "[OnlinePayment] Provider '{Provider}' not registered for order {OrderNumber}.",
+                selectedProvider, order.OrderNumber);
+
+            throw new Volo.Abp.BusinessException("TeeNova:Payment:PaymentProviderNotConfigured")
+                .WithData("Provider", selectedProvider);
+        }
+
+        var providerResult = await provider.CreatePaymentSessionAsync(request);
+
+        if (providerResult.Provider != selectedProvider
+            || string.IsNullOrWhiteSpace(providerResult.ProviderSessionId)
+            || string.IsNullOrWhiteSpace(providerResult.ProviderCheckoutUrl))
+        {
+            throw new Volo.Abp.BusinessException("TeeNova:Payment:OnlinePaymentProviderSessionInvalid")
+                .WithData("Provider", selectedProvider);
+        }
+
+        var session = OnlinePaymentSession.Create(
+            GuidGenerator.Create(),
+            order.Id,
+            order.OrderNumber,
+            selectedProvider,
+            providerResult.ProviderSessionId,
+            providerResult.ProviderCheckoutUrl,
+            amount,
+            currency,
+            purpose);
+
+        await _onlinePaymentSessionRepository.InsertAsync(session, autoSave: true);
+
+        return ObjectMapper.Map<OnlinePaymentSession, OnlinePaymentSessionDto>(session);
+    }
+
     // ── Private helpers ───────────────────────────────────────────────────────
+
+    private static (PaymentPurpose purpose, decimal amount) CalculatePaymentPurposeAndAmount(
+        Order order, PaymentPurpose? requestedPurpose)
+    {
+        if (order.BalanceAmount <= 0)
+            throw new Volo.Abp.BusinessException("TeeNova:Payment:OnlinePaymentNoAmountDue")
+                .WithData("OrderId", order.Id);
+
+        if (order.DeliveryMethod == DeliveryMethod.Shipping)
+        {
+            if (requestedPurpose.HasValue && requestedPurpose.Value != PaymentPurpose.FullPayment)
+                throw new Volo.Abp.BusinessException("TeeNova:Payment:OnlinePaymentInvalidPurpose")
+                    .WithData("DeliveryMethod", DeliveryMethod.Shipping)
+                    .WithData("RequestedPurpose", requestedPurpose.Value)
+                    .WithData("ExpectedPurpose", PaymentPurpose.FullPayment);
+
+            return (PaymentPurpose.FullPayment, order.BalanceAmount);
+        }
+
+        if (order.DeliveryMethod == DeliveryMethod.Pickup)
+        {
+            if (!order.RequiredDepositAmount.HasValue)
+                throw new Volo.Abp.BusinessException("TeeNova:Payment:OnlinePaymentInvalidOrderState")
+                    .WithData("OrderId", order.Id)
+                    .WithData("Reason", "RequiredDepositAmount is null for Pickup order");
+
+            var depositRequired = order.RequiredDepositAmount.Value;
+
+            if (order.PaidAmount < depositRequired)
+            {
+                // Deposit not yet fully met — collect outstanding deposit amount.
+                if (requestedPurpose.HasValue && requestedPurpose.Value != PaymentPurpose.Deposit)
+                    throw new Volo.Abp.BusinessException("TeeNova:Payment:OnlinePaymentInvalidPurpose")
+                        .WithData("Reason", "Deposit not yet met; purpose must be Deposit")
+                        .WithData("RequestedPurpose", requestedPurpose.Value)
+                        .WithData("ExpectedPurpose", PaymentPurpose.Deposit);
+
+                var amount = depositRequired - order.PaidAmount;
+                return (PaymentPurpose.Deposit, amount);
+            }
+            else
+            {
+                // Deposit met — only balance payment is valid.
+                if (requestedPurpose.HasValue && requestedPurpose.Value == PaymentPurpose.Deposit)
+                    throw new Volo.Abp.BusinessException("TeeNova:Payment:OnlinePaymentInvalidPurpose")
+                        .WithData("Reason", "Deposit is already met; use Balance purpose")
+                        .WithData("RequestedPurpose", requestedPurpose.Value);
+
+                return (PaymentPurpose.Balance, order.BalanceAmount);
+            }
+        }
+
+        // Null or unrecognised delivery method.
+        throw new Volo.Abp.BusinessException("TeeNova:Payment:OnlinePaymentInvalidOrderState")
+            .WithData("OrderId", order.Id)
+            .WithData("Reason", "Delivery method is not set or not recognised");
+    }
+
+    // ── Original private helpers ──────────────────────────────────────────────
 
     private static string GetDisplayStatus(OrderStatus status) => status switch
     {
         OrderStatus.Pending      => "Order Received",
-        OrderStatus.Paid         => "Order Received",
+        OrderStatus.Paid         => "Activated",
         OrderStatus.Reviewing    => "Processing",
         OrderStatus.Printing     => "In Production",
         OrderStatus.Ready        => "Ready for Pickup",

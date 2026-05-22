@@ -7,7 +7,7 @@ import { useCartStore } from '@/features/cart/cart-store'
 import { ordersApi } from '@/api/orders'
 import { Button } from '@/components/ui/Button'
 import { PaymentRequirementSummary } from '@/components/checkout/PaymentRequirementSummary'
-import type { CartItem, DeliveryMethod, ShippingAddress } from '@/types'
+import type { CartItem, DeliveryMethod, PaymentProvider, ShippingAddress } from '@/types'
 
 function getPrintSummary(item: CartItem) {
   return item.prints ?? []
@@ -17,13 +17,26 @@ function getUploadedDesignUrl(item: CartItem) {
   return item.prints?.find((print) => print.uploadedAssetUrl)?.uploadedAssetUrl
 }
 
+type SubmitPhase = 'idle' | 'creating-order' | 'creating-session' | 'redirecting'
+
+const PROVIDER_OPTIONS: { value: PaymentProvider; label: string }[] = [
+  { value: 'Stripe',   label: 'Stripe'   },
+  { value: 'Windcave', label: 'Windcave' },
+  { value: 'Poli',     label: 'POLi'     },
+  { value: 'PayPal',   label: 'PayPal'   },
+]
+
 export default function CheckoutPage() {
   const router = useRouter()
   const { items, clearCart, totalPrice } = useCartStore()
-  const [submitting, setSubmitting] = useState(false)
+  const [submitPhase, setSubmitPhase] = useState<SubmitPhase>('idle')
   const [submitted, setSubmitted] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [sessionError, setSessionError] = useState<string | null>(null)
+  const [createdOrderId, setCreatedOrderId] = useState<string | null>(null)
   const [deliveryMethod, setDeliveryMethod] = useState<DeliveryMethod>('Pickup')
+  const [paymentMethod, setPaymentMethod] = useState<'manual' | 'online'>('manual')
+  const [onlineProvider, setOnlineProvider] = useState<PaymentProvider>('Stripe')
 
   const [form, setForm] = useState<ShippingAddress & { email: string }>({
     email: '',
@@ -37,6 +50,8 @@ export default function CheckoutPage() {
     phone: '',
   })
 
+  const isSubmitting = submitPhase !== 'idle'
+
   useEffect(() => {
     if (items.length === 0 && !submitted) {
       router.replace('/cart')
@@ -49,8 +64,11 @@ export default function CheckoutPage() {
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
-    setSubmitting(true)
+    if (isSubmitting || submitted) return
+    setSubmitPhase('creating-order')
     setError(null)
+    setSessionError(null)
+
     try {
       const order = await ordersApi.create({
         customerEmail: form.email,
@@ -78,14 +96,43 @@ export default function CheckoutPage() {
         })),
         deliveryMethod,
       })
+
+      // Order created — prevent re-submission and cart-empty redirect before clearing.
       setSubmitted(true)
       clearCart()
-      router.push(`/checkout/success?orderId=${order.id}`)
+
+      if (paymentMethod === 'manual') {
+        router.push(`/checkout/success?orderId=${order.id}`)
+        return
+      }
+
+      // Online payment: create a hosted checkout session then redirect.
+      setSubmitPhase('creating-session')
+      try {
+        const session = await ordersApi.createOnlinePaymentSession(order.id, { provider: onlineProvider })
+        setSubmitPhase('redirecting')
+        window.location.href = session.providerCheckoutUrl
+        // Navigation initiated — do not reset submitPhase.
+      } catch (sessionErr) {
+        setSessionError(
+          sessionErr instanceof Error
+            ? sessionErr.message
+            : 'The online payment session could not be created. Your order has been placed — you can arrange payment manually with the shop.',
+        )
+        setCreatedOrderId(order.id)
+        setSubmitPhase('idle')
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Something went wrong. Please try again.')
-    } finally {
-      setSubmitting(false)
+      setSubmitPhase('idle')
     }
+  }
+
+  function getSubmitLabel(): string {
+    if (submitPhase === 'creating-order')   return 'Creating order…'
+    if (submitPhase === 'creating-session') return 'Creating payment session…'
+    if (submitPhase === 'redirecting')      return 'Redirecting to payment…'
+    return paymentMethod === 'online' ? 'Place Order & Continue to Payment →' : 'Place Order →'
   }
 
   if (items.length === 0 && !submitted) {
@@ -208,12 +255,104 @@ export default function CheckoutPage() {
                   </h2>
                 </div>
                 <div className="space-y-4 p-6">
-                  <div
-                    className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800"
-                    style={{ letterSpacing: '-0.14px' }}
-                  >
-                    Online payment is not available yet. After submitting your order, please follow the payment instructions and we will confirm your order once payment is received.
+
+                  {/* Payment method selection */}
+                  <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                    {([
+                      {
+                        value: 'manual' as const,
+                        title: 'Manual Payment',
+                        lines: [
+                          'Place the order now and arrange payment with the shop.',
+                          deliveryMethod === 'Pickup'
+                            ? 'Pickup orders require a deposit before processing.'
+                            : 'Shipping orders require full payment before processing.',
+                        ],
+                      },
+                      {
+                        value: 'online' as const,
+                        title: 'Online Payment',
+                        lines: [
+                          'Place the order and continue to a secure hosted payment page.',
+                          'Your payment will be confirmed after the provider processes it.',
+                        ],
+                      },
+                    ]).map(({ value, title, lines }) => {
+                      const selected = paymentMethod === value
+                      return (
+                        <label
+                          key={value}
+                          className={[
+                            'cursor-pointer rounded-xl border-2 p-4 transition-colors',
+                            selected
+                              ? 'border-black bg-black/[0.02]'
+                              : 'border-black/[0.10] hover:border-black/25',
+                          ].join(' ')}
+                        >
+                          <input
+                            type="radio"
+                            name="paymentMethod"
+                            value={value}
+                            checked={selected}
+                            onChange={() => setPaymentMethod(value)}
+                            className="sr-only"
+                          />
+                          <p
+                            className="text-sm text-black"
+                            style={{ fontWeight: selected ? 540 : 480, letterSpacing: '-0.14px' }}
+                          >
+                            {title}
+                          </p>
+                          {lines.map((line, i) => (
+                            <p key={i} className="mt-0.5 text-xs text-black/55" style={{ letterSpacing: '-0.14px' }}>
+                              {line}
+                            </p>
+                          ))}
+                        </label>
+                      )
+                    })}
                   </div>
+
+                  {/* Provider selector — shown only when Online is selected */}
+                  {paymentMethod === 'online' && (
+                    <div className="rounded-xl border border-black/[0.08] bg-black/[0.01] p-4">
+                      <p className="mb-3 font-mono text-[11px] uppercase tracking-[0.54px] text-black/50">
+                        Payment Provider
+                      </p>
+                      <div className="flex flex-wrap gap-2">
+                        {PROVIDER_OPTIONS.map(({ value, label }) => {
+                          const selected = onlineProvider === value
+                          return (
+                            <label
+                              key={value}
+                              className={[
+                                'cursor-pointer rounded-lg border px-3 py-1.5 text-sm transition-colors',
+                                selected
+                                  ? 'border-black bg-black text-white'
+                                  : 'border-black/[0.15] text-black hover:border-black/40',
+                              ].join(' ')}
+                            >
+                              <input
+                                type="radio"
+                                name="onlineProvider"
+                                value={value}
+                                checked={selected}
+                                onChange={() => setOnlineProvider(value)}
+                                className="sr-only"
+                              />
+                              <span style={{ fontWeight: selected ? 540 : 480, letterSpacing: '-0.14px' }}>
+                                {label}
+                              </span>
+                            </label>
+                          )
+                        })}
+                      </div>
+                      <p className="mt-3 text-xs text-black/45" style={{ letterSpacing: '-0.14px' }}>
+                        Do not close the page until you are redirected back. Payment confirmation happens after the provider processes your payment.
+                      </p>
+                    </div>
+                  )}
+
                   <PaymentRequirementSummary
                     mode="checkout"
                     deliveryMethod={deliveryMethod}
@@ -222,9 +361,25 @@ export default function CheckoutPage() {
                 </div>
               </div>
 
+              {/* Order creation error */}
               {error && (
                 <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
                   {error}
+                </div>
+              )}
+
+              {/* Session creation error */}
+              {sessionError && (
+                <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800 space-y-2">
+                  <p>{sessionError}</p>
+                  {createdOrderId && (
+                    <Link
+                      href={`/checkout/success?orderId=${createdOrderId}`}
+                      className="inline-block underline"
+                    >
+                      View your order and payment instructions →
+                    </Link>
+                  )}
                 </div>
               )}
             </div>
@@ -301,11 +456,13 @@ export default function CheckoutPage() {
                 </div>
 
                 <div className="px-5 pb-5">
-                  <Button type="submit" className="w-full" size="lg" loading={submitting}>
-                    {submitting ? 'Placing Order…' : 'Place Order →'}
+                  <Button type="submit" className="w-full" size="lg" loading={isSubmitting} disabled={isSubmitting || (submitted && !!sessionError)}>
+                    {getSubmitLabel()}
                   </Button>
                   <p className="mt-3 text-center font-mono text-[11px] uppercase tracking-[0.54px] text-black/40">
-                    Payment arranged after order submission
+                    {paymentMethod === 'online'
+                      ? "You'll be redirected to a secure hosted payment page"
+                      : 'Payment arranged after order submission'}
                   </p>
                 </div>
               </div>

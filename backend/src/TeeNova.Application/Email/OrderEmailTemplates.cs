@@ -27,7 +27,7 @@ public static class OrderEmailTemplates
         AppendHtmlSection(html, "Order Details", BuildOrderDetailRows(order));
         AppendHtmlItemsSection(html, order, includeDesignNotes: true);
         AppendHtmlTotalRow(html, order.TotalAmount);
-        AppendHtmlNextSteps(html);
+        AppendHtmlPaymentInstructions(html, order);
         AppendHtmlContactFooter(html, settings.ShopContactInfo);
         AppendHtmlClose(html);
 
@@ -48,6 +48,7 @@ public static class OrderEmailTemplates
         AppendHtmlHeader(html, "New Order Received");
         AppendHtmlSection(html, "Customer", BuildCustomerInfoRows(order));
         AppendHtmlSection(html, "Order Details", BuildOrderDetailRows(order));
+        AppendHtmlAdminPaymentSection(html, order);
         AppendHtmlItemsSection(html, order, includeDesignNotes: true);
         AppendHtmlTotalRow(html, order.TotalAmount);
         if (!string.IsNullOrWhiteSpace(adminLink))
@@ -73,6 +74,7 @@ public static class OrderEmailTemplates
         AppendHtmlSection(html, "Order Summary", BuildStatusEmailSummaryRows(order));
         AppendHtmlStatusMessage(html, BuildReadyStatusMessage(
             order.DeliveryMethod, settings.ReadyPickupMessage, settings.ReadyShippingMessage));
+        AppendHtmlReadyPaymentNote(html, order);
         AppendHtmlContactFooter(html, settings.ShopContactInfo);
         AppendHtmlClose(html);
 
@@ -98,6 +100,29 @@ public static class OrderEmailTemplates
         AppendHtmlClose(html);
 
         var text = BuildCompletedText(order, settings);
+
+        return (subject, html.ToString(), text);
+    }
+
+    /// <summary>
+    /// Receipt email sent when a payment is recorded on an order.
+    /// Scalar Order and PaymentTransaction fields only — does NOT access order.Items.
+    /// Does NOT include transaction.Note (admin-only field).
+    /// </summary>
+    public static (string Subject, string HtmlBody, string TextBody)
+        BuildPaymentReceiptEmail(Order order, PaymentTransaction transaction, EmailSettingsSnapshot settings)
+    {
+        var subject = $"Payment received — {order.OrderNumber}";
+
+        var html = new StringBuilder();
+        AppendHtmlHeader(html, "Payment Received");
+        AppendHtmlReceiptPaymentSection(html, order, transaction);
+        AppendHtmlReceiptOrderSection(html, order);
+        AppendHtmlReceiptStateMessage(html, order);
+        AppendHtmlContactFooter(html, settings.ShopContactInfo);
+        AppendHtmlClose(html);
+
+        var text = BuildReceiptText(order, transaction, settings);
 
         return (subject, html.ToString(), text);
     }
@@ -198,15 +223,6 @@ public static class OrderEmailTemplates
             """);
     }
 
-    private static void AppendHtmlNextSteps(StringBuilder sb)
-    {
-        sb.Append("""
-            <div style="background:#eaf4fb;border-left:4px solid #2980b9;padding:12px 16px;margin:16px 0;font-size:13px;">
-              Our team will review your order. We will contact you if anything needs clarification and notify you when your order is ready.
-            </div>
-            """);
-    }
-
     private static void AppendHtmlContactFooter(StringBuilder sb, string contactInfo)
     {
         if (!string.IsNullOrWhiteSpace(contactInfo))
@@ -270,8 +286,7 @@ public static class OrderEmailTemplates
         sb.AppendLine();
         sb.AppendLine($"Order Total: {FormatCurrency(order.TotalAmount)}");
         sb.AppendLine();
-        sb.AppendLine("Our team will review your order and contact you if anything needs clarification.");
-        sb.AppendLine("We will notify you when your order is ready.");
+        AppendTextPaymentInstructions(sb, order);
         if (!string.IsNullOrWhiteSpace(settings.ShopContactInfo))
         {
             sb.AppendLine();
@@ -298,6 +313,7 @@ public static class OrderEmailTemplates
         if (!string.IsNullOrWhiteSpace(order.Notes))
             sb.AppendLine($"  Notes    : {order.Notes}");
         sb.AppendLine();
+        AppendTextAdminPaymentSection(sb, order);
         sb.AppendLine("ITEMS");
         sb.AppendLine(new string('-', 40));
         AppendTextItems(sb, order);
@@ -372,6 +388,7 @@ public static class OrderEmailTemplates
         sb.AppendLine();
         sb.AppendLine(BuildReadyStatusMessage(
             order.DeliveryMethod, settings.ReadyPickupMessage, settings.ReadyShippingMessage));
+        AppendTextReadyPaymentNote(sb, order);
         if (!string.IsNullOrWhiteSpace(settings.ShopContactInfo))
         {
             sb.AppendLine();
@@ -399,6 +416,299 @@ public static class OrderEmailTemplates
             sb.AppendLine(settings.ShopContactInfo);
         }
         return sb.ToString();
+    }
+
+    // ── Payment label helpers ─────────────────────────────────────────────────
+
+    private static string GetPaymentStatusLabel(PaymentStatus status) => status switch
+    {
+        PaymentStatus.Unpaid          => "Unpaid",
+        PaymentStatus.DepositRequired => "Deposit Required",
+        PaymentStatus.DepositPaid     => "Deposit Paid",
+        PaymentStatus.PartiallyPaid   => "Partially Paid",
+        PaymentStatus.Paid            => "Paid in Full",
+        PaymentStatus.Refunded        => "Refunded",
+        PaymentStatus.PaymentFailed   => "Payment Failed",
+        _                             => status.ToString(),
+    };
+
+    private static string GetPaymentRequirementLabel(PaymentRequirementType type) => type switch
+    {
+        PaymentRequirementType.DepositThenBalance  => "Deposit Then Balance",
+        PaymentRequirementType.FullPaymentRequired => "Full Payment Required",
+        _                                          => type.ToString(),
+    };
+
+    private static string GetManualPaymentMethodLabel(ManualPaymentMethod method) => method switch
+    {
+        ManualPaymentMethod.Cash         => "Cash",
+        ManualPaymentMethod.Eftpos       => "Eftpos",
+        ManualPaymentMethod.BankTransfer => "Bank Transfer",
+        ManualPaymentMethod.Online       => "Online",
+        ManualPaymentMethod.Other        => "Other",
+        _                                => method.ToString(),
+    };
+
+    // ── Payment HTML helpers ──────────────────────────────────────────────────
+
+    private static void AppendHtmlPaymentInstructions(StringBuilder sb, Order order)
+    {
+        if (order.PaymentRequirementType == PaymentRequirementType.DepositThenBalance)
+        {
+            var deposit = order.RequiredDepositAmount ?? order.RequiredPaymentAmount;
+            var rows = new StringBuilder();
+            HtmlRow(rows, "Order Total", FormatCurrency(order.TotalAmount));
+            HtmlRow(rows, "Deposit Required", FormatCurrency(deposit));
+            HtmlRow(rows, "Balance Due at Pickup", FormatCurrency(order.BalanceAmount));
+            HtmlRow(rows, "Payment Status", GetPaymentStatusLabel(order.PaymentStatus));
+            HtmlRow(rows, "Payment Reference", order.OrderNumber);
+            AppendHtmlSection(sb, "Payment Required — Deposit", rows.ToString());
+            sb.Append("""
+                <div style="background:#eaf4fb;border-left:4px solid #2980b9;padding:12px 16px;margin:16px 0;font-size:13px;">
+                  <p style="margin:0 0 8px 0;">To begin processing your order, please arrange the deposit payment.</p>
+                  <ul style="margin:0;padding-left:20px;">
+                    <li>Please use your order number as the payment reference.</li>
+                    <li>Please contact us for payment details.</li>
+                    <li>The remaining balance is payable when you pick up your order.</li>
+                  </ul>
+                </div>
+                """);
+        }
+        else
+        {
+            var rows = new StringBuilder();
+            HtmlRow(rows, "Order Total", FormatCurrency(order.TotalAmount));
+            HtmlRow(rows, "Full Payment Due", FormatCurrency(order.RequiredPaymentAmount));
+            HtmlRow(rows, "Payment Status", GetPaymentStatusLabel(order.PaymentStatus));
+            HtmlRow(rows, "Payment Reference", order.OrderNumber);
+            AppendHtmlSection(sb, "Payment Required — Full Payment", rows.ToString());
+            sb.Append("""
+                <div style="background:#eaf4fb;border-left:4px solid #2980b9;padding:12px 16px;margin:16px 0;font-size:13px;">
+                  <p style="margin:0 0 8px 0;">Full payment is required before we start processing your order.</p>
+                  <ul style="margin:0;padding-left:20px;">
+                    <li>Please use your order number as the payment reference.</li>
+                    <li>Please contact us for payment details.</li>
+                    <li>Your order will be activated once full payment is confirmed.</li>
+                  </ul>
+                </div>
+                """);
+        }
+    }
+
+    private static void AppendHtmlAdminPaymentSection(StringBuilder sb, Order order)
+    {
+        var rows = new StringBuilder();
+        HtmlRow(rows, "Payment Type", GetPaymentRequirementLabel(order.PaymentRequirementType));
+        HtmlRow(rows, "Payment Status", GetPaymentStatusLabel(order.PaymentStatus));
+        HtmlRow(rows, "Order Total", FormatCurrency(order.TotalAmount));
+        if (order.PaymentRequirementType == PaymentRequirementType.DepositThenBalance
+            && order.RequiredDepositAmount.HasValue)
+            HtmlRow(rows, "Required Deposit", FormatCurrency(order.RequiredDepositAmount.Value));
+        HtmlRow(rows, "Required Payment", FormatCurrency(order.RequiredPaymentAmount));
+        HtmlRow(rows, "Amount Paid", FormatCurrency(order.PaidAmount));
+        HtmlRow(rows, "Balance Due", FormatCurrency(order.BalanceAmount));
+        AppendHtmlSection(sb, "Payment", rows.ToString());
+    }
+
+    private static void AppendHtmlReadyPaymentNote(StringBuilder sb, Order order)
+    {
+        if (order.DeliveryMethod != Orders.DeliveryMethod.Pickup)
+            return;
+
+        if (order.BalanceAmount > 0)
+        {
+            var rows = new StringBuilder();
+            HtmlRow(rows, "Balance Due at Pickup", FormatCurrency(order.BalanceAmount));
+            HtmlRow(rows, "Amount Paid", FormatCurrency(order.PaidAmount));
+            HtmlRow(rows, "Order Total", FormatCurrency(order.TotalAmount));
+            AppendHtmlSection(sb, "Balance Due at Pickup", rows.ToString());
+            AppendHtmlStatusMessage(sb, "Please bring payment when you collect your order.");
+        }
+        else
+        {
+            AppendHtmlStatusMessage(sb, "Your order is fully paid. No payment is required at pickup.");
+        }
+    }
+
+    private static void AppendHtmlReceiptPaymentSection(
+        StringBuilder sb, Order order, PaymentTransaction transaction)
+    {
+        var rows = new StringBuilder();
+        HtmlRow(rows, "Order Number",    order.OrderNumber);
+        HtmlRow(rows, "Payment Amount",  FormatCurrency(transaction.Amount));
+        HtmlRow(rows, "Payment Method",  GetManualPaymentMethodLabel(transaction.Method));
+        if (!string.IsNullOrWhiteSpace(transaction.Reference))
+            HtmlRow(rows, "Payment Reference", transaction.Reference);
+        HtmlRow(rows, "Payment Date",    FormatDate(transaction.CreationTime));
+        AppendHtmlSection(sb, "Payment Receipt", rows.ToString());
+    }
+
+    private static void AppendHtmlReceiptOrderSection(StringBuilder sb, Order order)
+    {
+        var rows = new StringBuilder();
+        HtmlRow(rows, "Order Total",       FormatCurrency(order.TotalAmount));
+        HtmlRow(rows, "Total Paid",        FormatCurrency(order.PaidAmount));
+        HtmlRow(rows, "Balance Remaining", FormatCurrency(order.BalanceAmount));
+        HtmlRow(rows, "Payment Status",    GetPaymentStatusLabel(order.PaymentStatus));
+        AppendHtmlSection(sb, "Order Summary", rows.ToString());
+    }
+
+    private static void AppendHtmlReceiptStateMessage(StringBuilder sb, Order order)
+    {
+        if (order.PaymentStatus == PaymentStatus.Paid || order.BalanceAmount <= 0)
+        {
+            AppendHtmlStatusMessage(sb, "Thank you, your order is now fully paid.");
+            return;
+        }
+
+        if (order.DeliveryMethod == Orders.DeliveryMethod.Pickup && order.BalanceAmount > 0)
+        {
+            AppendHtmlStatusMessage(sb,
+                "Thank you, we have recorded your payment. The remaining balance is payable when you pick up your order.");
+            if (order.PaymentRequirementType == PaymentRequirementType.DepositThenBalance
+                && order.PaymentStatus        == PaymentStatus.PartiallyPaid
+                && order.RequiredDepositAmount.HasValue
+                && order.PaidAmount           <  order.RequiredDepositAmount.Value)
+            {
+                AppendHtmlStatusMessage(sb,
+                    "Your deposit has not been fully received yet. We will begin processing once the required deposit is confirmed.");
+            }
+            return;
+        }
+
+        if (order.DeliveryMethod == Orders.DeliveryMethod.Shipping && order.BalanceAmount > 0)
+        {
+            AppendHtmlStatusMessage(sb,
+                "Thank you, we have recorded your payment. Full payment is required before we start processing your order.");
+            return;
+        }
+
+        AppendHtmlStatusMessage(sb, "Thank you, we have recorded your payment.");
+    }
+
+    // ── Payment text helpers ──────────────────────────────────────────────────
+
+    private static void AppendTextPaymentInstructions(StringBuilder sb, Order order)
+    {
+        sb.AppendLine("PAYMENT INFORMATION");
+        sb.AppendLine(new string('-', 40));
+        if (order.PaymentRequirementType == PaymentRequirementType.DepositThenBalance)
+        {
+            var deposit = order.RequiredDepositAmount ?? order.RequiredPaymentAmount;
+            sb.AppendLine($"Order Total           : {FormatCurrency(order.TotalAmount)}");
+            sb.AppendLine($"Deposit Required      : {FormatCurrency(deposit)}");
+            sb.AppendLine($"Balance Due at Pickup : {FormatCurrency(order.BalanceAmount)}");
+            sb.AppendLine($"Payment Status        : {GetPaymentStatusLabel(order.PaymentStatus)}");
+            sb.AppendLine($"Payment Reference     : {order.OrderNumber}");
+            sb.AppendLine();
+            sb.AppendLine("To begin processing your order, please arrange the deposit payment.");
+            sb.AppendLine("Please use your order number as the payment reference.");
+            sb.AppendLine("Please contact us for payment details.");
+            sb.AppendLine("The remaining balance is payable when you pick up your order.");
+        }
+        else
+        {
+            sb.AppendLine($"Order Total       : {FormatCurrency(order.TotalAmount)}");
+            sb.AppendLine($"Full Payment Due  : {FormatCurrency(order.RequiredPaymentAmount)}");
+            sb.AppendLine($"Payment Status    : {GetPaymentStatusLabel(order.PaymentStatus)}");
+            sb.AppendLine($"Payment Reference : {order.OrderNumber}");
+            sb.AppendLine();
+            sb.AppendLine("Full payment is required before we start processing your order.");
+            sb.AppendLine("Please use your order number as the payment reference.");
+            sb.AppendLine("Please contact us for payment details.");
+            sb.AppendLine("Your order will be activated once full payment is confirmed.");
+        }
+    }
+
+    private static void AppendTextAdminPaymentSection(StringBuilder sb, Order order)
+    {
+        sb.AppendLine("PAYMENT");
+        sb.AppendLine($"  Type             : {GetPaymentRequirementLabel(order.PaymentRequirementType)}");
+        sb.AppendLine($"  Status           : {GetPaymentStatusLabel(order.PaymentStatus)}");
+        sb.AppendLine($"  Order Total      : {FormatCurrency(order.TotalAmount)}");
+        if (order.PaymentRequirementType == PaymentRequirementType.DepositThenBalance
+            && order.RequiredDepositAmount.HasValue)
+            sb.AppendLine($"  Required Deposit : {FormatCurrency(order.RequiredDepositAmount.Value)}");
+        sb.AppendLine($"  Required Payment : {FormatCurrency(order.RequiredPaymentAmount)}");
+        sb.AppendLine($"  Amount Paid      : {FormatCurrency(order.PaidAmount)}");
+        sb.AppendLine($"  Balance Due      : {FormatCurrency(order.BalanceAmount)}");
+        sb.AppendLine();
+    }
+
+    private static void AppendTextReadyPaymentNote(StringBuilder sb, Order order)
+    {
+        if (order.DeliveryMethod != Orders.DeliveryMethod.Pickup)
+            return;
+
+        sb.AppendLine();
+        if (order.BalanceAmount > 0)
+        {
+            sb.AppendLine("BALANCE DUE AT PICKUP");
+            sb.AppendLine($"  Balance Due : {FormatCurrency(order.BalanceAmount)}");
+            sb.AppendLine($"  Amount Paid : {FormatCurrency(order.PaidAmount)}");
+            sb.AppendLine($"  Order Total : {FormatCurrency(order.TotalAmount)}");
+            sb.AppendLine("Please bring payment when you collect your order.");
+        }
+        else
+        {
+            sb.AppendLine("Your order is fully paid. No payment is required at pickup.");
+        }
+    }
+
+    private static string BuildReceiptText(
+        Order order, PaymentTransaction transaction, EmailSettingsSnapshot settings)
+    {
+        var sb = new StringBuilder();
+        sb.AppendLine("Otahuhu Printing Shop — Payment Received");
+        sb.AppendLine(new string('-', 40));
+        sb.AppendLine($"Order Number      : {order.OrderNumber}");
+        sb.AppendLine($"Payment Amount    : {FormatCurrency(transaction.Amount)}");
+        sb.AppendLine($"Payment Method    : {GetManualPaymentMethodLabel(transaction.Method)}");
+        if (!string.IsNullOrWhiteSpace(transaction.Reference))
+            sb.AppendLine($"Payment Reference : {transaction.Reference}");
+        sb.AppendLine($"Payment Date      : {FormatDate(transaction.CreationTime)}");
+        sb.AppendLine($"Order Total       : {FormatCurrency(order.TotalAmount)}");
+        sb.AppendLine($"Total Paid        : {FormatCurrency(order.PaidAmount)}");
+        sb.AppendLine($"Balance Remaining : {FormatCurrency(order.BalanceAmount)}");
+        sb.AppendLine($"Payment Status    : {GetPaymentStatusLabel(order.PaymentStatus)}");
+        sb.AppendLine();
+        AppendTextReceiptStateMessage(sb, order);
+        if (!string.IsNullOrWhiteSpace(settings.ShopContactInfo))
+        {
+            sb.AppendLine();
+            sb.AppendLine(settings.ShopContactInfo);
+        }
+        return sb.ToString();
+    }
+
+    private static void AppendTextReceiptStateMessage(StringBuilder sb, Order order)
+    {
+        if (order.PaymentStatus == PaymentStatus.Paid || order.BalanceAmount <= 0)
+        {
+            sb.AppendLine("Thank you, your order is now fully paid.");
+            return;
+        }
+
+        if (order.DeliveryMethod == Orders.DeliveryMethod.Pickup && order.BalanceAmount > 0)
+        {
+            sb.AppendLine("Thank you, we have recorded your payment. The remaining balance is payable when you pick up your order.");
+            if (order.PaymentRequirementType == PaymentRequirementType.DepositThenBalance
+                && order.PaymentStatus        == PaymentStatus.PartiallyPaid
+                && order.RequiredDepositAmount.HasValue
+                && order.PaidAmount           <  order.RequiredDepositAmount.Value)
+            {
+                sb.AppendLine("Your deposit has not been fully received yet. We will begin processing once the required deposit is confirmed.");
+            }
+            return;
+        }
+
+        if (order.DeliveryMethod == Orders.DeliveryMethod.Shipping && order.BalanceAmount > 0)
+        {
+            sb.AppendLine("Thank you, we have recorded your payment. Full payment is required before we start processing your order.");
+            return;
+        }
+
+        sb.AppendLine("Thank you, we have recorded your payment.");
     }
 
     // ── Format helpers ────────────────────────────────────────────────────────

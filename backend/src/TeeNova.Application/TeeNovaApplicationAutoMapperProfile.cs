@@ -4,6 +4,7 @@ using TeeNova.Catalog.Dtos;
 using TeeNova.Customization;
 using TeeNova.Orders;
 using TeeNova.Orders.Dtos;
+using TeeNova.Payments;
 using TeeNova.PrintConfig;
 using TeeNova.PrintConfig.Dtos;
 
@@ -53,6 +54,7 @@ public class TeeNovaApplicationAutoMapperProfile : Profile
             .ForMember(d => d.UploadedAssetUrl, o => o.MapFrom(s => s.UploadedAssetUrl))
             .ForMember(d => d.DesignNote, o => o.MapFrom(s => s.DesignNote));
         CreateMap<ShippingAddress, ShippingAddressDto>();
+        CreateMap<OnlinePaymentSession, OnlinePaymentSessionDto>();
 
         // UploadedAsset
         CreateMap<UploadedAsset, Files.Dtos.UploadFileOutput>()
