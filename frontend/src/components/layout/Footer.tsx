@@ -88,7 +88,7 @@ export function Footer() {
             © {new Date().getFullYear()} Otahuhu Printing Shop. All rights reserved.
           </p>
           <div className="flex items-center gap-1.5">
-            {['VISA', 'Mastercard', 'PayPal'].map((p) => (
+            {['Bank Transfer', 'Cash', 'Eftpos'].map((p) => (
               <span key={p} className="rounded border border-white/10 px-2 py-1 text-[10px] text-white/40 tracking-wide">{p}</span>
             ))}
           </div>

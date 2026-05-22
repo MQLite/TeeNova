@@ -23,6 +23,12 @@ public class EmailNotificationLog : CreationAuditedEntity<Guid>
     public string? ErrorMessage { get; private set; }
     public DateTime? SentAt { get; private set; }
 
+    /// <summary>
+    /// Non-null for payment receipt emails; null for all lifecycle emails.
+    /// Enables per-transaction idempotency: one receipt per PaymentTransaction.
+    /// </summary>
+    public Guid? PaymentTransactionId { get; private set; }
+
     protected EmailNotificationLog() { }
 
     public static EmailNotificationLog Sent(
@@ -30,17 +36,19 @@ public class EmailNotificationLog : CreationAuditedEntity<Guid>
         Guid orderId,
         string eventType,
         string recipient,
-        string subject)
+        string subject,
+        Guid? paymentTransactionId = null)
         => new()
         {
-            Id           = id,
-            OrderId      = orderId,
-            EventType    = eventType,
-            Recipient    = recipient,
-            Subject      = subject,
-            Status       = EmailSendStatus.Sent,
-            SentAt       = DateTime.UtcNow,
-            ErrorMessage = null,
+            Id                   = id,
+            OrderId              = orderId,
+            EventType            = eventType,
+            Recipient            = recipient,
+            Subject              = subject,
+            Status               = EmailSendStatus.Sent,
+            SentAt               = DateTime.UtcNow,
+            ErrorMessage         = null,
+            PaymentTransactionId = paymentTransactionId,
         };
 
     public static EmailNotificationLog Failed(
@@ -49,18 +57,20 @@ public class EmailNotificationLog : CreationAuditedEntity<Guid>
         string eventType,
         string recipient,
         string subject,
-        string errorMessage)
+        string errorMessage,
+        Guid? paymentTransactionId = null)
         => new()
         {
-            Id           = id,
-            OrderId      = orderId,
-            EventType    = eventType,
-            Recipient    = recipient,
-            Subject      = subject,
-            Status       = EmailSendStatus.Failed,
-            SentAt       = null,
-            ErrorMessage = errorMessage.Length > 2000
+            Id                   = id,
+            OrderId              = orderId,
+            EventType            = eventType,
+            Recipient            = recipient,
+            Subject              = subject,
+            Status               = EmailSendStatus.Failed,
+            SentAt               = null,
+            ErrorMessage         = errorMessage.Length > 2000
                 ? errorMessage[..2000]
                 : errorMessage,
+            PaymentTransactionId = paymentTransactionId,
         };
 }

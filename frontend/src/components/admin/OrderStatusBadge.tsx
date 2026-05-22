@@ -11,7 +11,7 @@ interface StatusConfig {
 const STATUS_CONFIG: Record<OrderStatus, StatusConfig> = {
   Pending:      { bg: 'bg-zinc-100',   text: 'text-zinc-700',   dot: 'bg-zinc-400',   label: 'Pending' },
   Cancelled:    { bg: 'bg-red-50',     text: 'text-red-600',    dot: 'bg-red-400',    label: 'Cancelled' },
-  Paid:         { bg: 'bg-green-50',   text: 'text-green-700',  dot: 'bg-green-500',  label: 'Paid' },
+  Paid:         { bg: 'bg-green-50',   text: 'text-green-700',  dot: 'bg-green-500',  label: 'Activated' },
   Reviewing:    { bg: 'bg-blue-50',    text: 'text-blue-700',   dot: 'bg-blue-500',   label: 'Reviewing' },
   Printing:     { bg: 'bg-orange-50',  text: 'text-orange-700', dot: 'bg-orange-500', label: 'Printing' },
   Ready:        { bg: 'bg-teal-50',    text: 'text-teal-700',   dot: 'bg-teal-500',   label: 'Ready' },

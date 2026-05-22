@@ -93,7 +93,7 @@ export function OrderActionPanel({
         {status === 'Paid' && (
           <>
             <span className="rounded-full border border-green-200 bg-green-50 px-3 py-1.5 font-mono text-[11px] uppercase tracking-[0.54px] text-green-700">
-              Paid
+              Activated
             </span>
             <ReviewActionButton loading={loading} onClick={onStartReview} />
           </>

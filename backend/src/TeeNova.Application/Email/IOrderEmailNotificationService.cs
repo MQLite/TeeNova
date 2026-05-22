@@ -9,4 +9,5 @@ public interface IOrderEmailNotificationService
     Task SendAdminNewOrderNotificationAsync(Order order);
     Task SendOrderReadyAsync(Order order);
     Task SendOrderCompletedAsync(Order order);
+    Task SendPaymentReceiptAsync(Order order, PaymentTransaction transaction);
 }

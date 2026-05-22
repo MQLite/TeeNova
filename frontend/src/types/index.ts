@@ -370,6 +370,38 @@ export interface AdminAsset {
   designNote: string | null
 }
 
+// ─── Online Payments ──────────────────────────────────────────────────────────
+
+export type PaymentProvider = 'Stripe' | 'Windcave' | 'Poli' | 'PayPal'
+
+export type PaymentPurpose = 'FullPayment' | 'Deposit' | 'Balance'
+
+export type OnlinePaymentSessionStatus =
+  | 'Pending'
+  | 'Completed'
+  | 'Cancelled'
+  | 'Expired'
+  | 'Failed'
+
+export interface CreateOnlinePaymentSessionInput {
+  provider?: PaymentProvider
+  purpose?: PaymentPurpose
+}
+
+export interface OnlinePaymentSession {
+  id: string
+  orderId: string
+  orderNumber: string
+  provider: PaymentProvider
+  providerSessionId: string
+  providerCheckoutUrl: string
+  amount: number
+  currency: string
+  purpose: PaymentPurpose
+  status: OnlinePaymentSessionStatus
+  creationTime: string
+}
+
 // ─── Email Settings ───────────────────────────────────────────────────────────
 
 export interface EmailSettings {

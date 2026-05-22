@@ -33,11 +33,17 @@ public class EmailNotificationLogEntityTypeConfiguration
         builder.Property(e => e.SentAt)
             .IsRequired(false);
 
+        builder.Property(e => e.PaymentTransactionId)
+            .IsRequired(false);
+
         // Fast idempotency check: OrderId + EventType lookup
         builder.HasIndex(e => new { e.OrderId, e.EventType })
             .HasDatabaseName("IX_EmailNotificationLogs_OrderId_EventType");
 
         builder.HasIndex(e => e.OrderId)
             .HasDatabaseName("IX_EmailNotificationLogs_OrderId");
+
+        builder.HasIndex(e => e.PaymentTransactionId)
+            .HasDatabaseName("IX_EmailNotificationLogs_PaymentTransactionId");
     }
 }

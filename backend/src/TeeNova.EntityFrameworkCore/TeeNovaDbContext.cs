@@ -3,6 +3,7 @@ using TeeNova.Catalog;
 using TeeNova.Customization;
 using TeeNova.Notifications;
 using TeeNova.Orders;
+using TeeNova.Payments;
 using TeeNova.PrintConfig;
 using TeeNova.Production;
 using Volo.Abp.Data;
@@ -35,6 +36,9 @@ public class TeeNovaDbContext : AbpDbContext<TeeNovaDbContext>
 
     // Production
     public DbSet<ProductionJob> ProductionJobs { get; set; }
+
+    // Payments
+    public DbSet<OnlinePaymentSession> OnlinePaymentSessions { get; set; }
 
     // Notifications
     public DbSet<EmailNotificationLog> EmailNotificationLogs { get; set; }
