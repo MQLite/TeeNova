@@ -33,7 +33,8 @@ function SuccessContent() {
   const orderId = searchParams.get('orderId')
   const mockProvider = searchParams.get('mockProvider')
   const mockSessionId = searchParams.get('mockSessionId')
-  const isOnlineReturn = !!(mockProvider || mockSessionId)
+  const provider = searchParams.get('provider')
+  const isOnlineReturn = !!(mockProvider || mockSessionId || provider)
 
   const [order, setOrder] = useState<Order | null>(null)
   const [loading, setLoading] = useState(true)

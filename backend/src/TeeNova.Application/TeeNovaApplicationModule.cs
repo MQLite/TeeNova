@@ -5,6 +5,7 @@ using TeeNova.Email;
 using TeeNova.Files;
 using TeeNova.Payments;
 using TeeNova.Payments.Mock;
+using TeeNova.Payments.Stripe;
 using Volo.Abp;
 using Volo.Abp.Application;
 using Volo.Abp.AutoMapper;
@@ -51,6 +52,18 @@ public class TeeNovaApplicationModule : AbpModule
             context.Services.AddTransient<IOnlinePaymentProvider, MockWindcaveOnlinePaymentProvider>();
             context.Services.AddTransient<IOnlinePaymentProvider, MockPoliOnlinePaymentProvider>();
             context.Services.AddTransient<IOnlinePaymentProvider, MockPayPalOnlinePaymentProvider>();
+        }
+        else
+        {
+            // Register real provider implementations.
+            // Only providers with Enabled = true are registered; the resolver throws if a
+            // disabled/unregistered provider is requested.
+            // PayPal, Windcave, and POLi implementations are added in Jira 7037, 7040, 7041.
+            var providersConfig = context.Services.GetConfiguration()
+                .GetSection("OnlinePayments:Providers");
+
+            if (providersConfig.GetSection("Stripe").GetValue<bool>("Enabled"))
+                context.Services.AddTransient<IOnlinePaymentProvider, StripeOnlinePaymentProvider>();
         }
     }
 

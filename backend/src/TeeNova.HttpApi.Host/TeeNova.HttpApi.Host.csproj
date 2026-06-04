@@ -5,6 +5,7 @@
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <RootNamespace>TeeNova</RootNamespace>
+    <UserSecretsId>7f4915bd-be2e-449d-8ee6-e4e94635b962</UserSecretsId>
   </PropertyGroup>
 
   <ItemGroup>

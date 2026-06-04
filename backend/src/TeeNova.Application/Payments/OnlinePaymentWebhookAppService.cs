@@ -9,6 +9,7 @@ using TeeNova.Orders;
 using Volo.Abp;
 using Volo.Abp.Application.Services;
 using Volo.Abp.Domain.Repositories;
+using Volo.Abp.Uow;
 
 namespace TeeNova.Payments;
 
@@ -125,110 +126,119 @@ public class OnlinePaymentWebhookAppService : ApplicationService, IOnlinePayment
                 .WithData("SessionId", session.Id)
                 .WithData("Status", session.Status);
 
-        // Amount/currency validation.
-        if (!result.Amount.HasValue)
-            throw new BusinessException("TeeNova:Payment:WebhookMissingAmount")
-                .WithData("SessionId", session.Id);
-
-        if (result.Amount.Value != session.Amount)
-        {
-            Logger.LogWarning(
-                "[Webhook] Amount mismatch for session '{SessionId}': webhook={WebhookAmount} session={SessionAmount}.",
-                session.Id, result.Amount.Value, session.Amount);
-            throw new BusinessException("TeeNova:Payment:WebhookAmountMismatch")
-                .WithData("SessionId", session.Id)
-                .WithData("WebhookAmount", result.Amount.Value)
-                .WithData("SessionAmount", session.Amount);
-        }
-
-        if (string.IsNullOrWhiteSpace(result.Currency)
-            || !string.Equals(result.Currency, session.Currency, StringComparison.OrdinalIgnoreCase))
-        {
-            Logger.LogWarning(
-                "[Webhook] Currency mismatch for session '{SessionId}': webhook={WebhookCurrency} session={SessionCurrency}.",
-                session.Id, result.Currency, session.Currency);
-            throw new BusinessException("TeeNova:Payment:WebhookCurrencyMismatch")
-                .WithData("SessionId", session.Id)
-                .WithData("WebhookCurrency", result.Currency ?? "(null)")
-                .WithData("SessionCurrency", session.Currency);
-        }
-
-        // Load and validate the order.
-        var order = await _orderRepository.FindAsync(session.OrderId);
-
-        if (order == null)
-            throw new BusinessException("TeeNova:Payment:WebhookOrderNotFound")
-                .WithData("OrderId", session.OrderId)
-                .WithData("SessionId", session.Id);
-
-        if (order.Status == OrderStatus.Cancelled)
-            throw new BusinessException("TeeNova:Payment:WebhookOrderCancelled")
-                .WithData("OrderId", order.Id)
-                .WithData("SessionId", session.Id);
-
-        if (order.Status == OrderStatus.Completed)
-            throw new BusinessException("TeeNova:Payment:WebhookOrderCompleted")
-                .WithData("OrderId", order.Id)
-                .WithData("SessionId", session.Id);
-
-        if (order.BalanceAmount <= 0)
-            throw new BusinessException("TeeNova:Payment:WebhookNoBalanceDue")
-                .WithData("OrderId", order.Id)
-                .WithData("BalanceAmount", order.BalanceAmount);
-
-        if (session.Amount > order.BalanceAmount)
-        {
-            Logger.LogWarning(
-                "[Webhook] Overpayment for order '{OrderId}': session amount {Amount} > balance {Balance}.",
-                order.Id, session.Amount, order.BalanceAmount);
-            throw new BusinessException("TeeNova:Payment:WebhookOverpayment")
-                .WithData("OrderId", order.Id)
-                .WithData("SessionAmount", session.Amount)
-                .WithData("BalanceAmount", order.BalanceAmount);
-        }
-
-        // Record the payment — follow the same sequence as RecordPaymentAsync.
-        var reference = result.ProviderPaymentId ?? session.ProviderSessionId;
-        var note      = $"Online payment via {session.Provider}.";
-
-        order.ApplyPayment(session.Amount, ManualPaymentMethod.Online, reference, note, Clock.Now);
-
-        var transaction = new PaymentTransaction(
-            GuidGenerator.Create(),
-            order.Id,
-            session.Amount,
-            ManualPaymentMethod.Online,
-            reference,
-            note);
-
-        await _transactionRepository.InsertAsync(transaction, autoSave: false);
-        await _orderRepository.UpdateAsync(order, autoSave: false);
-
-        session.MarkCompleted(
-            providerPaymentId:    result.ProviderPaymentId,
-            providerEventId:      result.ProviderEventId,
-            rawProviderStatus:    result.RawProviderStatus,
-            paymentTransactionId: transaction.Id,
-            completedAt:          Clock.Now);
-
-        await _sessionRepository.UpdateAsync(session, autoSave: true);
-
-        var timelineDesc = string.IsNullOrEmpty(reference)
-            ? $"Online payment of {session.Amount:C} recorded via {session.Provider}."
-            : $"Online payment of {session.Amount:C} recorded via {session.Provider}. Ref: {reference}.";
-
-        await AddTimelineEntryAsync(order.Id, OrderEventType.PaymentReceived, timelineDesc, order.Status);
-
-        // Receipt email — best-effort, must not block payment recording or webhook response.
+        // From here the session is Pending. Any business-level rejection marks it Failed.
         try
         {
-            await _emailService.SendPaymentReceiptAsync(order, transaction);
+            // Amount/currency validation.
+            if (!result.Amount.HasValue)
+                throw new BusinessException("TeeNova:Payment:WebhookMissingAmount")
+                    .WithData("SessionId", session.Id);
+
+            if (result.Amount.Value != session.Amount)
+            {
+                Logger.LogWarning(
+                    "[Webhook] Amount mismatch for session '{SessionId}': webhook={WebhookAmount} session={SessionAmount}.",
+                    session.Id, result.Amount.Value, session.Amount);
+                throw new BusinessException("TeeNova:Payment:WebhookAmountMismatch")
+                    .WithData("SessionId", session.Id)
+                    .WithData("WebhookAmount", result.Amount.Value)
+                    .WithData("SessionAmount", session.Amount);
+            }
+
+            if (string.IsNullOrWhiteSpace(result.Currency)
+                || !string.Equals(result.Currency, session.Currency, StringComparison.OrdinalIgnoreCase))
+            {
+                Logger.LogWarning(
+                    "[Webhook] Currency mismatch for session '{SessionId}': webhook={WebhookCurrency} session={SessionCurrency}.",
+                    session.Id, result.Currency, session.Currency);
+                throw new BusinessException("TeeNova:Payment:WebhookCurrencyMismatch")
+                    .WithData("SessionId", session.Id)
+                    .WithData("WebhookCurrency", result.Currency ?? "(null)")
+                    .WithData("SessionCurrency", session.Currency);
+            }
+
+            // Load and validate the order.
+            var order = await _orderRepository.FindAsync(session.OrderId);
+
+            if (order == null)
+                throw new BusinessException("TeeNova:Payment:WebhookOrderNotFound")
+                    .WithData("OrderId", session.OrderId)
+                    .WithData("SessionId", session.Id);
+
+            if (order.Status == OrderStatus.Cancelled)
+                throw new BusinessException("TeeNova:Payment:WebhookOrderCancelled")
+                    .WithData("OrderId", order.Id)
+                    .WithData("SessionId", session.Id);
+
+            if (order.Status == OrderStatus.Completed)
+                throw new BusinessException("TeeNova:Payment:WebhookOrderCompleted")
+                    .WithData("OrderId", order.Id)
+                    .WithData("SessionId", session.Id);
+
+            if (order.BalanceAmount <= 0)
+                throw new BusinessException("TeeNova:Payment:WebhookNoBalanceDue")
+                    .WithData("OrderId", order.Id)
+                    .WithData("BalanceAmount", order.BalanceAmount);
+
+            if (session.Amount > order.BalanceAmount)
+            {
+                Logger.LogWarning(
+                    "[Webhook] Overpayment for order '{OrderId}': session amount {Amount} > balance {Balance}.",
+                    order.Id, session.Amount, order.BalanceAmount);
+                throw new BusinessException("TeeNova:Payment:WebhookOverpayment")
+                    .WithData("OrderId", order.Id)
+                    .WithData("SessionAmount", session.Amount)
+                    .WithData("BalanceAmount", order.BalanceAmount);
+            }
+
+            // Record the payment — follow the same sequence as RecordPaymentAsync.
+            var reference = result.ProviderPaymentId ?? session.ProviderSessionId;
+            var note      = $"Online payment via {session.Provider}.";
+
+            order.ApplyPayment(session.Amount, ManualPaymentMethod.Online, reference, note, Clock.Now);
+
+            var transaction = new PaymentTransaction(
+                GuidGenerator.Create(),
+                order.Id,
+                session.Amount,
+                ManualPaymentMethod.Online,
+                reference,
+                note);
+
+            await _transactionRepository.InsertAsync(transaction, autoSave: false);
+            await _orderRepository.UpdateAsync(order, autoSave: false);
+
+            session.MarkCompleted(
+                providerPaymentId:    result.ProviderPaymentId,
+                providerEventId:      result.ProviderEventId,
+                rawProviderStatus:    result.RawProviderStatus,
+                paymentTransactionId: transaction.Id,
+                completedAt:          Clock.Now);
+
+            await _sessionRepository.UpdateAsync(session, autoSave: true);
+
+            var timelineDesc = string.IsNullOrEmpty(reference)
+                ? $"Online payment of {session.Amount:F2} {session.Currency} recorded via {session.Provider}."
+                : $"Online payment of {session.Amount:F2} {session.Currency} recorded via {session.Provider}. Ref: {reference}.";
+
+            await AddTimelineEntryAsync(order.Id, OrderEventType.PaymentReceived, timelineDesc, order.Status);
+
+            // Receipt email — best-effort, must not block payment recording or webhook response.
+            try
+            {
+                await _emailService.SendPaymentReceiptAsync(order, transaction);
+            }
+            catch (Exception ex)
+            {
+                Logger.LogError(ex,
+                    "[Email] Failed to send payment receipt for order {OrderNumber} after online payment webhook.",
+                    order.OrderNumber);
+            }
         }
-        catch (Exception ex)
+        catch (BusinessException ex)
         {
-            Logger.LogError(ex,
-                "[Email] Failed to send payment receipt for order {OrderNumber} after online payment webhook.",
-                order.OrderNumber);
+            await MarkSessionFailedAsync(session, ex.Code);
+            throw;
         }
     }
 
@@ -285,6 +295,26 @@ public class OnlinePaymentWebhookAppService : ApplicationService, IOnlinePayment
     }
 
     // ── Private helpers ───────────────────────────────────────────────────────
+
+    /// <summary>
+    /// Persists a Failed status on a Pending session when a PaymentCompleted webhook is rejected.
+    /// Uses an independent inner unit of work so the update commits even though the outer UoW
+    /// is rolled back by the re-thrown BusinessException.
+    /// </summary>
+    private async Task MarkSessionFailedAsync(OnlinePaymentSession session, string? reason)
+    {
+        if (session.Status != OnlinePaymentSessionStatus.Pending) return;
+
+        Logger.LogInformation(
+            "[Webhook] Session '{SessionId}' marked Failed due to rejected PaymentCompleted webhook. Reason: {Reason}.",
+            session.Id, reason);
+
+        session.MarkFailed(rawProviderStatus: reason);
+
+        using var uow = UnitOfWorkManager.Begin(requiresNew: true, isTransactional: true);
+        await _sessionRepository.UpdateAsync(session, autoSave: true);
+        await uow.CompleteAsync();
+    }
 
     private async Task<OnlinePaymentSession?> FindSessionAsync(
         PaymentProvider   provider,

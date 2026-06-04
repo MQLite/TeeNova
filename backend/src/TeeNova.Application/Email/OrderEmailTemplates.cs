@@ -13,7 +13,7 @@ namespace TeeNova.Email;
 /// </summary>
 public static class OrderEmailTemplates
 {
-    private static readonly CultureInfo DisplayCulture = CultureInfo.GetCultureInfo("en-US");
+
 
     // ── Public entry points ───────────────────────────────────────────────────
 
@@ -714,7 +714,7 @@ public static class OrderEmailTemplates
     // ── Format helpers ────────────────────────────────────────────────────────
 
     private static string FormatCurrency(decimal amount)
-        => amount.ToString("C2", DisplayCulture);
+        => $"{amount:F2} NZD";
 
     private static string FormatDate(DateTime dt)
         => dt.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);

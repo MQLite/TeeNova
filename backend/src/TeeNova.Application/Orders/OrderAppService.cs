@@ -300,8 +300,8 @@ public class OrderAppService : ApplicationService, IOrderAppService
         await _orderRepository.UpdateAsync(order, autoSave: true);
 
         var timelineDesc = string.IsNullOrEmpty(reference)
-            ? $"Payment of {input.Amount:C} recorded via {input.Method}."
-            : $"Payment of {input.Amount:C} recorded via {input.Method}. Ref: {reference}.";
+            ? $"Payment of {input.Amount:F2} NZD recorded via {input.Method}."
+            : $"Payment of {input.Amount:F2} NZD recorded via {input.Method}. Ref: {reference}.";
 
         await AddTimelineEntryAsync(id, OrderEventType.PaymentReceived,
             timelineDesc,
@@ -477,8 +477,8 @@ public class OrderAppService : ApplicationService, IOrderAppService
         var (purpose, amount) = CalculatePaymentPurposeAndAmount(order, input.Purpose);
 
         var currency   = string.IsNullOrWhiteSpace(opts.Currency) ? "NZD" : opts.Currency.ToUpperInvariant();
-        var successUrl = $"{opts.SuccessReturnBaseUrl.TrimEnd('/')}?orderId={order.Id}&orderNumber={Uri.EscapeDataString(order.OrderNumber)}";
-        var cancelUrl  = $"{opts.CancelReturnBaseUrl.TrimEnd('/')}?orderId={order.Id}&orderNumber={Uri.EscapeDataString(order.OrderNumber)}";
+        var successUrl = $"{opts.SuccessReturnBaseUrl.TrimEnd('/')}?orderId={order.Id}&orderNumber={Uri.EscapeDataString(order.OrderNumber)}&provider={Uri.EscapeDataString(selectedProvider.ToString())}";
+        var cancelUrl  = $"{opts.CancelReturnBaseUrl.TrimEnd('/')}?orderId={order.Id}&orderNumber={Uri.EscapeDataString(order.OrderNumber)}&provider={Uri.EscapeDataString(selectedProvider.ToString())}";
 
         var request = new CreateOnlinePaymentProviderSessionRequest
         {
