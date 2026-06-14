@@ -317,6 +317,16 @@ public class CatalogAppService : ApplicationService, ICatalogAppService
                     $"Duplicate size/color combination in request: '{item.Size.Trim()}' / '{item.Color.Trim()}'.");
         }
 
+        // Collect IDs of existing variants explicitly kept in the new matrix
+        var submittedIds = input.Variants
+            .Where(v => v.Id.HasValue)
+            .Select(v => v.Id!.Value)
+            .ToList();
+
+        // Load variants that are no longer in the matrix so we can delete them after the upsert
+        var variantsToDelete = await _variantRepository.GetListAsync(
+            v => v.ProductId == productId && !submittedIds.Contains(v.Id));
+
         // Process each item — all within the ABP unit of work (transaction)
         foreach (var item in input.Variants)
         {
@@ -375,6 +385,10 @@ public class CatalogAppService : ApplicationService, ICatalogAppService
                 await _variantRepository.InsertAsync(variant, autoSave: true);
             }
         }
+
+        // Delete variants that were removed from the regenerated matrix
+        foreach (var obsolete in variantsToDelete)
+            await _variantRepository.DeleteAsync(obsolete, autoSave: true);
 
         // Return the full current variant list for this product
         var allVariants = await _variantRepository.GetListAsync(v => v.ProductId == productId);
