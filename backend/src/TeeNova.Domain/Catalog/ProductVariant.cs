@@ -17,6 +17,9 @@ public class ProductVariant : Entity<Guid>
     public int StockQuantity { get; set; } = 0;
     public bool IsAvailable { get; set; } = true;
 
+    /// <summary>Position within the product's variant matrix (0-based). Preserved from the admin's generated order.</summary>
+    public int SortOrder { get; set; } = 0;
+
     protected ProductVariant() { }
 
     public ProductVariant(Guid id, Guid productId, string sku, string color, string size)

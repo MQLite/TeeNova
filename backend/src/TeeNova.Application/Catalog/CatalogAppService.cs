@@ -71,7 +71,7 @@ public class CatalogAppService : ApplicationService, ICatalogAppService
         var query = await _productRepository.GetQueryableAsync();
 
         var product = await query
-            .Include(p => p.Variants)
+            .Include(p => p.Variants.OrderBy(v => v.SortOrder))
             .Include(p => p.Images)
             .FirstOrDefaultAsync(p => p.Id == id);
 
@@ -328,8 +328,10 @@ public class CatalogAppService : ApplicationService, ICatalogAppService
             v => v.ProductId == productId && !submittedIds.Contains(v.Id));
 
         // Process each item — all within the ABP unit of work (transaction)
-        foreach (var item in input.Variants)
+        for (var index = 0; index < input.Variants.Count; index++)
         {
+            var item = input.Variants[index];
+
             if (item.Id.HasValue)
             {
                 // Update existing variant
@@ -359,6 +361,7 @@ public class CatalogAppService : ApplicationService, ICatalogAppService
                 variant.PriceAdjustment = item.PriceAdjustment;
                 variant.StockQuantity   = item.StockQuantity;
                 variant.IsAvailable     = item.IsAvailable;
+                variant.SortOrder       = index;
 
                 await _variantRepository.UpdateAsync(variant, autoSave: true);
             }
@@ -380,6 +383,7 @@ public class CatalogAppService : ApplicationService, ICatalogAppService
                     PriceAdjustment = item.PriceAdjustment,
                     StockQuantity   = item.StockQuantity,
                     IsAvailable     = item.IsAvailable,
+                    SortOrder       = index,
                 };
 
                 await _variantRepository.InsertAsync(variant, autoSave: true);
@@ -390,8 +394,10 @@ public class CatalogAppService : ApplicationService, ICatalogAppService
         foreach (var obsolete in variantsToDelete)
             await _variantRepository.DeleteAsync(obsolete, autoSave: true);
 
-        // Return the full current variant list for this product
-        var allVariants = await _variantRepository.GetListAsync(v => v.ProductId == productId);
+        // Return the full current variant list in admin-defined order
+        var allVariants = (await _variantRepository.GetListAsync(v => v.ProductId == productId))
+            .OrderBy(v => v.SortOrder)
+            .ToList();
         return ObjectMapper.Map<List<ProductVariant>, List<ProductVariantDto>>(allVariants);
     }
 }

@@ -565,8 +565,20 @@ export default function ProductDetailPage() {
     displayedImages[0] ??
     null
 
-  const uniqueColors = [...new Set(product.variants.map((variant) => variant.color))]
-  const uniqueSizes = [...new Set(product.variants.map((variant) => variant.size))]
+  // Build ordered unique lists by iterating variants in API order (backend returns by SortOrder)
+  const uniqueColors: string[] = []
+  const uniqueSizes: string[] = []
+  const seenColors = new Set<string>()
+  const seenSizes = new Set<string>()
+  for (const v of product.variants) {
+    if (!seenColors.has(v.color)) { seenColors.add(v.color); uniqueColors.push(v.color) }
+    if (!seenSizes.has(v.size))   { seenSizes.add(v.size);   uniqueSizes.push(v.size) }
+  }
+
+  // O(1) variant lookup keyed by "color|size"
+  const variantLookup = new Map<string, typeof product.variants[number]>()
+  for (const v of product.variants) variantLookup.set(`${v.color}|${v.size}`, v)
+
   const priceAdjustments = uniqueSizes
     .map((size) => {
       const variant = product.variants.find((item) => item.size === size)
@@ -741,26 +753,29 @@ export default function ProductDetailPage() {
                   </span>
                 )}
               </div>
-              <div className="overflow-x-auto">
-                <table className="w-full border-collapse text-sm">
+              <div className="relative w-full overflow-x-auto">
+                <table className="min-w-full border-separate border-spacing-0 text-sm">
                   <thead>
                     <tr className="border-b border-black/[0.08]">
-                      <th className="w-28 pb-2 pr-3 text-left font-mono text-[11px] uppercase tracking-[0.54px] text-black/50 font-normal">
+                      {/* Sticky Color header */}
+                      <th className="sticky left-0 z-30 w-28 bg-white pb-2 pr-3 text-left font-mono text-[11px] font-normal uppercase tracking-[0.54px] text-black/50 shadow-[2px_0_4px_rgba(0,0,0,0.06)]">
                         Colour
                       </th>
                       {uniqueSizes.map((size) => {
-                        const adjustment = product.variants.find((variant) => variant.size === size)?.priceAdjustment ?? 0
+                        const adjustment = variantLookup.get(`${uniqueColors[0]}|${size}`)?.priceAdjustment
+                          ?? product.variants.find((v) => v.size === size)?.priceAdjustment
+                          ?? 0
                         return (
                           <th
                             key={size}
-                            className="min-w-[4rem] pb-2 px-1.5 text-center font-mono text-[11px] uppercase tracking-[0.54px] text-black/50 font-normal"
+                            className="min-w-[4rem] px-1.5 pb-2 text-center font-mono text-[11px] font-normal uppercase tracking-[0.54px] text-black/50"
                           >
                             {size}
                             {adjustment !== 0 && <span className="block text-[9px] opacity-60">+${adjustment.toFixed(2)}</span>}
                           </th>
                         )
                       })}
-                      <th className="pb-2 pl-3 text-right font-mono text-[11px] uppercase tracking-[0.54px] text-black/50 font-normal">
+                      <th className="pb-2 pl-3 text-right font-mono text-[11px] font-normal uppercase tracking-[0.54px] text-black/50">
                         Garment
                       </th>
                     </tr>
@@ -768,18 +783,19 @@ export default function ProductDetailPage() {
                   <tbody className="divide-y divide-black/[0.06]">
                     {uniqueColors.map((color) => {
                       const rowGarmentTotal = uniqueSizes.reduce((sum, size) => {
-                        const variant = product.variants.find((item) => item.color === color && item.size === size)
+                        const variant = variantLookup.get(`${color}|${size}`)
                         if (!variant) return sum
                         return sum + (variantQtys[variant.id] ?? 0) * (product.basePrice + variant.priceAdjustment)
                       }, 0)
 
                       return (
                         <tr key={color}>
-                          <td className="py-2 pr-3 text-xs text-black align-middle" style={{ letterSpacing: '-0.14px' }}>
+                          {/* Sticky Color cell */}
+                          <td className="sticky left-0 z-20 bg-white py-2 pr-3 align-middle text-xs text-black shadow-[2px_0_4px_rgba(0,0,0,0.06)]" style={{ letterSpacing: '-0.14px' }}>
                             {color}
                           </td>
                           {uniqueSizes.map((size) => {
-                            const variant = product.variants.find((item) => item.color === color && item.size === size)
+                            const variant = variantLookup.get(`${color}|${size}`)
                             const unavailable = !variant || !variant.isAvailable
                             const isFocused = focusedVariantId === variant?.id
                             const displayValue = variant
@@ -789,7 +805,7 @@ export default function ProductDetailPage() {
                               : ''
 
                             return (
-                              <td key={size} className="py-2 px-1.5 text-center align-middle">
+                              <td key={size} className="px-1.5 py-2 text-center align-middle">
                                 {unavailable ? (
                                   <span className="text-[10px] text-black/20">-</span>
                                 ) : (
@@ -821,7 +837,7 @@ export default function ProductDetailPage() {
                         <td colSpan={uniqueSizes.length + 1} className="pt-2.5 pr-3 font-mono text-[11px] uppercase tracking-[0.54px] text-black/50">
                           Garment-only subtotal before print pricing
                         </td>
-                        <td className="pt-2.5 pl-3 text-right text-sm text-black tabular-nums" style={{ fontWeight: 540 }}>
+                        <td className="pt-2.5 pl-3 text-right text-sm tabular-nums text-black" style={{ fontWeight: 540 }}>
                           ${garmentOnlyTotal.toFixed(2)}
                         </td>
                       </tr>
