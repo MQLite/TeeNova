@@ -140,12 +140,6 @@ export default function ProductDetailPage() {
   )
 
   const totalQty = selectedVariantLines.reduce((sum, line) => sum + line.quantity, 0)
-  const garmentOnlyTotal = product
-    ? product.variants.reduce((sum, variant) => {
-        const qty = variantQtys[variant.id] ?? 0
-        return sum + (qty > 0 ? (product.basePrice + variant.priceAdjustment) * qty : 0)
-      }, 0)
-    : 0
 
   const pricingGrandTotal = selectedVariantLines.reduce(
     (sum, line) => sum + (pricingByVariantId[line.variantId]?.lineTotal ?? 0),
@@ -775,19 +769,10 @@ export default function ProductDetailPage() {
                           </th>
                         )
                       })}
-                      <th className="pb-2 pl-3 text-right font-mono text-[11px] font-normal uppercase tracking-[0.54px] text-black/50">
-                        Garment
-                      </th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-black/[0.06]">
                     {uniqueColors.map((color) => {
-                      const rowGarmentTotal = uniqueSizes.reduce((sum, size) => {
-                        const variant = variantLookup.get(`${color}|${size}`)
-                        if (!variant) return sum
-                        return sum + (variantQtys[variant.id] ?? 0) * (product.basePrice + variant.priceAdjustment)
-                      }, 0)
-
                       return (
                         <tr key={color}>
                           {/* Sticky Color cell */}
@@ -824,25 +809,10 @@ export default function ProductDetailPage() {
                               </td>
                             )
                           })}
-                          <td className="py-2 pl-3 text-right text-xs tabular-nums text-black align-middle">
-                            {rowGarmentTotal > 0 ? `$${rowGarmentTotal.toFixed(2)}` : <span className="text-black/20">-</span>}
-                          </td>
                         </tr>
                       )
                     })}
                   </tbody>
-                  {totalQty > 0 && (
-                    <tfoot>
-                      <tr className="border-t border-black/[0.08]">
-                        <td colSpan={uniqueSizes.length + 1} className="pt-2.5 pr-3 font-mono text-[11px] uppercase tracking-[0.54px] text-black/50">
-                          Garment-only subtotal before print pricing
-                        </td>
-                        <td className="pt-2.5 pl-3 text-right text-sm tabular-nums text-black" style={{ fontWeight: 540 }}>
-                          ${garmentOnlyTotal.toFixed(2)}
-                        </td>
-                      </tr>
-                    </tfoot>
-                  )}
                 </table>
               </div>
               <p className="mt-3 font-mono text-[10px] uppercase tracking-[0.54px] text-black/45">
