@@ -1,6 +1,7 @@
 using System;
 using System.Threading;
 using System.Threading.Tasks;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using TeeNova.Files.Dtos;
@@ -10,6 +11,7 @@ namespace TeeNova.Files;
 
 [ApiController]
 [Route("api/files")]
+[Authorize]
 public class FileController : TeeNovaControllerBase
 {
     private readonly IFileAppService _fileAppService;
@@ -24,6 +26,7 @@ public class FileController : TeeNovaControllerBase
     /// Max 10 MB. Accepted: PNG, JPEG, SVG, WebP.
     /// </summary>
     [HttpPost("upload")]
+    [AllowAnonymous]
     [RequestSizeLimit(10 * 1024 * 1024)]
     public async Task<UploadFileOutput> UploadAsync(
         IFormFile file,

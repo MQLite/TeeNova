@@ -1,4 +1,5 @@
 using System.Threading.Tasks;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using TeeNova.Dashboard.Dtos;
 
@@ -6,6 +7,7 @@ namespace TeeNova.Dashboard;
 
 [ApiController]
 [Route("api/admin/dashboard")]
+[Authorize]
 public class DashboardController : TeeNovaControllerBase
 {
     private readonly IDashboardAppService _dashboardAppService;

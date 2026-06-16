@@ -3,9 +3,13 @@
 import { useEffect, useState } from 'react'
 import { useParams, useRouter, useSearchParams } from 'next/navigation'
 import Link from 'next/link'
-import { catalogApi } from '@/api/catalog'
+import { makeCatalogApi } from '@/api/catalog'
+import { adminApiClient, redirectToLogin } from '@/lib/admin-client'
+import { ApiError } from '@/lib/api-client'
 import { ProductForm, type ProductFormValues } from '@/components/admin/products/ProductForm'
 import type { Product } from '@/types'
+
+const catalogApi = makeCatalogApi(adminApiClient)
 
 export default function EditProductPage() {
   const { id } = useParams<{ id: string }>()
@@ -19,6 +23,7 @@ export default function EditProductPage() {
   useEffect(() => {
     catalogApi.getProduct(id)
       .then(setProduct)
+      .catch((err) => { if (err instanceof ApiError && err.status === 401) redirectToLogin('session-expired') })
       .finally(() => setLoading(false))
   }, [id])
 

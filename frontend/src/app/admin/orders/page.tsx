@@ -1,4 +1,6 @@
-import { ordersApi } from '@/api/orders'
+import { makeOrdersApi } from '@/api/orders'
+import { makeAdminApiClient, redirectToExpiredLogin } from '@/lib/auth'
+import { ApiError } from '@/lib/api-client'
 import { AdminPageHeader } from '@/components/admin/AdminPageHeader'
 import { EmptyState } from '@/components/admin/EmptyState'
 import { OrdersTable } from '@/components/admin/OrdersTable'
@@ -7,7 +9,17 @@ export const dynamic = 'force-dynamic'
 export const metadata = { title: 'Orders' }
 
 export default async function AdminOrdersPage() {
-  const { items: orders, totalCount } = await ordersApi.getList({ maxResultCount: 100 })
+  const ordersApi = makeOrdersApi(makeAdminApiClient())
+  let orders: Awaited<ReturnType<typeof ordersApi.getList>>['items'] = []
+  let totalCount = 0
+  try {
+    const result = await ordersApi.getList({ maxResultCount: 100 })
+    orders = result.items
+    totalCount = result.totalCount
+  } catch (err) {
+    if (err instanceof ApiError && err.status === 401) redirectToExpiredLogin('/admin/orders')
+    throw err
+  }
 
   return (
     <div className="admin-page admin-stack">

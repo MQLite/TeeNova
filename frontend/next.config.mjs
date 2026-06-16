@@ -14,6 +14,18 @@ const nextConfig = {
       },
     ],
   },
+
+  // Prevent browsers from caching Admin pages in bfcache.
+  // Without this, clicking back after logout may briefly show a stale rendered page.
+  // API responses are already no-store (set in the proxy route handler).
+  async headers() {
+    return [
+      {
+        source: '/admin/:path*',
+        headers: [{ key: 'Cache-Control', value: 'no-store' }],
+      },
+    ]
+  },
 }
 
 export default nextConfig

@@ -1,6 +1,8 @@
 import { notFound } from 'next/navigation'
 import Link from 'next/link'
-import { catalogApi } from '@/api/catalog'
+import { makeCatalogApi } from '@/api/catalog'
+import { makeAdminApiClient, redirectToExpiredLogin } from '@/lib/auth'
+import { ApiError } from '@/lib/api-client'
 import { ProductHeader } from '@/components/admin/products/ProductHeader'
 import { ProductDetailBody } from './ProductDetailBody'
 
@@ -14,10 +16,12 @@ interface PageProps {
 export default async function AdminProductDetailPage({ params }: PageProps) {
   const { id } = await params
 
+  const catalogApi = makeCatalogApi(makeAdminApiClient())
   let product
   try {
     product = await catalogApi.getProduct(id)
-  } catch {
+  } catch (err) {
+    if (err instanceof ApiError && err.status === 401) redirectToExpiredLogin(`/admin/products/${id}`)
     notFound()
   }
 

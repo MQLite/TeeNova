@@ -2,8 +2,12 @@
 
 import { useEffect, useRef, useState } from 'react'
 import Link from 'next/link'
-import { catalogApi } from '@/api/catalog'
+import { makeCatalogApi } from '@/api/catalog'
+import { adminApiClient, redirectToLogin } from '@/lib/admin-client'
+import { ApiError } from '@/lib/api-client'
 import { EmptyState } from '@/components/admin/products/EmptyState'
+
+const catalogApi = makeCatalogApi(adminApiClient)
 import { ProductsTable } from '@/components/admin/products/ProductsTable'
 import { ProductHeader } from '@/components/admin/products/ProductHeader'
 import type { ProductListItem } from '@/types'
@@ -46,6 +50,8 @@ export default function AdminProductsPage() {
         })
         setProducts(result.items)
         setTotalCount(result.totalCount)
+      } catch (err) {
+        if (err instanceof ApiError && err.status === 401) { redirectToLogin('session-expired'); return }
       } finally {
         setLoading(false)
       }

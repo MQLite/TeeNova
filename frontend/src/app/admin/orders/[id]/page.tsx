@@ -3,8 +3,13 @@
 import { useEffect, useRef, useState } from 'react'
 import Link from 'next/link'
 import { useParams } from 'next/navigation'
-import { ordersApi } from '@/api/orders'
-import { filesApi } from '@/api/files'
+import { makeOrdersApi } from '@/api/orders'
+import { makeFilesApi } from '@/api/files'
+import { adminApiClient, redirectToLogin } from '@/lib/admin-client'
+import { ApiError } from '@/lib/api-client'
+
+const ordersApi = makeOrdersApi(adminApiClient)
+const filesApi = makeFilesApi(adminApiClient)
 import { Card, CardBody, CardHeader } from '@/components/ui/Card'
 import { Button } from '@/components/ui/Button'
 import { OrderActionPanel } from '@/components/admin/OrderActionPanel'
@@ -229,7 +234,10 @@ export default function AdminOrderDetailPage() {
   const [toastTone, setToastTone] = useState<'success' | 'error'>('success')
 
   useEffect(() => {
-    ordersApi.getById(id).then(setOrder).finally(() => setLoading(false))
+    ordersApi.getById(id)
+      .then(setOrder)
+      .catch((err) => { if (err instanceof ApiError && err.status === 401) redirectToLogin('session-expired') })
+      .finally(() => setLoading(false))
   }, [id])
 
   // 鈹€鈹€ Action handlers 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€

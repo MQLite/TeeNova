@@ -8,8 +8,12 @@ import { PrintAreaFormModal } from '@/components/admin/print-config/PrintAreaFor
 import { PrintSizeTable } from '@/components/admin/print-config/PrintSizeTable'
 import { PrintSizeFormModal } from '@/components/admin/print-config/PrintSizeFormModal'
 import { AllowedSizeManager } from '@/components/admin/print-config/AllowedSizeManager'
-import { printConfigApi } from '@/api/print-config'
+import { makePrintConfigApi } from '@/api/print-config'
+import { adminApiClient, redirectToLogin } from '@/lib/admin-client'
+import { ApiError } from '@/lib/api-client'
 import type { PrintArea, PrintSize } from '@/types'
+
+const printConfigApi = makePrintConfigApi(adminApiClient)
 
 type Tab = 'areas' | 'sizes' | 'allowed'
 type StatusFilter = 'all' | 'active' | 'inactive'
@@ -52,6 +56,8 @@ export default function PrintConfigPage() {
     try {
       const data = await printConfigApi.getAdminAreas()
       setAreas(data)
+    } catch (err) {
+      if (err instanceof ApiError && err.status === 401) { redirectToLogin('session-expired'); return }
     } finally {
       setLoadingAreas(false)
     }
@@ -62,6 +68,8 @@ export default function PrintConfigPage() {
     try {
       const data = await printConfigApi.getAdminSizes()
       setSizes(data)
+    } catch (err) {
+      if (err instanceof ApiError && err.status === 401) { redirectToLogin('session-expired'); return }
     } finally {
       setLoadingSizes(false)
     }

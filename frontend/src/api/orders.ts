@@ -1,4 +1,4 @@
-import { apiClient } from '@/lib/api-client'
+import { apiClient, type ApiClient } from '@/lib/api-client'
 import type {
   CreateOnlinePaymentSessionInput,
   DeliveryMethod,
@@ -31,82 +31,86 @@ export interface CreateOrderPayload {
   deliveryMethod?: DeliveryMethod
 }
 
-export const ordersApi = {
-  create(payload: CreateOrderPayload): Promise<Order> {
-    return apiClient.post('/api/orders', payload)
-  },
-
-  getById(id: string): Promise<Order> {
-    return apiClient.get(`/api/orders/${id}`)
-  },
-
-  getList(params?: { skipCount?: number; maxResultCount?: number }): Promise<PagedResult<Order>> {
-    return apiClient.get('/api/orders', {
-      skipCount: params?.skipCount ?? 0,
-      maxResultCount: params?.maxResultCount ?? 20,
-    })
-  },
-
-  updateStatus(id: string, newStatus: OrderStatus, reason?: string): Promise<Order> {
-    return apiClient.put(`/api/orders/${id}/status`, { newStatus, reason })
-  },
-
-  markPaid(id: string): Promise<Order> {
-    return apiClient.post(`/api/orders/${id}/mark-paid`)
-  },
-
-  startReview(id: string): Promise<Order> {
-    return apiClient.post(`/api/orders/${id}/start-review`)
-  },
-
-  reopen(id: string): Promise<Order> {
-    return apiClient.post(`/api/orders/${id}/reopen`)
-  },
-
-  recordNotification(id: string): Promise<Order> {
-    return apiClient.post(`/api/orders/${id}/record-notification`)
-  },
-
-  updateAdminNotes(id: string, adminNotes: string | null): Promise<Order> {
-    return apiClient.put(`/api/orders/${id}/notes`, { adminNotes })
-  },
-
-  approveForPrinting(id: string): Promise<Order> {
-    return apiClient.post(`/api/orders/${id}/approve-for-printing`)
-  },
-
-  startPrinting(id: string): Promise<Order> {
-    return apiClient.post(`/api/orders/${id}/start-printing`)
-  },
-
-  markReady(id: string): Promise<Order> {
-    return apiClient.post(`/api/orders/${id}/mark-ready`)
-  },
-
-  complete(id: string): Promise<Order> {
-    return apiClient.post(`/api/orders/${id}/complete`)
-  },
-
-  recordPayment(orderId: string, input: RecordPaymentInput): Promise<Order> {
-    return apiClient.post(`/api/orders/${orderId}/record-payment`, input)
-  },
-
-  createOnlinePaymentSession(
-    orderId: string,
-    input: CreateOnlinePaymentSessionInput,
-  ): Promise<OnlinePaymentSession> {
-    return apiClient.post(`/api/app/order/${orderId}/online-payment-session`, input)
-  },
-
-  updatePrintDesign(
-    orderId: string,
-    printId: string,
-    payload: {
-      uploadedAssetId?: string | null
-      uploadedAssetUrl?: string | null
-      designNote?: string | null
+export function makeOrdersApi(client: ApiClient) {
+  return {
+    create(payload: CreateOrderPayload): Promise<Order> {
+      return client.post('/api/orders', payload)
     },
-  ): Promise<Order> {
-    return apiClient.put(`/api/orders/${orderId}/prints/${printId}/design`, payload)
-  },
+
+    getById(id: string): Promise<Order> {
+      return client.get(`/api/orders/${id}`)
+    },
+
+    getList(params?: { skipCount?: number; maxResultCount?: number }): Promise<PagedResult<Order>> {
+      return client.get('/api/orders', {
+        skipCount: params?.skipCount ?? 0,
+        maxResultCount: params?.maxResultCount ?? 20,
+      })
+    },
+
+    updateStatus(id: string, newStatus: OrderStatus, reason?: string): Promise<Order> {
+      return client.put(`/api/orders/${id}/status`, { newStatus, reason })
+    },
+
+    markPaid(id: string): Promise<Order> {
+      return client.post(`/api/orders/${id}/mark-paid`)
+    },
+
+    startReview(id: string): Promise<Order> {
+      return client.post(`/api/orders/${id}/start-review`)
+    },
+
+    reopen(id: string): Promise<Order> {
+      return client.post(`/api/orders/${id}/reopen`)
+    },
+
+    recordNotification(id: string): Promise<Order> {
+      return client.post(`/api/orders/${id}/record-notification`)
+    },
+
+    updateAdminNotes(id: string, adminNotes: string | null): Promise<Order> {
+      return client.put(`/api/orders/${id}/notes`, { adminNotes })
+    },
+
+    approveForPrinting(id: string): Promise<Order> {
+      return client.post(`/api/orders/${id}/approve-for-printing`)
+    },
+
+    startPrinting(id: string): Promise<Order> {
+      return client.post(`/api/orders/${id}/start-printing`)
+    },
+
+    markReady(id: string): Promise<Order> {
+      return client.post(`/api/orders/${id}/mark-ready`)
+    },
+
+    complete(id: string): Promise<Order> {
+      return client.post(`/api/orders/${id}/complete`)
+    },
+
+    recordPayment(orderId: string, input: RecordPaymentInput): Promise<Order> {
+      return client.post(`/api/orders/${orderId}/record-payment`, input)
+    },
+
+    createOnlinePaymentSession(
+      orderId: string,
+      input: CreateOnlinePaymentSessionInput,
+    ): Promise<OnlinePaymentSession> {
+      return client.post(`/api/app/order/${orderId}/online-payment-session`, input)
+    },
+
+    updatePrintDesign(
+      orderId: string,
+      printId: string,
+      payload: {
+        uploadedAssetId?: string | null
+        uploadedAssetUrl?: string | null
+        designNote?: string | null
+      },
+    ): Promise<Order> {
+      return client.put(`/api/orders/${orderId}/prints/${printId}/design`, payload)
+    },
+  }
 }
+
+export const ordersApi = makeOrdersApi(apiClient)

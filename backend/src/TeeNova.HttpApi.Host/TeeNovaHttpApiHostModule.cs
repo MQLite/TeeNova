@@ -1,10 +1,21 @@
 using System;
+using System.Net;
+using System.Text;
 using System.Text.Json.Serialization;
+using System.Threading.RateLimiting;
 using System.Threading.Tasks;
+using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Cors;
+using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.HttpOverrides;
+using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Logging;
+using Microsoft.IdentityModel.Tokens;
+using Microsoft.OpenApi.Models;
+using TeeNova.Auth;
 using TeeNova.EntityFrameworkCore;
 using Volo.Abp;
 using Volo.Abp.AspNetCore.Mvc;
@@ -33,6 +44,9 @@ public class TeeNovaHttpApiHostModule : AbpModule
 
         ConfigureCors(context, configuration);
         ConfigureSwagger(context);
+        ConfigureJwtAuthentication(context, configuration);
+        ConfigureForwardedHeaders(context);
+        ConfigureRateLimiting(context, configuration);
 
         // Serialize enums as strings so the frontend receives "Pending" not 0
         context.Services.AddControllers()
@@ -67,6 +81,107 @@ public class TeeNovaHttpApiHostModule : AbpModule
             options.SwaggerDoc("v1", new() { Title = "TeeNova API", Version = "v1" });
             options.DocInclusionPredicate((_, _) => true);
             options.CustomSchemaIds(type => type.FullName);
+
+            // Add Bearer token support to Swagger UI so admins can authorize directly in the docs.
+            var bearerScheme = new OpenApiSecurityScheme
+            {
+                Name         = "Authorization",
+                Description  = "Enter: Bearer {token}",
+                In           = ParameterLocation.Header,
+                Type         = SecuritySchemeType.Http,
+                Scheme       = "bearer",
+                BearerFormat = "JWT",
+                Reference    = new OpenApiReference { Type = ReferenceType.SecurityScheme, Id = "Bearer" },
+            };
+            options.AddSecurityDefinition("Bearer", bearerScheme);
+            options.AddSecurityRequirement(new OpenApiSecurityRequirement { { bearerScheme, [] } });
+        });
+    }
+
+    private void ConfigureJwtAuthentication(ServiceConfigurationContext context, Microsoft.Extensions.Configuration.IConfiguration configuration)
+    {
+        var jwtSection = configuration.GetSection("Jwt");
+        var secret     = jwtSection["Secret"] ?? "";
+        var issuer     = jwtSection["Issuer"]   ?? "";
+        var audience   = jwtSection["Audience"] ?? "";
+
+        context.Services
+            .AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
+            .AddJwtBearer(options =>
+            {
+                options.TokenValidationParameters = new TokenValidationParameters
+                {
+                    ValidateIssuer           = true,
+                    ValidateAudience         = true,
+                    ValidateLifetime         = true,
+                    ValidateIssuerSigningKey = true,
+                    ValidIssuer              = issuer,
+                    ValidAudience            = audience,
+                    IssuerSigningKey         = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(secret)),
+                    ClockSkew                = TimeSpan.Zero,
+                };
+            });
+    }
+
+    private static void ConfigureForwardedHeaders(ServiceConfigurationContext context)
+    {
+        context.Services.Configure<ForwardedHeadersOptions>(options =>
+        {
+            options.ForwardedHeaders = ForwardedHeaders.XForwardedFor;
+            // Trust the Next.js server on the same machine as a proxy so its
+            // forwarded X-Forwarded-For (the real browser IP) is accepted.
+            options.KnownProxies.Add(IPAddress.Loopback);      // 127.0.0.1
+            options.KnownProxies.Add(IPAddress.IPv6Loopback);  // ::1
+        });
+    }
+
+    private static void ConfigureRateLimiting(
+        ServiceConfigurationContext context,
+        Microsoft.Extensions.Configuration.IConfiguration configuration)
+    {
+        var section = configuration.GetSection("AdminAuth:RateLimit");
+        var enabled       = section.GetValue<bool>("Enabled", true);
+        var permitLimit   = section.GetValue<int>("PermitLimit", 5);
+        var windowSeconds = section.GetValue<int>("WindowSeconds", 60);
+        var queueLimit    = section.GetValue<int>("QueueLimit", 0);
+
+        context.Services.AddRateLimiter(options =>
+        {
+            if (enabled)
+            {
+                options.AddPolicy("AdminLoginPolicy", httpContext =>
+                    RateLimitPartition.GetFixedWindowLimiter(
+                        partitionKey: httpContext.Connection.RemoteIpAddress?.ToString() ?? "unknown",
+                        factory: _ => new FixedWindowRateLimiterOptions
+                        {
+                            PermitLimit      = permitLimit,
+                            Window           = TimeSpan.FromSeconds(windowSeconds),
+                            QueueLimit       = queueLimit,
+                            AutoReplenishment = true,
+                        }));
+            }
+            else
+            {
+                // Emergency disable path: register the policy name with no limiting so
+                // [EnableRateLimiting("AdminLoginPolicy")] compiles and deploys unchanged.
+                options.AddPolicy("AdminLoginPolicy", _ =>
+                    RateLimitPartition.GetNoLimiter<string>("disabled"));
+            }
+
+            options.OnRejected = async (ctx, ct) =>
+            {
+                ctx.HttpContext.Response.StatusCode = StatusCodes.Status429TooManyRequests;
+                ctx.HttpContext.Response.Headers["Retry-After"] = windowSeconds.ToString();
+                await ctx.HttpContext.Response.WriteAsJsonAsync(
+                    new { message = "Too many login attempts. Please wait before trying again." },
+                    ct);
+
+                ctx.HttpContext.RequestServices
+                    .GetRequiredService<ILogger<TeeNovaHttpApiHostModule>>()
+                    .LogWarning(
+                        "Admin login rate limit exceeded from IP {RemoteIp}.",
+                        ctx.HttpContext.Connection.RemoteIpAddress);
+            };
         });
     }
 
@@ -80,9 +195,11 @@ public class TeeNovaHttpApiHostModule : AbpModule
             app.UseDeveloperExceptionPage();
         }
 
+        app.UseForwardedHeaders();
         app.UseAbpRequestLocalization();
         app.UseStaticFiles();
         app.UseRouting();
+        app.UseRateLimiter();
         app.UseCors();
         app.UseAuthentication();
         app.UseAuthorization();

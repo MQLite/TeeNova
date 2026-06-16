@@ -1,6 +1,7 @@
 using System.Threading.Tasks;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using TeeNova.Auth;
 using TeeNova.Email;
 using TeeNova.Files;
 using TeeNova.Payments;
@@ -30,19 +31,22 @@ public class TeeNovaApplicationModule : AbpModule
             options.AddMaps<TeeNovaApplicationModule>();
         });
 
-        context.Services.Configure<EmailOptions>(
-            context.Services.GetConfiguration().GetSection("Email"));
+        var configuration = context.Services.GetConfiguration();
+
+        context.Services.Configure<AdminAuthOptions>(configuration.GetSection("AdminAuth"));
+        context.Services.Configure<JwtOptions>(configuration.GetSection("Jwt"));
+
+        context.Services.Configure<EmailOptions>(configuration.GetSection("Email"));
 
         context.Services.AddTransient<IEmailSettingsProvider, EmailSettingsProvider>();
         context.Services.AddTransient<IOrderEmailNotificationService, OrderEmailNotificationService>();
 
-        context.Services.Configure<OnlinePaymentOptions>(
-            context.Services.GetConfiguration().GetSection("OnlinePayments"));
+        context.Services.Configure<OnlinePaymentOptions>(configuration.GetSection("OnlinePayments"));
 
         context.Services.AddTransient<IOnlinePaymentProviderResolver, OnlinePaymentProviderResolver>();
 
         // Register mock providers only when explicitly enabled — never in production.
-        var useMockProviders = context.Services.GetConfiguration()
+        var useMockProviders = configuration
             .GetSection("OnlinePayments")
             .GetValue<bool>("UseMockProviders");
 
@@ -59,8 +63,7 @@ public class TeeNovaApplicationModule : AbpModule
             // Only providers with Enabled = true are registered; the resolver throws if a
             // disabled/unregistered provider is requested.
             // PayPal, Windcave, and POLi implementations are added in Jira 7037, 7040, 7041.
-            var providersConfig = context.Services.GetConfiguration()
-                .GetSection("OnlinePayments:Providers");
+            var providersConfig = configuration.GetSection("OnlinePayments:Providers");
 
             if (providersConfig.GetSection("Stripe").GetValue<bool>("Enabled"))
                 context.Services.AddTransient<IOnlinePaymentProvider, StripeOnlinePaymentProvider>();

@@ -1,6 +1,8 @@
 import Link from 'next/link'
 import { notFound } from 'next/navigation'
-import { filesApi } from '@/api/files'
+import { makeFilesApi } from '@/api/files'
+import { makeAdminApiClient, redirectToExpiredLogin } from '@/lib/auth'
+import { ApiError } from '@/lib/api-client'
 import { AdminPageHeader } from '@/components/admin/AdminPageHeader'
 import { fileSizeLabel, fileTypeLabel, isPreviewable } from '@/lib/file-utils'
 
@@ -13,10 +15,12 @@ interface Props {
 export default async function AdminAssetDetailPage({ params }: Props) {
   const { id } = await params
 
+  const filesApi = makeFilesApi(makeAdminApiClient())
   let asset
   try {
     asset = await filesApi.getAdminAssetById(id)
-  } catch {
+  } catch (err) {
+    if (err instanceof ApiError && err.status === 401) redirectToExpiredLogin(`/admin/assets/${id}`)
     notFound()
   }
 

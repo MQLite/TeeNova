@@ -1,14 +1,23 @@
 import { AdminPageHeader } from '@/components/admin/AdminPageHeader'
 import { EmptyState } from '@/components/admin/EmptyState'
-import { filesApi } from '@/api/files'
+import { makeFilesApi } from '@/api/files'
+import { makeAdminApiClient, redirectToExpiredLogin } from '@/lib/auth'
+import { ApiError } from '@/lib/api-client'
 import { AssetsGrid } from './AssetsGrid'
 
 export const metadata = { title: 'Assets' }
 export const dynamic = 'force-dynamic'
 
 export default async function AdminAssetsPage() {
-  const result = await filesApi.getAdminAssets()
-  const assets = result.items ?? []
+  const filesApi = makeFilesApi(makeAdminApiClient())
+  let assets: Awaited<ReturnType<typeof filesApi.getAdminAssets>>['items'] = []
+  try {
+    const result = await filesApi.getAdminAssets()
+    assets = result.items ?? []
+  } catch (err) {
+    if (err instanceof ApiError && err.status === 401) redirectToExpiredLogin('/admin/assets')
+    throw err
+  }
 
   return (
     <div className="admin-page admin-stack">
