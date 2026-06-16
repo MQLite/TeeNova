@@ -9,7 +9,10 @@ import {
   fileSizeLabel,
   isPreviewable,
 } from '@/lib/file-utils'
-import { filesApi } from '@/api/files'
+import { makeFilesApi } from '@/api/files'
+import { adminApiClient } from '@/lib/admin-client'
+
+const filesApi = makeFilesApi(adminApiClient)
 
 const FILTERS = ['All', 'Images', 'PDFs', 'AI / Vector'] as const
 type Filter = (typeof FILTERS)[number]

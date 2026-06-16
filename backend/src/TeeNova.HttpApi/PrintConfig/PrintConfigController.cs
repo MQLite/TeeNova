@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Threading.Tasks;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using TeeNova.PrintConfig.Dtos;
 
@@ -8,6 +9,7 @@ namespace TeeNova.PrintConfig;
 
 [ApiController]
 [Route("api/print-config")]
+[Authorize]
 public class PrintConfigController : TeeNovaControllerBase
 {
     private readonly IPrintConfigAppService _printConfigAppService;
@@ -21,11 +23,13 @@ public class PrintConfigController : TeeNovaControllerBase
 
     /// <summary>Returns print areas. Pass isActive=false or omit for all records.</summary>
     [HttpGet("areas")]
+    [AllowAnonymous]
     public async Task<List<PrintAreaDto>> GetAreasAsync([FromQuery] bool? isActive = true)
         => await _printConfigAppService.GetAreasAsync(isActive);
 
     /// <summary>Returns a single print area by id.</summary>
     [HttpGet("areas/{id:guid}")]
+    [AllowAnonymous]
     public async Task<PrintAreaDto> GetAreaAsync(Guid id)
         => await _printConfigAppService.GetAreaAsync(id);
 
@@ -48,11 +52,13 @@ public class PrintConfigController : TeeNovaControllerBase
 
     /// <summary>Returns print sizes. Pass isActive=false or omit for all records.</summary>
     [HttpGet("sizes")]
+    [AllowAnonymous]
     public async Task<List<PrintSizeDto>> GetSizesAsync([FromQuery] bool? isActive = true)
         => await _printConfigAppService.GetSizesAsync(isActive);
 
     /// <summary>Returns a single print size by id.</summary>
     [HttpGet("sizes/{id:guid}")]
+    [AllowAnonymous]
     public async Task<PrintSizeDto> GetSizeAsync(Guid id)
         => await _printConfigAppService.GetSizeAsync(id);
 
@@ -75,6 +81,7 @@ public class PrintConfigController : TeeNovaControllerBase
 
     /// <summary>Returns allowed print sizes for a print area.</summary>
     [HttpGet("areas/{areaId:guid}/sizes")]
+    [AllowAnonymous]
     public async Task<List<PrintAreaSizeOptionDto>> GetAreaSizesAsync(Guid areaId, [FromQuery] bool includeInactive = false)
         => await _printConfigAppService.GetAreaSizesAsync(areaId, includeInactive);
 

@@ -1,5 +1,7 @@
 import Link from 'next/link'
-import { dashboardApi } from '@/api/dashboard'
+import { makeDashboardApi } from '@/api/dashboard'
+import { makeAdminApiClient, redirectToExpiredLogin } from '@/lib/auth'
+import { ApiError } from '@/lib/api-client'
 import { SkeletonBlock } from '@/components/admin/LoadingSkeleton'
 import { OrderStatusBadge, STATUS_CONFIG } from '@/components/admin/OrderStatusBadge'
 import type { DashboardStats, DashboardRecentOrder, DashboardDailyCount, OrderStatus } from '@/types'
@@ -207,10 +209,12 @@ function Section({ title, action, children }: { title: string; action?: ReactNod
 }
 
 export default async function AdminDashboardPage() {
+  const dashboardApi = makeDashboardApi(makeAdminApiClient())
   let stats: DashboardStats | null = null
   try {
     stats = await dashboardApi.getSummary()
-  } catch {
+  } catch (err) {
+    if (err instanceof ApiError && err.status === 401) redirectToExpiredLogin('/admin')
     // Backend unreachable — show skeleton state gracefully
   }
 

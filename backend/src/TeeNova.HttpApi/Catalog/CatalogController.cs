@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using TeeNova.Catalog.Dtos;
@@ -11,6 +12,7 @@ namespace TeeNova.Catalog;
 
 [ApiController]
 [Route("api/catalog")]
+[Authorize]
 public class CatalogController : TeeNovaControllerBase
 {
     private readonly ICatalogAppService _catalogAppService;
@@ -22,11 +24,13 @@ public class CatalogController : TeeNovaControllerBase
 
     /// <summary>Returns paginated product list. Supports filtering by type and search term.</summary>
     [HttpGet("products")]
+    [AllowAnonymous]
     public async Task<PagedResultDto<ProductListItemDto>> GetListAsync([FromQuery] GetProductsInput input)
         => await _catalogAppService.GetListAsync(input);
 
     /// <summary>Returns full product detail including all variants and images.</summary>
     [HttpGet("products/{id:guid}")]
+    [AllowAnonymous]
     public async Task<ProductDto> GetAsync(Guid id)
         => await _catalogAppService.GetAsync(id);
 

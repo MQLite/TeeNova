@@ -1,4 +1,5 @@
 using System.Threading.Tasks;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using TeeNova.Email.Dtos;
 
@@ -6,6 +7,7 @@ namespace TeeNova.Email;
 
 [ApiController]
 [Route("api/admin/email-settings")]
+[Authorize]
 public class EmailSettingsController : TeeNovaControllerBase
 {
     private readonly IEmailSettingsAppService _emailSettingsAppService;

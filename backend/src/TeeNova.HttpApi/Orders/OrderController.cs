@@ -1,5 +1,6 @@
 using System;
 using System.Threading.Tasks;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using TeeNova.Orders.Dtos;
 using Volo.Abp.Application.Dtos;
@@ -8,6 +9,7 @@ namespace TeeNova.Orders;
 
 [ApiController]
 [Route("api/orders")]
+[Authorize]
 public class OrderController : TeeNovaControllerBase
 {
     private readonly IOrderAppService _orderAppService;
@@ -18,10 +20,12 @@ public class OrderController : TeeNovaControllerBase
     }
 
     [HttpPost]
+    [AllowAnonymous]
     public async Task<OrderDto> CreateAsync([FromBody] CreateOrderDto input)
         => await _orderAppService.CreateAsync(input);
 
     [HttpGet("{id:guid}")]
+    [AllowAnonymous]
     public async Task<OrderDto> GetAsync(Guid id)
         => await _orderAppService.GetAsync(id);
 

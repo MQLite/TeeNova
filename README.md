@@ -1,21 +1,24 @@
 # TeeNova — Custom T-Shirt Printing Platform
 
-A production-oriented monorepo skeleton for a custom printing e-commerce platform.
+A production-oriented monorepo for a custom printing e-commerce platform.
 
 ## Stack
 
 | Layer | Technology |
 |-------|-----------|
-| Backend | ABP Framework 8.x · ASP.NET Core 9 · EF Core 9 · SQL Server |
+| Backend | ABP Framework 8.x · ASP.NET Core on .NET 8 · EF Core · SQL Server |
 | Frontend | Next.js 14 (App Router) · React 18 · TypeScript · Tailwind CSS |
 | State | Zustand (cart, persisted to localStorage) |
 | Storage | Local disk (dev) → swap `IFileStorageService` for Azure Blob / S3 |
 
+---
+
 ## Quick Start
 
 ### Prerequisites
-- .NET 9 SDK
-- SQL Server (local or Docker)
+
+- .NET 8 SDK
+- SQL Server (local or remote)
 - Node.js 20+
 
 ### Backend
@@ -26,22 +29,18 @@ cd backend
 # Restore packages
 dotnet restore
 
-# Update connection string in:
-# src/TeeNova.HttpApi.Host/appsettings.json
+# Configure local credentials via user-secrets (see Admin Auth section below)
+# OR create src/TeeNova.HttpApi.Host/appsettings.Development.json (gitignored)
 
 # Create and seed the database
-dotnet ef migrations add Init \
-  --project src/TeeNova.EntityFrameworkCore \
-  --startup-project src/TeeNova.HttpApi.Host
-
 dotnet ef database update \
   --project src/TeeNova.EntityFrameworkCore \
   --startup-project src/TeeNova.HttpApi.Host
 
 # Run the API
-dotnet run --project src/TeeNova.HttpApi.Host
-# → https://localhost:44300
-# → Swagger: https://localhost:44300/swagger
+ASPNETCORE_ENVIRONMENT=Development dotnet run --project src/TeeNova.HttpApi.Host
+# → http://localhost:5000
+# → Swagger: http://localhost:5000/swagger
 ```
 
 ### Frontend
@@ -54,25 +53,91 @@ npm install
 
 # Configure environment
 cp .env.local.example .env.local
-# Edit .env.local: set NEXT_PUBLIC_API_BASE_URL=https://localhost:44300
+# .env.local already has NEXT_PUBLIC_API_BASE_URL=http://localhost:5000
 
 # Run dev server
 npm run dev
 # → http://localhost:3000
 ```
 
+---
+
+## Admin Authentication
+
+The Admin portal (`/admin`) is protected by JWT authentication. All JWT and credential config is supplied at runtime via user-secrets or environment variables — no secrets are committed.
+
+### Local dev — user-secrets
+
+```bash
+cd backend/src/TeeNova.HttpApi.Host
+
+dotnet user-secrets set "Jwt:Secret"            "my-local-dev-jwt-secret-min-32-chars!!"
+dotnet user-secrets set "Jwt:Issuer"            "http://localhost:5000"
+dotnet user-secrets set "Jwt:Audience"          "TeeNovaAdminClient"
+dotnet user-secrets set "Jwt:ExpiryMinutes"     "480"
+dotnet user-secrets set "AdminAuth:Username"    "admin"
+dotnet user-secrets set "AdminAuth:PasswordHash" "<bcrypt-hash>"
+dotnet user-secrets set "App:SelfUrl"           "http://localhost:5000"
+dotnet user-secrets set "App:CorsOrigins"       "http://localhost:3000"
+dotnet user-secrets set "ConnectionStrings:Default" "Server=...;Database=TeeNova;..."
+```
+
+Alternatively, create `src/TeeNova.HttpApi.Host/appsettings.Development.json` (gitignored by `backend/.gitignore`).
+
+### Generating a BCrypt password hash
+
+`AdminAuth:PasswordHash` must be a BCrypt hash (work factor ≥ 10). **Never commit the plaintext password.**
+
+**C# (using the project's BCrypt.Net-Next package):**
+
+```csharp
+Console.WriteLine(BCrypt.Net.BCrypt.HashPassword("your-password", workFactor: 12));
+// Paste the output ($2a$12$...) as AdminAuth:PasswordHash
+```
+
+**Linux/Mac:**
+
+```bash
+htpasswd -bnBC 12 "" your-password | tr -d ':\n'
+```
+
+Any online BCrypt generator at work factor 12 also works.
+
+### Admin login
+
+Navigate to `http://localhost:3000/admin/login`.  
+Credentials: whatever you set in `AdminAuth:Username` / `AdminAuth:PasswordHash`.  
+On success a `admin_token` HttpOnly cookie is set (never exposed to JavaScript).
+
+For full deployment and VPS configuration, see **[docs/admin-auth-deployment.md](docs/admin-auth-deployment.md)**.
+
+---
+
 ## API Endpoints
+
+### Public (storefront)
 
 | Method | Path | Description |
 |--------|------|-------------|
 | GET | /api/catalog/products | Paginated product list |
 | GET | /api/catalog/products/{id} | Product detail |
 | POST | /api/files/upload | Upload design image |
-| GET | /api/customization/print-positions | Available print positions |
 | POST | /api/orders | Create order |
-| GET | /api/orders | List orders (admin) |
-| GET | /api/orders/{id} | Order detail |
+| GET | /api/orders/{id} | Order detail (customer) |
+
+### Protected (Admin — requires Bearer token)
+
+| Method | Path | Description |
+|--------|------|-------------|
+| POST | /api/auth/login | Admin login → JWT |
+| GET | /api/auth/me | Validate token, return identity |
+| GET | /api/admin/dashboard/summary | Dashboard stats |
+| GET | /api/orders | All orders (admin) |
 | PUT | /api/orders/{id}/status | Update order status |
+| GET | /api/admin/assets | Uploaded asset list |
+| GET | /api/print-config/admin/areas | Print areas (admin) |
+
+---
 
 ## User Flow (Frontend)
 
@@ -81,7 +146,9 @@ npm run dev
 → /cart (review) → /checkout (shipping form) → /orders/{id} (confirmation)
 ```
 
-Admin portal: `/admin/orders`, `/admin/products`
+Admin portal: `/admin` (login at `/admin/login`)
+
+---
 
 ## Future Extension Points
 
@@ -112,8 +179,3 @@ Admin portal: `/admin/orders`, `/admin/products`
 - Implement `AzureBlobStorageService : IFileStorageService`
 - Register in `TeeNovaDomainModule` based on configuration
 - No other code changes needed — all consumers depend on `IFileStorageService`
-
-### Admin Portal Split
-- The `(admin)` route group in Next.js can be extracted to a separate app
-- Share the `@/api/*` and `@/types` packages via an internal npm package or symlink
-- Add authentication middleware to the ABP host (JWT / OpenIddict)

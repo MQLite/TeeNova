@@ -3,8 +3,12 @@
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
-import { catalogApi } from '@/api/catalog'
+import { makeCatalogApi } from '@/api/catalog'
+import { adminApiClient, redirectToLogin } from '@/lib/admin-client'
+import { ApiError } from '@/lib/api-client'
 import { ProductForm, type ProductFormValues } from '@/components/admin/products/ProductForm'
+
+const catalogApi = makeCatalogApi(adminApiClient)
 
 export default function NewProductPage() {
   const router = useRouter()
@@ -21,6 +25,9 @@ export default function NewProductPage() {
         isActive: values.isActive,
       })
       router.push(`/admin/products/${product.id}`)
+    } catch (err) {
+      if (err instanceof ApiError && err.status === 401) { redirectToLogin('session-expired'); return }
+      throw err
     } finally {
       setSaving(false)
     }

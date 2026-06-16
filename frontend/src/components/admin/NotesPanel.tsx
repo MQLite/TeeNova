@@ -1,7 +1,10 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import { ordersApi } from '@/api/orders'
+import { makeOrdersApi } from '@/api/orders'
+import { adminApiClient } from '@/lib/admin-client'
+
+const ordersApi = makeOrdersApi(adminApiClient)
 
 interface Props {
   orderId: string

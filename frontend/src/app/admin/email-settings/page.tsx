@@ -2,8 +2,12 @@
 
 import { useEffect, useState } from 'react'
 import { AdminPageHeader } from '@/components/admin/AdminPageHeader'
-import { emailSettingsApi } from '@/api/email-settings'
+import { makeEmailSettingsApi } from '@/api/email-settings'
+import { adminApiClient, redirectToLogin } from '@/lib/admin-client'
+import { ApiError } from '@/lib/api-client'
 import type { EmailSettings } from '@/types'
+
+const emailSettingsApi = makeEmailSettingsApi(adminApiClient)
 
 const EMPTY: EmailSettings = {
   adminNotificationEmail: null,
@@ -32,7 +36,10 @@ export default function EmailSettingsPage() {
   useEffect(() => {
     emailSettingsApi.get()
       .then(setSettings)
-      .catch(() => showToast('Failed to load settings.', 'error'))
+      .catch((err) => {
+        if (err instanceof ApiError && err.status === 401) { redirectToLogin('session-expired'); return }
+        showToast('Failed to load settings.', 'error')
+      })
       .finally(() => setLoading(false))
   }, [])
 
