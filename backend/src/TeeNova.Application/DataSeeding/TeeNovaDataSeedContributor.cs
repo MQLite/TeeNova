@@ -3,6 +3,8 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Options;
+using TeeNova.Auth;
 using TeeNova.Catalog;
 using TeeNova.Customization;
 using TeeNova.Orders;
@@ -45,6 +47,8 @@ public class TeeNovaDataSeedContributor : IDataSeedContributor, ITransientDepend
     private static readonly Guid Asset3Id = new("b0000003-0000-0000-0000-000000000003"); // Order5 鈥?company logo
     private static readonly Guid Asset4Id = new("b0000004-0000-0000-0000-000000000004"); // Order6 鈥?staff uniform logo
 
+    private readonly IRepository<AdminUser, Guid>         _adminUserRepository;
+    private readonly IOptions<AdminAuthOptions>           _adminAuthOptions;
     private readonly IRepository<Product, Guid>           _productRepository;
     private readonly IRepository<Order, Guid>             _orderRepository;
     private readonly IRepository<UploadedAsset, Guid>     _assetRepository;
@@ -55,6 +59,8 @@ public class TeeNovaDataSeedContributor : IDataSeedContributor, ITransientDepend
     private readonly IClock _clock;
 
     public TeeNovaDataSeedContributor(
+        IRepository<AdminUser, Guid>           adminUserRepository,
+        IOptions<AdminAuthOptions>             adminAuthOptions,
         IRepository<Product, Guid>             productRepository,
         IRepository<Order, Guid>               orderRepository,
         IRepository<UploadedAsset, Guid>       assetRepository,
@@ -64,6 +70,8 @@ public class TeeNovaDataSeedContributor : IDataSeedContributor, ITransientDepend
         IDataFilter dataFilter,
         IClock clock)
     {
+        _adminUserRepository           = adminUserRepository;
+        _adminAuthOptions              = adminAuthOptions;
         _productRepository             = productRepository;
         _orderRepository               = orderRepository;
         _assetRepository               = assetRepository;
@@ -76,10 +84,32 @@ public class TeeNovaDataSeedContributor : IDataSeedContributor, ITransientDepend
 
     public async Task SeedAsync(DataSeedContext context)
     {
+        await SeedInitialAdminUserAsync();
         await CleanupObsoletePrintConfigAsync();
         await SeedPrintAreasAsync();
         await SeedPrintSizesAsync();
         await SeedPrintAreaSizeOptionsAsync();
+    }
+
+    private async Task SeedInitialAdminUserAsync()
+    {
+        if (await _adminUserRepository.AnyAsync())
+            return;
+
+        var opts = _adminAuthOptions.Value;
+        if (string.IsNullOrWhiteSpace(opts.Username) || string.IsNullOrWhiteSpace(opts.PasswordHash))
+            return;
+
+        // Bootstrap the first Admin user from appsettings. After this runs once,
+        // all user management happens through the Admin UI.
+        var user = new AdminUser(
+            Guid.NewGuid(),
+            opts.Username,
+            opts.PasswordHash,
+            AdminRole.Admin,
+            displayName: "Administrator");
+
+        await _adminUserRepository.InsertAsync(user, autoSave: true);
     }
 
     // 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€

@@ -8,9 +8,10 @@ import { AdminSidebar } from '@/components/admin/AdminSidebar'
 interface Props {
   children: ReactNode
   username?: string
+  role?: string
 }
 
-export function AdminShell({ children, username }: Props) {
+export function AdminShell({ children, username, role }: Props) {
   const pathname = usePathname()
   const router = useRouter()
   const [loggingOut, setLoggingOut] = useState(false)
@@ -34,7 +35,7 @@ export function AdminShell({ children, username }: Props) {
 
   return (
     <div className="flex h-screen overflow-hidden bg-[#f7f7f5]">
-      <AdminSidebar />
+      <AdminSidebar role={role} />
 
       <div className="flex flex-1 flex-col overflow-hidden">
         <header className="flex h-14 shrink-0 items-center justify-between border-b border-black/[0.08] bg-white/92 px-6 backdrop-blur-sm lg:px-8">
@@ -55,8 +56,13 @@ export function AdminShell({ children, username }: Props) {
                 {username}
               </span>
             )}
-            <span className="rounded-full border border-black/[0.08] bg-black/[0.02] px-3 py-1 font-mono text-[10px] uppercase tracking-[0.54px] text-black/55">
-              Staff
+            <span className={[
+              'rounded-full border px-3 py-1 font-mono text-[10px] uppercase tracking-[0.54px]',
+              role === 'Viewer'
+                ? 'border-amber-200 bg-amber-50 text-amber-700'
+                : 'border-black/[0.08] bg-black/[0.02] text-black/55',
+            ].join(' ')}>
+              {role ?? 'Staff'}
             </span>
             <div className="flex h-8 w-8 items-center justify-center rounded-full bg-black text-[10px] font-medium text-white shadow-sm">
               {initial}
