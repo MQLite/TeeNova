@@ -3,7 +3,13 @@ import { catalogApi } from '@/api/catalog'
 import { ProductCard } from '@/components/products/ProductCard'
 
 export default async function HomePage() {
-  const { items: featured } = await catalogApi.getProducts({ maxResultCount: 3, isActive: true })
+  let featured: Awaited<ReturnType<typeof catalogApi.getProducts>>['items'] = []
+  try {
+    const result = await catalogApi.getProducts({ maxResultCount: 3, isActive: true })
+    featured = result.items
+  } catch {
+    // Backend unavailable — render without featured products
+  }
 
   return (
     <>

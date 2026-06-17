@@ -13,12 +13,20 @@ export default async function ProductsPage({ searchParams }: PageProps) {
   const page = Number(params.page ?? 1)
   const pageSize = 12
 
-  const { items, totalCount } = await catalogApi.getProducts({
-    search: params.search,
-    productType: params.type,
-    skipCount: (page - 1) * pageSize,
-    maxResultCount: pageSize,
-  })
+  let items: Awaited<ReturnType<typeof catalogApi.getProducts>>['items'] = []
+  let totalCount = 0
+  try {
+    const result = await catalogApi.getProducts({
+      search: params.search,
+      productType: params.type,
+      skipCount: (page - 1) * pageSize,
+      maxResultCount: pageSize,
+    })
+    items = result.items
+    totalCount = result.totalCount
+  } catch {
+    // Backend unavailable — render empty state
+  }
 
   return (
     <>
