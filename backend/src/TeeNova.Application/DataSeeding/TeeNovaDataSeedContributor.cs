@@ -3,7 +3,6 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
 using Microsoft.EntityFrameworkCore;
-using Microsoft.Extensions.Configuration;
 using TeeNova.Catalog;
 using TeeNova.Customization;
 using TeeNova.Orders;
@@ -53,7 +52,6 @@ public class TeeNovaDataSeedContributor : IDataSeedContributor, ITransientDepend
     private readonly IRepository<PrintSize, Guid>         _printSizeRepository;
     private readonly IRepository<PrintAreaSizeOption, Guid> _printAreaSizeOptionRepository;
     private readonly IDataFilter _dataFilter;
-    private readonly IConfiguration _configuration;
     private readonly IClock _clock;
 
     public TeeNovaDataSeedContributor(
@@ -64,7 +62,6 @@ public class TeeNovaDataSeedContributor : IDataSeedContributor, ITransientDepend
         IRepository<PrintSize, Guid>           printSizeRepository,
         IRepository<PrintAreaSizeOption, Guid> printAreaSizeOptionRepository,
         IDataFilter dataFilter,
-        IConfiguration configuration,
         IClock clock)
     {
         _productRepository             = productRepository;
@@ -74,7 +71,6 @@ public class TeeNovaDataSeedContributor : IDataSeedContributor, ITransientDepend
         _printSizeRepository           = printSizeRepository;
         _printAreaSizeOptionRepository = printAreaSizeOptionRepository;
         _dataFilter                    = dataFilter;
-        _configuration                 = configuration;
         _clock                         = clock;
     }
 
@@ -253,7 +249,7 @@ public class TeeNovaDataSeedContributor : IDataSeedContributor, ITransientDepend
         }
     }
 
-    private async Task SeedProductsAsync(string baseUrl)
+    private async Task SeedProductsAsync()
     {
         HashSet<Guid> existingIds;
         using (_dataFilter.Disable<ISoftDelete>())
@@ -269,7 +265,7 @@ public class TeeNovaDataSeedContributor : IDataSeedContributor, ITransientDepend
             {
                 Description = "A timeless everyday classic. Soft 100% cotton with a relaxed fit, perfect for vibrant custom prints. Available in multiple colors and sizes.",
                 IsActive = true
-            }, baseUrl + "/images/products/classic-tee.svg",
+            }, "/images/products/classic-tee.svg",
             ["White", "Black", "Navy Blue"],
             ["S", "M", "L", "XL", "XXL"],
             "CCT");
@@ -279,7 +275,7 @@ public class TeeNovaDataSeedContributor : IDataSeedContributor, ITransientDepend
             {
                 Description = "Premium quality unisex tee in a soft cotton-modal blend. Modern slim fit with a reinforced collar 鈥?ideal for bold custom artwork.",
                 IsActive = true
-            }, baseUrl + "/images/products/premium-tee.svg",
+            }, "/images/products/premium-tee.svg",
             ["Charcoal", "White", "Forest Green"],
             ["S", "M", "L", "XL"],
             "PUT", xlSurcharge: 2.00m);
@@ -289,7 +285,7 @@ public class TeeNovaDataSeedContributor : IDataSeedContributor, ITransientDepend
             {
                 Description = "Streetwear-inspired oversized tee with dropped shoulders. Heavy 280gsm cotton gives a premium feel 鈥?perfect for full-front oversized prints.",
                 IsActive = true
-            }, baseUrl + "/images/products/oversized-tee.svg",
+            }, "/images/products/oversized-tee.svg",
             ["Black", "Sand", "Bone White"],
             ["M", "L", "XL", "XXL"],
             "OST", xxlSurcharge: 5.00m);
@@ -329,7 +325,7 @@ public class TeeNovaDataSeedContributor : IDataSeedContributor, ITransientDepend
     // Demo Assets
     // 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
 
-    private async Task SeedAssetsAsync(string baseUrl)
+    private async Task SeedAssetsAsync()
     {
         var existingIds = (await _assetRepository.GetListAsync(
             a => a.Id == Asset1Id || a.Id == Asset2Id || a.Id == Asset3Id || a.Id == Asset4Id,
@@ -341,7 +337,7 @@ public class TeeNovaDataSeedContributor : IDataSeedContributor, ITransientDepend
             await _assetRepository.InsertAsync(new UploadedAsset(
                 Asset1Id,
                 "sarah_birthday_design.svg",
-                baseUrl + "/images/products/classic-tee.svg",
+                "/images/products/classic-tee.svg",
                 "image/svg+xml",
                 42_500), autoSave: true);
 
@@ -349,7 +345,7 @@ public class TeeNovaDataSeedContributor : IDataSeedContributor, ITransientDepend
             await _assetRepository.InsertAsync(new UploadedAsset(
                 Asset2Id,
                 "auckland_fc_crest_hires.png",
-                baseUrl + "/images/products/classic-tee.svg",
+                "/images/products/classic-tee.svg",
                 "image/png",
                 218_000), autoSave: true);
 
@@ -357,7 +353,7 @@ public class TeeNovaDataSeedContributor : IDataSeedContributor, ITransientDepend
             await _assetRepository.InsertAsync(new UploadedAsset(
                 Asset3Id,
                 "patel_company_logo.svg",
-                baseUrl + "/images/products/premium-tee.svg",
+                "/images/products/premium-tee.svg",
                 "image/svg+xml",
                 31_200), autoSave: true);
 
@@ -365,7 +361,7 @@ public class TeeNovaDataSeedContributor : IDataSeedContributor, ITransientDepend
             await _assetRepository.InsertAsync(new UploadedAsset(
                 Asset4Id,
                 "wilson_associates_logo.ai",
-                baseUrl + "/images/products/premium-tee.svg",
+                "/images/products/premium-tee.svg",
                 "application/illustrator",
                 156_800), autoSave: true);
     }
@@ -374,7 +370,7 @@ public class TeeNovaDataSeedContributor : IDataSeedContributor, ITransientDepend
     // Demo Orders
     // 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
 
-    private async Task SeedOrdersAsync(string baseUrl)
+    private async Task SeedOrdersAsync()
     {
         var existingOrderIds = (await _orderRepository.GetListAsync(
             o => o.Id == Order1Id || o.Id == Order2Id || o.Id == Order3Id ||

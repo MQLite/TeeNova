@@ -1,4 +1,5 @@
 import Link from 'next/link'
+import { resolveImageUrl } from '@/lib/image-utils'
 import type { ProductListItem } from '@/types'
 
 interface ProductCardProps {
@@ -13,10 +14,10 @@ export function ProductCard({ product }: ProductCardProps) {
     >
       {/* Image area */}
       <div className="relative aspect-square overflow-hidden bg-black/[0.02]">
-        {product.primaryImageUrl ? (
+        {resolveImageUrl(product.primaryImageUrl) ? (
           // eslint-disable-next-line @next/next/no-img-element
           <img
-            src={product.primaryImageUrl}
+            src={resolveImageUrl(product.primaryImageUrl)!}
             alt={product.name}
             className="h-full w-full object-contain p-6 transition-transform duration-500 group-hover:scale-[1.03]"
           />

@@ -3,7 +3,6 @@ using System.IO;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
-using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Hosting;
 
 namespace TeeNova.Files;
@@ -17,16 +16,15 @@ namespace TeeNova.Files;
 ///   {ContentRoot}/wwwroot/uploads/products/  — product catalog images
 ///
 /// UseStaticFiles() serves the wwwroot tree, so both paths are publicly accessible.
+/// Stored URLs are root-relative (/uploads/…) — domain-agnostic and safe across deployments.
 /// </summary>
 public class LocalFileStorageService : IFileStorageService
 {
     private readonly string _uploadsRoot;   // wwwroot/uploads
-    private readonly string _baseUrl;
 
-    public LocalFileStorageService(IConfiguration configuration, IHostEnvironment env)
+    public LocalFileStorageService(IHostEnvironment env)
     {
         _uploadsRoot = Path.Combine(env.ContentRootPath, "wwwroot", "uploads");
-        _baseUrl = configuration["App:SelfUrl"] ?? "https://localhost:44300";
     }
 
     public async Task<string> SaveAsync(
@@ -47,7 +45,7 @@ public class LocalFileStorageService : IFileStorageService
         await using var fileStreamOut = new FileStream(filePath, FileMode.Create);
         await fileStream.CopyToAsync(fileStreamOut, cancellationToken);
 
-        return $"{_baseUrl}/uploads/{folder}/{uniqueFileName}";
+        return $"/uploads/{folder}/{uniqueFileName}";
     }
 
     public Task DeleteAsync(string fileUrl, CancellationToken cancellationToken = default)
@@ -70,24 +68,36 @@ public class LocalFileStorageService : IFileStorageService
 
     /// <summary>
     /// Converts a stored URL back to an absolute local file path.
-    /// Handles both the old flat layout (/uploads/{file}) and
-    /// the new folder layout (/uploads/{folder}/{file}).
+    /// Handles:
+    ///   - Root-relative paths: /uploads/{folder}/{file}  (new format)
+    ///   - Absolute URLs:       https://host/uploads/{folder}/{file}  (legacy data)
+    ///   - Old flat layout:     /uploads/{file}
     /// </summary>
     private string ResolveLocalPath(string fileUrl)
     {
-        var uri = new Uri(fileUrl);
-        var absPath = uri.AbsolutePath;           // e.g. /uploads/designs/abc_file.png
-
-        // Strip the leading /uploads/ prefix to get the relative path within _uploadsRoot
         const string uploadsPrefix = "/uploads/";
-        if (absPath.StartsWith(uploadsPrefix, StringComparison.OrdinalIgnoreCase))
+
+        // New format: root-relative path starting with /uploads/
+        if (fileUrl.StartsWith(uploadsPrefix, StringComparison.OrdinalIgnoreCase))
         {
-            var relative = absPath[uploadsPrefix.Length..];   // designs/abc_file.png  OR  abc_file.png
+            var relative = fileUrl[uploadsPrefix.Length..];
             return Path.Combine(_uploadsRoot, relative.Replace('/', Path.DirectorySeparatorChar));
         }
 
-        // Fallback: just use the filename (legacy flat layout)
-        return Path.Combine(_uploadsRoot, Path.GetFileName(absPath));
+        // Legacy format: absolute URL — extract the path component
+        if (Uri.TryCreate(fileUrl, UriKind.Absolute, out var uri))
+        {
+            var absPath = uri.AbsolutePath;
+            if (absPath.StartsWith(uploadsPrefix, StringComparison.OrdinalIgnoreCase))
+            {
+                var relative = absPath[uploadsPrefix.Length..];
+                return Path.Combine(_uploadsRoot, relative.Replace('/', Path.DirectorySeparatorChar));
+            }
+            return Path.Combine(_uploadsRoot, Path.GetFileName(absPath));
+        }
+
+        // Unknown format — best-effort filename extraction
+        return Path.Combine(_uploadsRoot, Path.GetFileName(fileUrl));
     }
 
     private static string BuildStandardizedFileName(string? fileNamePrefix, string originalFileName)
