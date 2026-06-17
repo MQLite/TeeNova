@@ -29,6 +29,24 @@ export function getAdminUsername(): string | null {
   }
 }
 
+// Decodes the JWT payload and returns the role claim ("Admin" or "Viewer").
+// JwtSecurityTokenHandler maps ClaimTypes.Role → "role" in the JWT output.
+export function getAdminRole(): string | null {
+  const token = getAdminToken()
+  if (!token) return null
+  try {
+    const parts = token.split('.')
+    if (parts.length !== 3) return null
+    const payload = JSON.parse(Buffer.from(parts[1], 'base64').toString('utf8'))
+    const role =
+      payload.role ??
+      payload['http://schemas.microsoft.com/ws/2008/06/identity/claims/role']
+    return typeof role === 'string' ? role : null
+  } catch {
+    return null
+  }
+}
+
 // Returns an api client configured with the admin Bearer token.
 // Call inside an async server component or route handler — never on the client.
 export function makeAdminApiClient() {

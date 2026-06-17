@@ -8,71 +8,79 @@ using Microsoft.Extensions.Options;
 using Microsoft.IdentityModel.Tokens;
 using TeeNova.Auth.Dtos;
 using Volo.Abp.DependencyInjection;
+using Volo.Abp.Domain.Repositories;
 
 namespace TeeNova.Auth;
 
 public class AdminAuthService : IAdminAuthService, ITransientDependency
 {
-    private readonly IOptions<AdminAuthOptions> _adminOpts;
-    private readonly IOptions<JwtOptions> _jwtOpts;
-    private readonly ILogger<AdminAuthService> _logger;
+    private readonly IRepository<AdminUser, Guid> _userRepository;
+    private readonly IOptions<JwtOptions>         _jwtOpts;
+    private readonly ILogger<AdminAuthService>    _logger;
 
     public AdminAuthService(
-        IOptions<AdminAuthOptions> adminOpts,
-        IOptions<JwtOptions> jwtOpts,
-        ILogger<AdminAuthService> logger)
+        IRepository<AdminUser, Guid> userRepository,
+        IOptions<JwtOptions>         jwtOpts,
+        ILogger<AdminAuthService>    logger)
     {
-        _adminOpts = adminOpts;
-        _jwtOpts   = jwtOpts;
-        _logger    = logger;
+        _userRepository = userRepository;
+        _jwtOpts        = jwtOpts;
+        _logger         = logger;
     }
 
-    public Task<AdminLoginResponseDto?> LoginAsync(AdminLoginRequestDto request)
+    public async Task<AdminLoginResponseDto?> LoginAsync(AdminLoginRequestDto request)
     {
-        var adminCfg = _adminOpts.Value;
-        var jwtCfg   = _jwtOpts.Value;
+        var username = request.Username.Trim().ToLowerInvariant();
 
-        // Username comparison is case-insensitive; password check uses constant-time BCrypt verify.
-        var usernameMatch = string.Equals(request.Username, adminCfg.Username, StringComparison.OrdinalIgnoreCase);
-        var passwordMatch = usernameMatch && BCrypt.Net.BCrypt.Verify(request.Password, adminCfg.PasswordHash);
+        var user = await _userRepository.FindAsync(u => u.Username == username);
 
-        if (!usernameMatch || !passwordMatch)
+        if (user is null || !user.IsActive)
         {
-            // Log at Information (not Warning/Error) to avoid alarming on routine bad-password attempts.
-            _logger.LogInformation("Admin login failed for username '{Username}'.", request.Username);
-            return Task.FromResult<AdminLoginResponseDto?>(null);
+            _logger.LogInformation("Admin login failed for username '{Username}' (not found or inactive).", request.Username);
+            return null;
         }
 
-        var response = IssueToken(adminCfg.Username, jwtCfg);
-        _logger.LogInformation("Admin login succeeded for '{Username}'.", adminCfg.Username);
-        return Task.FromResult<AdminLoginResponseDto?>(response);
+        if (!BCrypt.Net.BCrypt.Verify(request.Password, user.PasswordHash))
+        {
+            _logger.LogInformation("Admin login failed for username '{Username}' (wrong password).", request.Username);
+            return null;
+        }
+
+        user.LastLoginAt = DateTime.UtcNow;
+        await _userRepository.UpdateAsync(user, autoSave: true);
+
+        var response = IssueToken(user, _jwtOpts.Value);
+        _logger.LogInformation("Admin login succeeded for '{Username}' (role: {Role}).", user.Username, user.Role);
+        return response;
     }
 
-    private static AdminLoginResponseDto IssueToken(string username, JwtOptions cfg)
+    private static AdminLoginResponseDto IssueToken(AdminUser user, JwtOptions cfg)
     {
-        var key   = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(cfg.Secret));
-        var creds = new SigningCredentials(key, SecurityAlgorithms.HmacSha256);
+        var key       = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(cfg.Secret));
+        var creds     = new SigningCredentials(key, SecurityAlgorithms.HmacSha256);
         var expiresAt = DateTime.UtcNow.AddMinutes(cfg.ExpiryMinutes);
+        var roleName  = user.Role.ToString(); // "Admin" or "Viewer"
 
         var token = new JwtSecurityToken(
-            issuer:            cfg.Issuer,
-            audience:          cfg.Audience,
+            issuer:   cfg.Issuer,
+            audience: cfg.Audience,
             claims:
             [
-                new Claim(JwtRegisteredClaimNames.Sub,  username),
-                new Claim(JwtRegisteredClaimNames.Jti,  Guid.NewGuid().ToString()),
-                new Claim(ClaimTypes.Name,              username),
-                new Claim(ClaimTypes.Role,              "Admin"),
+                new Claim(JwtRegisteredClaimNames.Sub, user.Username),
+                new Claim(JwtRegisteredClaimNames.Jti, Guid.NewGuid().ToString()),
+                new Claim(ClaimTypes.Name,             user.Username),
+                new Claim(ClaimTypes.Role,             roleName),
             ],
-            notBefore:         DateTime.UtcNow,
-            expires:           expiresAt,
+            notBefore:          DateTime.UtcNow,
+            expires:            expiresAt,
             signingCredentials: creds);
 
         return new AdminLoginResponseDto
         {
             Token     = new JwtSecurityTokenHandler().WriteToken(token),
             ExpiresAt = expiresAt,
-            Username  = username,
+            Username  = user.Username,
+            Role      = roleName,
         };
     }
 }

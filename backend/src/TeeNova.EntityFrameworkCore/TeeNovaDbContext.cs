@@ -1,4 +1,5 @@
 using Microsoft.EntityFrameworkCore;
+using TeeNova.Auth;
 using TeeNova.Catalog;
 using TeeNova.Customization;
 using TeeNova.Notifications;
@@ -14,6 +15,9 @@ namespace TeeNova.EntityFrameworkCore;
 [ConnectionStringName("Default")]
 public class TeeNovaDbContext : AbpDbContext<TeeNovaDbContext>
 {
+    // Auth
+    public DbSet<AdminUser> AdminUsers { get; set; }
+
     // Catalog
     public DbSet<Product> Products { get; set; }
     public DbSet<ProductVariant> ProductVariants { get; set; }

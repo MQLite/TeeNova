@@ -415,6 +415,32 @@ export interface EmailSettings {
   adminOrderBaseUrl: string | null
 }
 
+// ─── Admin Users ──────────────────────────────────────────────────────────────
+
+export interface AdminUser {
+  id: string
+  username: string
+  displayName: string | null
+  role: string
+  isActive: boolean
+  lastLoginAt: string | null
+  creationTime: string
+}
+
+export interface CreateAdminUserInput {
+  username: string
+  password: string
+  role: string
+  displayName: string | null
+}
+
+export interface UpdateAdminUserInput {
+  displayName: string | null
+  role: string
+  isActive: boolean
+  newPassword: string | null
+}
+
 // ─── API Pagination ───────────────────────────────────────────────────────────
 
 export interface PagedResult<T> {
