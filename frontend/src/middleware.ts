@@ -27,16 +27,19 @@ function decodeJwtExp(token: string): number | null {
 }
 
 // Build an absolute redirect URL using the public hostname and scheme.
-// req.nextUrl.clone() picks up the correct host from nginx's "proxy_set_header Host $host".
-// X-Forwarded-Proto gives us "https" instead of the internal plain-HTTP scheme.
+// req.nextUrl.host is always the internal bind address (127.0.0.1:3000) when Next.js
+// is started with -H 127.0.0.1, so we must read the proxy headers directly.
+// nginx forwards: "Host: www.otahuhuprint.com" and "X-Forwarded-Proto: https".
 function buildRedirectUrl(req: NextRequest, pathname: string, params?: URLSearchParams): URL {
-  const url = req.nextUrl.clone()
-  // nginx sets X-Forwarded-Proto to the original scheme (https); apply it so the
-  // redirect target is https://... rather than http://... (plain internal connection).
-  const proto = req.headers.get('x-forwarded-proto')?.split(',')[0].trim()
-  if (proto) url.protocol = proto + ':'
-  url.pathname = pathname
-  url.search = params?.toString() ?? ''
+  const host =
+    req.headers.get('x-forwarded-host') ??
+    req.headers.get('host') ??
+    req.nextUrl.host
+  const proto =
+    req.headers.get('x-forwarded-proto')?.split(',')[0].trim() ??
+    req.nextUrl.protocol.replace(':', '')
+  const url = new URL(`${proto}://${host}${pathname}`)
+  if (params?.toString()) url.search = params.toString()
   return url
 }
 
