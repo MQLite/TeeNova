@@ -1,7 +1,6 @@
 'use client'
 
 import { useState } from 'react'
-import { useRouter } from 'next/navigation'
 
 interface Props {
   returnUrl: string
@@ -9,7 +8,6 @@ interface Props {
 }
 
 export function LoginForm({ returnUrl, sessionExpired }: Props) {
-  const router = useRouter()
   const [username, setUsername] = useState('')
   const [password, setPassword] = useState('')
   const [error,    setError]    = useState<string | null>(null)
@@ -34,8 +32,9 @@ export function LoginForm({ returnUrl, sessionExpired }: Props) {
         return
       }
 
-      // Cookie is now set server-side. Navigate to the admin area.
-      router.push(returnUrl)
+      // Cookie is now set server-side. Hard-navigate to bypass Next.js router cache,
+      // which may still hold a stale redirect entry for the target page.
+      window.location.href = returnUrl
     } catch {
       setError('Unable to connect. Please try again.')
       setLoading(false)
