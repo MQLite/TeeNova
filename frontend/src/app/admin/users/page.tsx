@@ -40,7 +40,7 @@ export default async function AdminUsersPage() {
 
   try {
     const client = makeAdminApiClient()
-    users = await client.get<AdminUser[]>('/admin-users')
+    users = await client.get<AdminUser[]>('/api/admin-users')
   } catch {
     error = 'Failed to load users.'
   }

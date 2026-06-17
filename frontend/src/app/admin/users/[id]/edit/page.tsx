@@ -16,7 +16,7 @@ export default async function EditUserPage({ params }: Props) {
   let user: AdminUser | null = null
   try {
     const client = makeAdminApiClient()
-    user = await client.get<AdminUser>(`/admin-users/${id}`)
+    user = await client.get<AdminUser>(`/api/admin-users/${id}`)
   } catch {
     notFound()
   }

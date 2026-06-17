@@ -4,18 +4,18 @@ import type { AdminUser, CreateAdminUserInput, UpdateAdminUserInput } from '@/ty
 export function makeAdminUsersApi(client: AdminApiClient) {
   return {
     list: (): Promise<AdminUser[]> =>
-      client.get('/admin-users'),
+      client.get('/api/admin-users'),
 
     get: (id: string): Promise<AdminUser> =>
-      client.get(`/admin-users/${id}`),
+      client.get(`/api/admin-users/${id}`),
 
     create: (input: CreateAdminUserInput): Promise<AdminUser> =>
-      client.post('/admin-users', input),
+      client.post('/api/admin-users', input),
 
     update: (id: string, input: UpdateAdminUserInput): Promise<AdminUser> =>
-      client.put(`/admin-users/${id}`, input),
+      client.put(`/api/admin-users/${id}`, input),
 
     delete: (id: string): Promise<void> =>
-      client.delete(`/admin-users/${id}`),
+      client.delete(`/api/admin-users/${id}`),
   }
 }
