@@ -11,7 +11,7 @@ import { PricingBreakdownPanel } from '@/components/products/PricingBreakdownPan
 import { PrintAreaSelector } from '@/components/products/PrintAreaSelector'
 import { PrintSizeSelector } from '@/components/products/PrintSizeSelector'
 import { useCartStore } from '@/features/cart/cart-store'
-import { filterImagesForColor } from '@/lib/image-utils'
+import { filterImagesForColor, resolveImageUrl } from '@/lib/image-utils'
 import type {
   CartItemPrint,
   PriceCalculationResponse,
@@ -623,7 +623,7 @@ export default function ProductDetailPage() {
               {activeImage ? (
                 // eslint-disable-next-line @next/next/no-img-element
                 <img
-                  src={activeImage.url}
+                  src={resolveImageUrl(activeImage.url) ?? ''}
                   alt={product.name}
                   className="h-full w-full object-contain p-8"
                   style={{ minHeight: 360 }}
@@ -651,7 +651,7 @@ export default function ProductDetailPage() {
                       }`}
                     >
                       {/* eslint-disable-next-line @next/next/no-img-element */}
-                      <img src={image.url} alt="" className="aspect-square h-full w-full object-contain p-2" />
+                      <img src={resolveImageUrl(image.url) ?? ''} alt="" className="aspect-square h-full w-full object-contain p-2" />
                     </button>
                   )
                 })}

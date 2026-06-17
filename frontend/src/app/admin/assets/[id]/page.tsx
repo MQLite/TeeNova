@@ -5,6 +5,7 @@ import { makeAdminApiClient, redirectToExpiredLogin } from '@/lib/auth'
 import { ApiError } from '@/lib/api-client'
 import { AdminPageHeader } from '@/components/admin/AdminPageHeader'
 import { fileSizeLabel, fileTypeLabel, isPreviewable } from '@/lib/file-utils'
+import { resolveImageUrl } from '@/lib/image-utils'
 
 export const dynamic = 'force-dynamic'
 
@@ -55,7 +56,7 @@ export default async function AdminAssetDetailPage({ params }: Props) {
           {previewed ? (
             // eslint-disable-next-line @next/next/no-img-element
             <img
-              src={asset.fileUrl}
+              src={resolveImageUrl(asset.fileUrl) ?? ''}
               alt={asset.originalFileName}
               className="max-h-[480px] w-full object-contain p-6"
             />
@@ -71,7 +72,7 @@ export default async function AdminAssetDetailPage({ params }: Props) {
               <p className="font-mono text-sm uppercase tracking-[0.54px]">{fileTypeLabel(asset.contentType)} file</p>
               <p className="font-mono text-[11px] uppercase tracking-[0.54px]">No preview available</p>
               <a
-                href={asset.fileUrl}
+                href={resolveImageUrl(asset.fileUrl) ?? '#'}
                 target="_blank"
                 rel="noopener noreferrer"
                 className="mt-1 rounded-[50px] border border-black/[0.10] bg-white px-4 py-1.5 font-mono text-[11px] uppercase tracking-[0.54px] text-black/50 hover:border-black/25 hover:text-black transition-colors"

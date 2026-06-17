@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useRef, useState } from 'react'
+import { resolveImageUrl } from '@/lib/image-utils'
 import type { ProductImage } from '@/types'
 
 interface ImageCardProps {
@@ -79,7 +80,7 @@ export function ImageCard({
       {/* Image */}
       <div className="relative flex aspect-square items-center justify-center overflow-hidden bg-black/[0.02]">
         {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img src={image.url} alt="" className="h-full w-full object-contain p-3" />
+        <img src={resolveImageUrl(image.url) ?? ''} alt="" className="h-full w-full object-contain p-3" />
 
         {image.isPrimary && (
           <span className="absolute left-2 top-2 rounded-full bg-white/90 px-2 py-0.5 font-mono text-[9px] uppercase tracking-[0.54px] text-black/55 shadow-sm">

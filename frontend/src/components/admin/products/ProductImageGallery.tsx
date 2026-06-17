@@ -1,6 +1,7 @@
 'use client'
 
 import { useMemo, useState } from 'react'
+import { resolveImageUrl } from '@/lib/image-utils'
 import type { ProductImage } from '@/types'
 
 interface ProductImageGalleryProps {
@@ -31,7 +32,7 @@ export function ProductImageGallery({ name, images }: ProductImageGalleryProps) 
         {selectedImage ? (
           // eslint-disable-next-line @next/next/no-img-element
           <img
-            src={selectedImage.url}
+            src={resolveImageUrl(selectedImage.url) ?? ''}
             alt={name}
             className="h-full w-full object-contain p-8"
           />
@@ -54,7 +55,7 @@ export function ProductImageGallery({ name, images }: ProductImageGalleryProps) 
                 }`}
               >
                 {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img src={image.url} alt="" className="aspect-square h-full w-full object-contain p-2" />
+                <img src={resolveImageUrl(image.url) ?? ''} alt="" className="aspect-square h-full w-full object-contain p-2" />
                 {image.isPrimary && (
                   <span className="absolute left-2 top-2 rounded-full bg-white/90 px-2 py-0.5 font-mono text-[9px] uppercase tracking-[0.54px] text-black/55">
                     Main

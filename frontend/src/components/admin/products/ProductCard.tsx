@@ -1,4 +1,5 @@
 import Link from 'next/link'
+import { resolveImageUrl } from '@/lib/image-utils'
 import type { ProductListItem } from '@/types'
 
 interface ProductCardProps {
@@ -14,7 +15,7 @@ function ProductImagePlaceholder() {
 }
 
 export function ProductCard({ product }: ProductCardProps) {
-  const imageUrl = product.thumbnailUrl ?? product.primaryImageUrl
+  const imageUrl = resolveImageUrl(product.thumbnailUrl ?? product.primaryImageUrl)
 
   return (
     <div className="card group overflow-hidden p-0 transition-shadow hover:shadow-card">

@@ -20,7 +20,7 @@ export default async function HomePage() {
             {/* Headline */}
             <h1 className="display-hero mb-8 text-white">
               Custom T-Shirts,<br />
-              Made in Auckland
+              Print in Auckland
             </h1>
 
             <p className="body-large mx-auto mb-10 max-w-xl text-white/75"

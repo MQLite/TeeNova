@@ -9,6 +9,7 @@ import {
   fileSizeLabel,
   isPreviewable,
 } from '@/lib/file-utils'
+import { resolveImageUrl } from '@/lib/image-utils'
 import { makeFilesApi } from '@/api/files'
 import { adminApiClient } from '@/lib/admin-client'
 
@@ -127,7 +128,7 @@ function AssetCard({ asset }: { asset: AdminAsset }) {
         {previewed ? (
           // eslint-disable-next-line @next/next/no-img-element
           <img
-            src={asset.fileUrl}
+            src={resolveImageUrl(asset.fileUrl) ?? ''}
             alt={asset.originalFileName}
             className="h-full w-full object-contain p-3 transition-transform group-hover:scale-105"
           />

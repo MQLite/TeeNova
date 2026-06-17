@@ -1,5 +1,6 @@
 'use client'
 
+import { resolveImageUrl } from '@/lib/image-utils'
 import type { PrintArea, PrintAreaSizeOption, UploadedAsset } from '@/types'
 
 interface PrintSizeSelectorProps {
@@ -175,7 +176,7 @@ export function PrintSizeSelector({
                       <div className="flex w-full items-center gap-2">
                         {/* eslint-disable-next-line @next/next/no-img-element */}
                         <img
-                          src={asset.fileUrl}
+                          src={resolveImageUrl(asset.fileUrl) ?? ''}
                           alt=""
                           className="h-7 w-7 shrink-0 rounded border border-black/[0.08] object-contain"
                         />
