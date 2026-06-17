@@ -26,11 +26,18 @@ function decodeJwtExp(token: string): number | null {
   }
 }
 
-// Use a path-only Location header so the browser resolves the redirect against
-// whichever origin it used (e.g. www.otahuhuprint.com), not the internal
-// localhost address that req.url reflects when running behind a reverse proxy.
-function relativeRedirect(path: string, status = 307): Response {
-  return new Response(null, { status, headers: { Location: path } })
+// Build an absolute redirect URL using the public hostname and scheme.
+// req.nextUrl.clone() picks up the correct host from nginx's "proxy_set_header Host $host".
+// X-Forwarded-Proto gives us "https" instead of the internal plain-HTTP scheme.
+function buildRedirectUrl(req: NextRequest, pathname: string, params?: URLSearchParams): URL {
+  const url = req.nextUrl.clone()
+  // nginx sets X-Forwarded-Proto to the original scheme (https); apply it so the
+  // redirect target is https://... rather than http://... (plain internal connection).
+  const proto = req.headers.get('x-forwarded-proto')?.split(',')[0].trim()
+  if (proto) url.protocol = proto + ':'
+  url.pathname = pathname
+  url.search = params?.toString() ?? ''
+  return url
 }
 
 export function middleware(req: NextRequest) {
@@ -40,7 +47,7 @@ export function middleware(req: NextRequest) {
   // Authenticated user visits /admin/login → send them to /admin
   if (pathname === LOGIN_PATH) {
     if (token) {
-      return relativeRedirect('/admin')
+      return NextResponse.redirect(buildRedirectUrl(req, '/admin'))
     }
     return NextResponse.next()
   }
@@ -49,7 +56,7 @@ export function middleware(req: NextRequest) {
   if (!token) {
     const returnUrl = sanitizeReturnUrl(pathname)
     const params = new URLSearchParams({ returnUrl })
-    return relativeRedirect(`${LOGIN_PATH}?${params}`)
+    return NextResponse.redirect(buildRedirectUrl(req, LOGIN_PATH, params))
   }
 
   // Token present but JWT is expired → redirect with session-expired reason
@@ -57,7 +64,7 @@ export function middleware(req: NextRequest) {
   if (exp !== null && exp < Math.floor(Date.now() / 1000)) {
     const returnUrl = sanitizeReturnUrl(pathname)
     const params = new URLSearchParams({ reason: 'session-expired', returnUrl })
-    return relativeRedirect(`${LOGIN_PATH}?${params}`)
+    return NextResponse.redirect(buildRedirectUrl(req, LOGIN_PATH, params))
   }
 
   return NextResponse.next()
