@@ -8,3 +8,5 @@
 # OS
 .DS_Store
 Thumbs.db
+frontend/fe_err.log
+frontend/fe.log
