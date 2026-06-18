@@ -2,7 +2,10 @@
 
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { catalogApi } from '@/api/catalog'
+import { makeCatalogApi } from '@/api/catalog'
+import { adminApiClient } from '@/lib/admin-client'
+
+const catalogApi = makeCatalogApi(adminApiClient)
 
 interface Props {
   productId: string

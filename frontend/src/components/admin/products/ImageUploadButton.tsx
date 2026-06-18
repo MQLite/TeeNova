@@ -1,7 +1,10 @@
 'use client'
 
 import { useRef } from 'react'
-import { catalogApi } from '@/api/catalog'
+import { makeCatalogApi } from '@/api/catalog'
+import { adminApiClient } from '@/lib/admin-client'
+
+const catalogApi = makeCatalogApi(adminApiClient)
 import type { ProductImage } from '@/types'
 
 interface ImageUploadButtonProps {
