@@ -4,7 +4,10 @@
 import { type NextRequest, NextResponse } from 'next/server'
 import { cookies } from 'next/headers'
 
-const BACKEND_URL = process.env.NEXT_PUBLIC_API_BASE_URL ?? 'https://localhost:44300'
+const BACKEND_URL =
+  process.env.BACKEND_URL ??
+  process.env.NEXT_PUBLIC_API_BASE_URL ??
+  'https://localhost:44300'
 const COOKIE_NAME = 'admin_token'
 
 async function proxyRequest(
