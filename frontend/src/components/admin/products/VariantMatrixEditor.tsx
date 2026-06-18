@@ -1,7 +1,10 @@
 'use client'
 
 import { useState } from 'react'
-import { catalogApi } from '@/api/catalog'
+import { makeCatalogApi } from '@/api/catalog'
+import { adminApiClient } from '@/lib/admin-client'
+
+const catalogApi = makeCatalogApi(adminApiClient)
 import type { MatrixCell, ProductVariant } from '@/types'
 import { BulkSizeColorInput } from './BulkSizeColorInput'
 import { VariantMatrixTable } from './VariantMatrixTable'

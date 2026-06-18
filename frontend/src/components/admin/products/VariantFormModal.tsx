@@ -3,7 +3,10 @@
 import { useEffect, useState } from 'react'
 import { Modal } from '@/components/ui/Modal'
 import { Button } from '@/components/ui/Button'
-import { catalogApi } from '@/api/catalog'
+import { makeCatalogApi } from '@/api/catalog'
+import { adminApiClient } from '@/lib/admin-client'
+
+const catalogApi = makeCatalogApi(adminApiClient)
 import type { ProductVariant } from '@/types'
 
 interface VariantFormValues {
