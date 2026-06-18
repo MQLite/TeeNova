@@ -676,7 +676,7 @@ export default function ProductDetailPage() {
                 {product.name}
               </h1>
               {product.description && (
-                <p className="mt-2 text-sm leading-relaxed text-black/50" style={{ letterSpacing: '-0.14px', fontWeight: 400 }}>
+                <p className="mt-2 whitespace-pre-wrap text-sm leading-relaxed text-black/50" style={{ letterSpacing: '-0.14px', fontWeight: 400 }}>
                   {product.description}
                 </p>
               )}
