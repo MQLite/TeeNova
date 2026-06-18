@@ -1,4 +1,11 @@
-const DEFAULT_API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL ?? 'https://localhost:44300'
+// BACKEND_URL is server-only (no NEXT_PUBLIC_ prefix — never sent to the browser).
+// On the server it resolves to the direct backend address (e.g. http://localhost:5100).
+// In the browser process.env.BACKEND_URL is always undefined, so client-side code
+// falls back to NEXT_PUBLIC_API_BASE_URL (the public domain).
+const DEFAULT_API_BASE =
+  process.env.BACKEND_URL ??
+  process.env.NEXT_PUBLIC_API_BASE_URL ??
+  'https://localhost:44300'
 
 export class ApiError extends Error {
   constructor(

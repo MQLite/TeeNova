@@ -2,7 +2,10 @@ import { cookies } from 'next/headers'
 import { redirect } from 'next/navigation'
 import { makeApiClient } from './api-client'
 
-const BACKEND_URL = process.env.NEXT_PUBLIC_API_BASE_URL ?? 'https://localhost:44300'
+const BACKEND_URL =
+  process.env.BACKEND_URL ??
+  process.env.NEXT_PUBLIC_API_BASE_URL ??
+  'https://localhost:44300'
 
 export function getAdminToken(): string | undefined {
   return cookies().get('admin_token')?.value
