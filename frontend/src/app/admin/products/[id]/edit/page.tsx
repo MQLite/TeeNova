@@ -7,6 +7,7 @@ import { makeCatalogApi } from '@/api/catalog'
 import { adminApiClient, redirectToLogin } from '@/lib/admin-client'
 import { ApiError } from '@/lib/api-client'
 import { ProductForm, type ProductFormValues } from '@/components/admin/products/ProductForm'
+import { VariantSection } from '@/components/admin/products/VariantSection'
 import type { Product } from '@/types'
 
 const catalogApi = makeCatalogApi(adminApiClient)
@@ -110,6 +111,13 @@ export default function EditProductPage() {
           onCancel={() => router.push(backHref)}
         />
       </div>
+
+      {product.variants.length > 0 && (
+        <VariantSection
+          productId={product.id}
+          initialVariants={product.variants}
+        />
+      )}
     </div>
   )
 }
