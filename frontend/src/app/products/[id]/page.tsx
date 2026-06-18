@@ -573,6 +573,13 @@ export default function ProductDetailPage() {
   const variantLookup = new Map<string, typeof product.variants[number]>()
   for (const v of product.variants) variantLookup.set(`${v.color}|${v.size}`, v)
 
+  // First resolved image URL per color (null if none assigned)
+  const colorFirstImageUrl = new Map<string, string | null>()
+  for (const color of uniqueColors) {
+    const imgs = filterImagesForColor(product.images, color)
+    colorFirstImageUrl.set(color, imgs[0] ? resolveImageUrl(imgs[0].url) : null)
+  }
+
   const priceAdjustments = uniqueSizes
     .map((size) => {
       const variant = product.variants.find((item) => item.size === size)
@@ -752,7 +759,7 @@ export default function ProductDetailPage() {
                   <thead>
                     <tr className="border-b border-black/[0.08]">
                       {/* Sticky Color header */}
-                      <th className="sticky left-0 z-30 w-28 bg-white pb-2 pr-3 text-left font-mono text-[11px] font-normal uppercase tracking-[0.54px] text-black/50 shadow-[2px_0_4px_rgba(0,0,0,0.06)]">
+                      <th className="sticky left-0 z-30 w-36 bg-white pb-2 pr-3 text-left font-mono text-[11px] font-normal uppercase tracking-[0.54px] text-black/50 shadow-[2px_0_4px_rgba(0,0,0,0.06)]">
                         Colour
                       </th>
                       {uniqueSizes.map((size) => {
@@ -776,8 +783,20 @@ export default function ProductDetailPage() {
                       return (
                         <tr key={color}>
                           {/* Sticky Color cell */}
-                          <td className="sticky left-0 z-20 bg-white py-2 pr-3 align-middle text-xs text-black shadow-[2px_0_4px_rgba(0,0,0,0.06)]" style={{ letterSpacing: '-0.14px' }}>
-                            {color}
+                          <td className="sticky left-0 z-20 bg-white py-2 pr-3 align-middle shadow-[2px_0_4px_rgba(0,0,0,0.06)]">
+                            <div className="flex items-center gap-2">
+                              {colorFirstImageUrl.get(color) ? (
+                                // eslint-disable-next-line @next/next/no-img-element
+                                <img
+                                  src={colorFirstImageUrl.get(color)!}
+                                  alt={color}
+                                  className="h-8 w-8 shrink-0 rounded-lg border border-black/[0.08] bg-black/[0.02] object-contain p-0.5"
+                                />
+                              ) : (
+                                <span className="h-8 w-8 shrink-0 rounded-lg border border-black/[0.06] bg-black/[0.03]" />
+                              )}
+                              <span className="text-xs text-black" style={{ letterSpacing: '-0.14px' }}>{color}</span>
+                            </div>
                           </td>
                           {uniqueSizes.map((size) => {
                             const variant = variantLookup.get(`${color}|${size}`)
