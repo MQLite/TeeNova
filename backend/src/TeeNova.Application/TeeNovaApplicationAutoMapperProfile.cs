@@ -44,9 +44,15 @@ public class TeeNovaApplicationAutoMapperProfile : Profile
             .ForMember(d => d.Items, o => o.MapFrom(s => s.Items))
             .ForMember(d => d.DisplayStatus, o => o.Ignore())
             .ForMember(d => d.Timeline, o => o.Ignore())
-            .ForMember(d => d.PaymentTransactions, o => o.Ignore());
+            .ForMember(d => d.PaymentTransactions, o => o.Ignore())
+            .ForMember(d => d.PriceAdjustments, o => o.Ignore())
+            .ForMember(d => d.HasPriceAdjustment, o => o.Ignore())
+            .ForMember(d => d.LastPriceAdjustedAt, o => o.Ignore())
+            .ForMember(d => d.LastPriceAdjustmentReason, o => o.Ignore())
+            .ForMember(d => d.LastPriceAdjustmentAmount, o => o.Ignore());
         CreateMap<OrderTimelineEntry, OrderTimelineEntryDto>();
         CreateMap<PaymentTransaction, PaymentTransactionDto>();
+        CreateMap<OrderPriceAdjustment, OrderPriceAdjustmentDto>();
         CreateMap<OrderItem, OrderItemDto>()
             .ForMember(d => d.Prints, o => o.MapFrom(s => s.Prints));
         CreateMap<OrderItemPrint, OrderItemPrintDto>()

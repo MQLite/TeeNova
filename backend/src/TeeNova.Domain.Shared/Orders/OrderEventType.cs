@@ -7,4 +7,5 @@ public enum OrderEventType
     AdminNoteAdded = 2,
     CustomerNotificationRecorded = 3,
     PaymentReceived = 4,
+    PriceAdjusted = 5,
 }

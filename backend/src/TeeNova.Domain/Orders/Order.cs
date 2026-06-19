@@ -204,36 +204,90 @@ public class Order : FullAuditedAggregateRoot<Guid>
                 .WithData("Amount", amount);
         }
 
-        PaidAmount            += amount;
-        BalanceAmount          = RequiredPaymentAmount - PaidAmount;
-        LastPaymentMethod      = method;
-        LastPaymentReference   = reference;
-        LastPaymentNote        = note;
+        PaidAmount          += amount;
+        BalanceAmount        = RequiredPaymentAmount - PaidAmount;
+        LastPaymentMethod    = method;
+        LastPaymentReference = reference;
+        LastPaymentNote      = note;
 
+        RecalculatePaymentStatus(now);
+    }
+
+    /// <summary>
+    /// Adjusts the order total to a new amount. Updates all dependent payment fields
+    /// (RequiredPaymentAmount, RequiredDepositAmount, BalanceAmount, PaymentStatus)
+    /// without touching PaidAmount or PaymentTransaction records.
+    /// </summary>
+    public void AdjustPrice(decimal newTotalAmount, DateTime now)
+    {
+        if (Status == OrderStatus.Cancelled || Status == OrderStatus.Completed)
+            throw new BusinessException("TeeNova:Order:CannotAdjustPriceForTerminalOrder")
+                .WithData("Status", Status);
+
+        if (newTotalAmount <= 0)
+            throw new BusinessException("TeeNova:Order:AdjustedTotalMustBePositive")
+                .WithData("NewTotalAmount", newTotalAmount);
+
+        if (newTotalAmount < PaidAmount)
+            throw new BusinessException("TeeNova:Order:AdjustedTotalBelowPaidAmount")
+                .WithData("PaidAmount", PaidAmount)
+                .WithData("NewTotalAmount", newTotalAmount);
+
+        TotalAmount           = newTotalAmount;
+        RequiredPaymentAmount = newTotalAmount;
+
+        if (PaymentRequirementType == PaymentRequirementType.DepositThenBalance)
+            RequiredDepositAmount = Math.Ceiling(newTotalAmount * 0.50m * 100m) / 100m;
+
+        BalanceAmount = RequiredPaymentAmount - PaidAmount;
+
+        RecalculatePaymentStatus(now);
+    }
+
+    // ── Private helpers ───────────────────────────────────────────────────────
+
+    /// <summary>
+    /// Recalculates PaymentStatus, FullyPaidAt, and DepositPaidAt from the current
+    /// PaidAmount vs RequiredPaymentAmount / RequiredDepositAmount. Safe to call
+    /// from both ApplyPayment (payment added) and AdjustPrice (total changed).
+    /// </summary>
+    private void RecalculatePaymentStatus(DateTime now)
+    {
         if (PaidAmount >= RequiredPaymentAmount)
         {
             PaymentStatus = PaymentStatus.Paid;
-            FullyPaidAt   = now;
-            if (DepositPaidAt == null)
+            if (FullyPaidAt == null) FullyPaidAt = now;
+            if (DepositPaidAt == null
+                && PaymentRequirementType == PaymentRequirementType.DepositThenBalance)
                 DepositPaidAt = now;
-        }
-        else if (PaymentRequirementType == PaymentRequirementType.DepositThenBalance
-            && RequiredDepositAmount.HasValue
-            && PaidAmount >= RequiredDepositAmount.Value)
-        {
-            if (DepositPaidAt == null)
-                DepositPaidAt = now;
-            PaymentStatus = PaymentStatus.DepositPaid;
-        }
-        else if (PaidAmount > 0m)
-        {
-            PaymentStatus = PaymentStatus.PartiallyPaid;
         }
         else
         {
-            PaymentStatus = PaymentRequirementType == PaymentRequirementType.DepositThenBalance
-                ? PaymentStatus.DepositRequired
-                : PaymentStatus.Unpaid;
+            // No longer fully paid — clear the fully-paid timestamp if it was set.
+            FullyPaidAt = null;
+
+            if (PaymentRequirementType == PaymentRequirementType.DepositThenBalance
+                && RequiredDepositAmount.HasValue
+                && PaidAmount >= RequiredDepositAmount.Value)
+            {
+                if (DepositPaidAt == null) DepositPaidAt = now;
+                PaymentStatus = PaymentStatus.DepositPaid;
+            }
+            else if (PaidAmount > 0m)
+            {
+                // Deposit threshold not met (or N/A) — clear deposit timestamp.
+                if (PaymentRequirementType == PaymentRequirementType.DepositThenBalance)
+                    DepositPaidAt = null;
+                PaymentStatus = PaymentStatus.PartiallyPaid;
+            }
+            else
+            {
+                if (PaymentRequirementType == PaymentRequirementType.DepositThenBalance)
+                    DepositPaidAt = null;
+                PaymentStatus = PaymentRequirementType == PaymentRequirementType.DepositThenBalance
+                    ? PaymentStatus.DepositRequired
+                    : PaymentStatus.Unpaid;
+            }
         }
     }
 

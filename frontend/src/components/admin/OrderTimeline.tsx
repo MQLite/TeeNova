@@ -40,6 +40,15 @@ function EntryIcon({ eventType }: { eventType: OrderTimelineEntry['eventType'] }
       </span>
     )
   }
+  if (eventType === 'PriceAdjusted') {
+    return (
+      <span className="flex h-6 w-6 items-center justify-center rounded-full bg-amber-100 text-amber-600">
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8">
+          <path strokeLinecap="round" strokeLinejoin="round" d="M3 7.5 7.5 3m0 0L12 7.5M7.5 3v12M21 16.5 16.5 21m0 0L12 16.5m4.5 4.5v-12" />
+        </svg>
+      </span>
+    )
+  }
   return (
     <span className="flex h-6 w-6 items-center justify-center rounded-full bg-black/[0.06] text-black/40">
       <svg width="10" height="10" viewBox="0 0 10 10" fill="none">
