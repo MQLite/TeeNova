@@ -80,4 +80,8 @@ public class OrderController : TeeNovaControllerBase
     [HttpPost("{id:guid}/record-payment")]
     public async Task<OrderDto> RecordPaymentAsync(Guid id, [FromBody] RecordPaymentDto input)
         => await _orderAppService.RecordPaymentAsync(id, input);
+
+    [HttpPost("{id:guid}/adjust-price")]
+    public async Task<OrderDto> AdjustPriceAsync(Guid id, [FromBody] AdjustOrderPriceDto input)
+        => await _orderAppService.AdjustPriceAsync(id, input);
 }

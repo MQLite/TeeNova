@@ -1,5 +1,6 @@
 import { apiClient, type ApiClient } from '@/lib/api-client'
 import type {
+  AdjustOrderPriceInput,
   CreateOnlinePaymentSessionInput,
   DeliveryMethod,
   OnlinePaymentSession,
@@ -90,6 +91,10 @@ export function makeOrdersApi(client: ApiClient) {
 
     recordPayment(orderId: string, input: RecordPaymentInput): Promise<Order> {
       return client.post(`/api/orders/${orderId}/record-payment`, input)
+    },
+
+    adjustPrice(orderId: string, input: AdjustOrderPriceInput): Promise<Order> {
+      return client.post(`/api/orders/${orderId}/adjust-price`, input)
     },
 
     createOnlinePaymentSession(

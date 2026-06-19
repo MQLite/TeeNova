@@ -9,7 +9,8 @@ public class OrderEntityTypeConfiguration :
     IEntityTypeConfiguration<Order>,
     IEntityTypeConfiguration<OrderItem>,
     IEntityTypeConfiguration<OrderItemPrint>,
-    IEntityTypeConfiguration<OrderTimelineEntry>
+    IEntityTypeConfiguration<OrderTimelineEntry>,
+    IEntityTypeConfiguration<OrderPriceAdjustment>
 {
     public void Configure(EntityTypeBuilder<Order> builder)
     {
@@ -179,5 +180,37 @@ public class OrderEntityTypeConfiguration :
             .HasMaxLength(32);
 
         builder.HasIndex(e => e.OrderId);
+    }
+
+    public void Configure(EntityTypeBuilder<OrderPriceAdjustment> builder)
+    {
+        builder.ToTable("OrderPriceAdjustments");
+
+        builder.Property(a => a.OldTotalAmount)
+            .HasColumnType("decimal(18,4)")
+            .IsRequired();
+
+        builder.Property(a => a.NewTotalAmount)
+            .HasColumnType("decimal(18,4)")
+            .IsRequired();
+
+        builder.Property(a => a.AdjustmentAmount)
+            .HasColumnType("decimal(18,4)")
+            .IsRequired();
+
+        builder.Property(a => a.Reason)
+            .IsRequired()
+            .HasMaxLength(1000);
+
+        builder.Property(a => a.AdjustedByUser)
+            .HasMaxLength(256)
+            .IsRequired(false);
+
+        builder.HasOne<Order>()
+            .WithMany()
+            .HasForeignKey(a => a.OrderId)
+            .OnDelete(DeleteBehavior.Cascade);
+
+        builder.HasIndex(a => a.OrderId);
     }
 }

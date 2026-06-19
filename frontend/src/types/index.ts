@@ -209,12 +209,30 @@ export interface RecordPaymentInput {
   note?: string | null
 }
 
+export interface OrderPriceAdjustment {
+  id: string
+  orderId: string
+  oldTotalAmount: number
+  newTotalAmount: number
+  adjustmentAmount: number
+  reason: string
+  adjustedByUser?: string | null
+  creationTime: string
+  creatorId?: string | null
+}
+
+export interface AdjustOrderPriceInput {
+  newTotalAmount: number
+  reason: string
+}
+
 export type OrderEventType =
   | 'StatusChanged'
   | 'ApprovedForPrinting'
   | 'AdminNoteAdded'
   | 'CustomerNotificationRecorded'
   | 'PaymentReceived'
+  | 'PriceAdjusted'
 
 export interface OrderTimelineEntry {
   id: string
@@ -293,6 +311,12 @@ export interface Order {
   lastPaymentReference: string | null
   lastPaymentNote: string | null
   paymentTransactions: PaymentTransaction[]
+  // Price adjustment fields
+  priceAdjustments: OrderPriceAdjustment[]
+  hasPriceAdjustment: boolean
+  lastPriceAdjustedAt?: string | null
+  lastPriceAdjustmentReason?: string | null
+  lastPriceAdjustmentAmount?: number | null
 }
 
 // ─── Cart (client-side) ───────────────────────────────────────────────────────

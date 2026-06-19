@@ -38,6 +38,13 @@ public class OrderDto
     public string? LastPaymentReference { get; set; }
     public string? LastPaymentNote { get; set; }
     public List<PaymentTransactionDto> PaymentTransactions { get; set; } = new();
+
+    // Price adjustment history (chronological, oldest first)
+    public List<OrderPriceAdjustmentDto> PriceAdjustments   { get; set; } = new();
+    public bool                          HasPriceAdjustment  { get; set; }
+    public DateTime?                     LastPriceAdjustedAt       { get; set; }
+    public string?                       LastPriceAdjustmentReason { get; set; }
+    public decimal?                      LastPriceAdjustmentAmount { get; set; }
 }
 
 public class ShippingAddressDto

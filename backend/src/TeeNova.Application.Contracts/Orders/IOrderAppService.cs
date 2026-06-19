@@ -24,4 +24,5 @@ public interface IOrderAppService : IApplicationService
     Task<OrderDto> CompleteAsync(Guid id);
     Task<OrderDto> RecordPaymentAsync(Guid id, RecordPaymentDto input);
     Task<OnlinePaymentSessionDto> CreateOnlinePaymentSessionAsync(Guid id, CreateOnlinePaymentSessionDto input);
+    Task<OrderDto> AdjustPriceAsync(Guid id, AdjustOrderPriceDto input);
 }

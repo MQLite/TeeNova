@@ -30,6 +30,11 @@ function formatMoney(value: number | null | undefined): string {
   return `$${value.toFixed(2)}`
 }
 
+function formatSignedMoney(value: number): string {
+  const sign = value >= 0 ? '+' : '-'
+  return `${sign}$${Math.abs(value).toFixed(2)}`
+}
+
 function formatDate(iso: string | null | undefined): string {
   if (!iso) return '—'
   return new Date(iso).toLocaleString('en-NZ', { dateStyle: 'medium', timeStyle: 'short' })
@@ -62,9 +67,10 @@ function AmountRow({
 interface Props {
   order: Order
   onRecordPayment: () => void
+  onAdjustPrice: () => void
 }
 
-export function PaymentSection({ order, onRecordPayment }: Props) {
+export function PaymentSection({ order, onRecordPayment, onAdjustPrice }: Props) {
   const {
     paymentStatus,
     paymentRequirementType,
@@ -78,6 +84,8 @@ export function PaymentSection({ order, onRecordPayment }: Props) {
     lastPaymentNote,
     paymentTransactions,
     status,
+    hasPriceAdjustment,
+    priceAdjustments,
   } = order
 
   const statusCfg = PAYMENT_STATUS_CONFIG[paymentStatus] ?? PAYMENT_STATUS_CONFIG.Unpaid
@@ -92,6 +100,17 @@ export function PaymentSection({ order, onRecordPayment }: Props) {
   else if (isFullyPaid) recordDisabledReason = 'No balance remaining.'
 
   const canRecord = !recordDisabledReason
+
+  let adjustDisabledReason: string | null = null
+  if (isCancelled)      adjustDisabledReason = 'Cannot adjust price for a cancelled order.'
+  else if (isCompleted) adjustDisabledReason = 'Cannot adjust price for a completed order.'
+
+  const canAdjust = !adjustDisabledReason
+
+  // Newest-first for admin readability.
+  const adjustmentsNewestFirst = [...(priceAdjustments ?? [])].sort(
+    (a, b) => new Date(b.creationTime).getTime() - new Date(a.creationTime).getTime(),
+  )
 
   return (
     <Card>
@@ -125,7 +144,19 @@ export function PaymentSection({ order, onRecordPayment }: Props) {
 
         {/* Amount summary */}
         <div className="space-y-2 rounded-2xl border border-black/[0.06] bg-black/[0.02] px-4 py-3">
-          <AmountRow label="Order Total" value={formatMoney(order.totalAmount)} />
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-1.5">
+              <span className="font-mono text-[10px] uppercase tracking-[0.54px] text-black/40">Order Total</span>
+              {hasPriceAdjustment && (
+                <span className="inline-flex items-center rounded-full border border-amber-200 bg-amber-50 px-1.5 py-0.5 font-mono text-[9px] uppercase tracking-[0.4px] text-amber-700">
+                  Adjusted
+                </span>
+              )}
+            </div>
+            <span className="text-sm text-black/70" style={{ letterSpacing: '-0.14px' }}>
+              {formatMoney(order.totalAmount)}
+            </span>
+          </div>
           {isDeposit && requiredDepositAmount != null && (
             <AmountRow label="Required Deposit" value={formatMoney(requiredDepositAmount)} />
           )}
@@ -198,18 +229,32 @@ export function PaymentSection({ order, onRecordPayment }: Props) {
           </div>
         )}
 
-        {/* Record Payment action */}
+        {/* Actions */}
         <div className="border-t border-black/[0.06] pt-3">
-          <Button
-            size="sm"
-            variant={canRecord ? 'black' : 'glass'}
-            disabled={!canRecord}
-            onClick={onRecordPayment}
-          >
-            Record Payment
-          </Button>
+          <div className="flex flex-wrap items-center gap-2">
+            <Button
+              size="sm"
+              variant={canRecord ? 'black' : 'glass'}
+              disabled={!canRecord}
+              onClick={onRecordPayment}
+            >
+              Record Payment
+            </Button>
+            <Button
+              size="sm"
+              variant="glass"
+              disabled={!canAdjust}
+              onClick={onAdjustPrice}
+              title={adjustDisabledReason ?? undefined}
+            >
+              Adjust Price
+            </Button>
+          </div>
           {recordDisabledReason && (
             <p className="mt-1.5 text-xs text-black/40" style={{ letterSpacing: '-0.14px' }}>{recordDisabledReason}</p>
+          )}
+          {adjustDisabledReason && !recordDisabledReason && (
+            <p className="mt-1.5 text-xs text-black/40" style={{ letterSpacing: '-0.14px' }}>{adjustDisabledReason}</p>
           )}
         </div>
 
@@ -251,6 +296,46 @@ export function PaymentSection({ order, onRecordPayment }: Props) {
             </div>
           )}
         </div>
+
+        {/* Price adjustment history */}
+        {adjustmentsNewestFirst.length > 0 && (
+          <div className="border-t border-black/[0.06] pt-4">
+            <p className="mb-2 font-mono text-[10px] uppercase tracking-[0.54px] text-black/40">Price Adjustments</p>
+            <div className="space-y-2">
+              {adjustmentsNewestFirst.map((adj) => (
+                <div
+                  key={adj.id}
+                  className="space-y-1 rounded-xl border border-black/[0.06] bg-white px-3 py-2.5"
+                >
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="text-sm text-black/70" style={{ letterSpacing: '-0.14px' }}>
+                      {formatMoney(adj.oldTotalAmount)} → {formatMoney(adj.newTotalAmount)}
+                    </span>
+                    <span
+                      className="rounded-full border px-2 py-0.5 font-mono text-[10px] uppercase tracking-[0.4px]"
+                      style={
+                        adj.adjustmentAmount >= 0
+                          ? { borderColor: '#bbf7d0', backgroundColor: '#f0fdf4', color: '#15803d' }
+                          : { borderColor: '#fecaca', backgroundColor: '#fef2f2', color: '#b91c1c' }
+                      }
+                    >
+                      {formatSignedMoney(adj.adjustmentAmount)}
+                    </span>
+                  </div>
+                  <p className="font-mono text-[10px] text-black/35 tracking-[0.02em]">
+                    {formatDate(adj.creationTime)}
+                    {adj.adjustedByUser ? ` · ${adj.adjustedByUser}` : ''}
+                  </p>
+                  {adj.reason && (
+                    <p className="text-xs leading-relaxed text-black/55" style={{ letterSpacing: '-0.14px' }}>
+                      {adj.reason}
+                    </p>
+                  )}
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
 
       </CardBody>
     </Card>

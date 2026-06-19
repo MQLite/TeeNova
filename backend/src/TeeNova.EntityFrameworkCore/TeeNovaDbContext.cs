@@ -32,6 +32,7 @@ public class TeeNovaDbContext : AbpDbContext<TeeNovaDbContext>
     public DbSet<OrderItemPrint> OrderItemPrints { get; set; }
     public DbSet<OrderTimelineEntry> OrderTimelineEntries { get; set; }
     public DbSet<PaymentTransaction> PaymentTransactions { get; set; }
+    public DbSet<OrderPriceAdjustment> OrderPriceAdjustments { get; set; }
 
     // PrintConfig
     public DbSet<PrintArea>           PrintAreas           { get; set; }

@@ -22,8 +22,9 @@ import { CompletionBanner } from '@/components/admin/CompletionBanner'
 import { NotificationPanel } from '@/components/admin/NotificationPanel'
 import { PaymentSection } from '@/components/admin/PaymentSection'
 import { RecordPaymentModal } from '@/components/admin/RecordPaymentModal'
+import { AdjustOrderPriceModal } from '@/components/admin/AdjustOrderPriceModal'
 import { DownloadDesignButton } from '@/components/orders/DownloadDesignButton'
-import type { Order, OrderItem, OrderItemPrint, OrderStatus, RecordPaymentInput } from '@/types'
+import type { AdjustOrderPriceInput, Order, OrderItem, OrderItemPrint, OrderStatus, RecordPaymentInput } from '@/types'
 import clsx from 'clsx'
 
 // 鈹€鈹€ Constants 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
@@ -230,6 +231,7 @@ export default function AdminOrderDetailPage() {
   const [updating, setUpdating] = useState(false)
   const [recordingNotification, setRecordingNotification] = useState(false)
   const [recordPaymentOpen, setRecordPaymentOpen] = useState(false)
+  const [adjustPriceOpen, setAdjustPriceOpen] = useState(false)
   const [toast, setToast] = useState<string | null>(null)
   const [toastTone, setToastTone] = useState<'success' | 'error'>('success')
 
@@ -323,6 +325,42 @@ export default function AdminOrderDetailPage() {
       showToast('Payment recorded')
     } catch {
       showToast('Failed to record payment', 'error')
+    }
+  }
+
+  function friendlyAdjustError(err: unknown): string {
+    if (err instanceof ApiError) {
+      if (err.status === 401) {
+        redirectToLogin('session-expired')
+        return 'Your session has expired. Please sign in again.'
+      }
+      const raw = (err.message ?? '').toLowerCase()
+      if (raw.includes('terminal') || raw.includes('cancelled') || raw.includes('completed')) {
+        return 'This order cannot be adjusted because it is completed or cancelled.'
+      }
+      if (raw.includes('belowpaid') || raw.includes('below the amount') || raw.includes('paid amount')) {
+        return 'New total cannot be less than the amount already paid.'
+      }
+      if (raw.includes('positive') || raw.includes('greater than zero')) {
+        return 'New total must be greater than zero.'
+      }
+      if (raw.includes('reason')) {
+        return 'Please enter a reason for this adjustment.'
+      }
+    }
+    return 'Unable to adjust price. Please try again.'
+  }
+
+  async function handleAdjustPrice(input: AdjustOrderPriceInput) {
+    if (!order) return
+    try {
+      const updated = await ordersApi.adjustPrice(order.id, input)
+      setOrder(updated)
+      setAdjustPriceOpen(false)
+      showToast('Order price adjusted')
+    } catch (err) {
+      // Re-throw a friendly message so the modal can display it inline.
+      throw new Error(friendlyAdjustError(err))
     }
   }
 
@@ -612,6 +650,7 @@ export default function AdminOrderDetailPage() {
           <PaymentSection
             order={order}
             onRecordPayment={() => setRecordPaymentOpen(true)}
+            onAdjustPrice={() => setAdjustPriceOpen(true)}
           />
 
           {/* Customer notes */}
@@ -773,6 +812,14 @@ export default function AdminOrderDetailPage() {
         open={recordPaymentOpen}
         onClose={() => setRecordPaymentOpen(false)}
         onSubmit={handleRecordPayment}
+      />
+
+      {/* Adjust Price modal */}
+      <AdjustOrderPriceModal
+        order={order}
+        open={adjustPriceOpen}
+        onClose={() => setAdjustPriceOpen(false)}
+        onSubmit={handleAdjustPrice}
       />
     </div>
   )

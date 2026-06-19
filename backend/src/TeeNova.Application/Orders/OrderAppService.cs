@@ -2,7 +2,9 @@ using System;
 using System.Collections.Generic;
 using System.Globalization;
 using System.Linq;
+using System.Security.Claims;
 using System.Threading.Tasks;
+using Microsoft.AspNetCore.Http;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
@@ -19,35 +21,40 @@ namespace TeeNova.Orders;
 
 public class OrderAppService : ApplicationService, IOrderAppService
 {
-    private readonly IRepository<Order, Guid>               _orderRepository;
-    private readonly IRepository<Catalog.Product, Guid>     _productRepository;
-    private readonly IRepository<OrderTimelineEntry, Guid>  _timelineRepository;
-    private readonly IRepository<PaymentTransaction, Guid>  _paymentTransactionRepository;
-    private readonly IRepository<PrintArea, Guid>           _printAreaRepository;
-    private readonly IRepository<PrintSize, Guid>           _printSizeRepository;
+    private readonly IRepository<Order, Guid>                _orderRepository;
+    private readonly IRepository<Catalog.Product, Guid>      _productRepository;
+    private readonly IRepository<OrderTimelineEntry, Guid>   _timelineRepository;
+    private readonly IRepository<PaymentTransaction, Guid>   _paymentTransactionRepository;
+    private readonly IRepository<OrderPriceAdjustment, Guid> _priceAdjustmentRepository;
+    private readonly IRepository<PrintArea, Guid>            _printAreaRepository;
+    private readonly IRepository<PrintSize, Guid>            _printSizeRepository;
     private readonly IRepository<OnlinePaymentSession, Guid> _onlinePaymentSessionRepository;
     private readonly PrintConfigValidator                    _printConfigValidator;
     private readonly IOrderEmailNotificationService          _orderEmailNotificationService;
     private readonly IOptions<OnlinePaymentOptions>          _onlinePaymentOptions;
     private readonly IOnlinePaymentProviderResolver          _onlinePaymentProviderResolver;
+    private readonly IHttpContextAccessor                    _httpContextAccessor;
 
     public OrderAppService(
-        IRepository<Order, Guid>                orderRepository,
-        IRepository<Catalog.Product, Guid>      productRepository,
-        IRepository<OrderTimelineEntry, Guid>   timelineRepository,
-        IRepository<PaymentTransaction, Guid>   paymentTransactionRepository,
-        IRepository<PrintArea, Guid>            printAreaRepository,
-        IRepository<PrintSize, Guid>            printSizeRepository,
-        IRepository<OnlinePaymentSession, Guid> onlinePaymentSessionRepository,
-        PrintConfigValidator                    printConfigValidator,
-        IOrderEmailNotificationService          orderEmailNotificationService,
-        IOptions<OnlinePaymentOptions>          onlinePaymentOptions,
-        IOnlinePaymentProviderResolver          onlinePaymentProviderResolver)
+        IRepository<Order, Guid>                 orderRepository,
+        IRepository<Catalog.Product, Guid>       productRepository,
+        IRepository<OrderTimelineEntry, Guid>    timelineRepository,
+        IRepository<PaymentTransaction, Guid>    paymentTransactionRepository,
+        IRepository<OrderPriceAdjustment, Guid>  priceAdjustmentRepository,
+        IRepository<PrintArea, Guid>             printAreaRepository,
+        IRepository<PrintSize, Guid>             printSizeRepository,
+        IRepository<OnlinePaymentSession, Guid>  onlinePaymentSessionRepository,
+        PrintConfigValidator                     printConfigValidator,
+        IOrderEmailNotificationService           orderEmailNotificationService,
+        IOptions<OnlinePaymentOptions>           onlinePaymentOptions,
+        IOnlinePaymentProviderResolver           onlinePaymentProviderResolver,
+        IHttpContextAccessor                     httpContextAccessor)
     {
         _orderRepository                = orderRepository;
         _productRepository              = productRepository;
         _timelineRepository             = timelineRepository;
         _paymentTransactionRepository   = paymentTransactionRepository;
+        _priceAdjustmentRepository      = priceAdjustmentRepository;
         _printAreaRepository            = printAreaRepository;
         _printSizeRepository            = printSizeRepository;
         _onlinePaymentSessionRepository = onlinePaymentSessionRepository;
@@ -55,6 +62,7 @@ public class OrderAppService : ApplicationService, IOrderAppService
         _orderEmailNotificationService  = orderEmailNotificationService;
         _onlinePaymentOptions           = onlinePaymentOptions;
         _onlinePaymentProviderResolver  = onlinePaymentProviderResolver;
+        _httpContextAccessor            = httpContextAccessor;
     }
 
     public async Task<OrderDto> CreateAsync(CreateOrderDto input)
@@ -167,7 +175,70 @@ public class OrderAppService : ApplicationService, IOrderAppService
         dto.DisplayStatus = GetDisplayStatus(order.Status);
         await EnrichTimelineAsync(dto);
         await EnrichPaymentTransactionsAsync(dto);
+        await EnrichPriceAdjustmentsAsync(dto);
         return dto;
+    }
+
+    public async Task<OrderDto> AdjustPriceAsync(Guid id, AdjustOrderPriceDto input)
+    {
+        var order = await _orderRepository.GetAsync(id);
+
+        var oldTotalAmount = order.TotalAmount;
+
+        // Validate and apply the price change first so domain rules (terminal order,
+        // below-paid-amount, non-positive total) fail before any side effects are queued.
+        order.AdjustPrice(input.NewTotalAmount, Clock.Now);
+
+        // Cancel any Pending online payment sessions — their frozen amounts are now stale.
+        var sessionQuery = await _onlinePaymentSessionRepository.GetQueryableAsync();
+        var pendingSessions = await sessionQuery
+            .Where(s => s.OrderId == id && s.Status == OnlinePaymentSessionStatus.Pending)
+            .ToListAsync();
+
+        foreach (var session in pendingSessions)
+        {
+            session.MarkCancelled(null, "price_adjusted");
+            await _onlinePaymentSessionRepository.UpdateAsync(session, autoSave: false);
+        }
+
+        var adjustedByUser = _httpContextAccessor.HttpContext?
+            .User.FindFirst(ClaimTypes.Name)?.Value;
+
+        var adjustment = new OrderPriceAdjustment(
+            GuidGenerator.Create(),
+            id,
+            oldTotalAmount,
+            input.NewTotalAmount,
+            input.Reason,
+            adjustedByUser);
+
+        await _priceAdjustmentRepository.InsertAsync(adjustment, autoSave: false);
+        await _orderRepository.UpdateAsync(order, autoSave: true);
+
+        var direction = input.NewTotalAmount > oldTotalAmount ? "increased" : "decreased";
+        var diff      = Math.Abs(input.NewTotalAmount - oldTotalAmount);
+
+        // The full reason is preserved in OrderPriceAdjustment.Reason (up to 1000 chars).
+        // The timeline Description column is nvarchar(512), so embed only a short excerpt.
+        var reasonExcerpt = input.Reason.Trim();
+        if (reasonExcerpt.Length > 120)
+            reasonExcerpt = reasonExcerpt[..120] + "…";
+
+        var sessionNote = pendingSessions.Count > 0
+            ? $" {pendingSessions.Count} pending payment session(s) cancelled."
+            : string.Empty;
+
+        var timelineDesc = $"Order total {direction} by {diff:F2} NZD " +
+                           $"({oldTotalAmount:F2} → {input.NewTotalAmount:F2} NZD). " +
+                           $"Reason: {reasonExcerpt}{sessionNote}";
+
+        // Defensive cap — Description column is nvarchar(512).
+        if (timelineDesc.Length > 512)
+            timelineDesc = timelineDesc[..509] + "...";
+
+        await AddTimelineEntryAsync(id, OrderEventType.PriceAdjusted, timelineDesc, order.Status);
+
+        return await GetAsync(id);
     }
 
     public async Task<PagedResultDto<OrderDto>> GetListAsync(GetOrdersInput input)
@@ -646,6 +717,26 @@ public class OrderAppService : ApplicationService, IOrderAppService
             .OrderBy(t => t.CreationTime)
             .Select(t => ObjectMapper.Map<PaymentTransaction, PaymentTransactionDto>(t))
             .ToList();
+    }
+
+    private async Task EnrichPriceAdjustmentsAsync(OrderDto orderDto)
+    {
+        var adjustments = await _priceAdjustmentRepository.GetListAsync(
+            a => a.OrderId == orderDto.Id);
+
+        orderDto.PriceAdjustments = adjustments
+            .OrderBy(a => a.CreationTime)
+            .Select(a => ObjectMapper.Map<OrderPriceAdjustment, OrderPriceAdjustmentDto>(a))
+            .ToList();
+
+        if (orderDto.PriceAdjustments.Count > 0)
+        {
+            orderDto.HasPriceAdjustment = true;
+            var last = orderDto.PriceAdjustments[^1];
+            orderDto.LastPriceAdjustedAt       = last.CreationTime;
+            orderDto.LastPriceAdjustmentReason = last.Reason;
+            orderDto.LastPriceAdjustmentAmount = last.AdjustmentAmount;
+        }
     }
 
     /// <summary>
