@@ -24,6 +24,7 @@ import { PaymentSection } from '@/components/admin/PaymentSection'
 import { RecordPaymentModal } from '@/components/admin/RecordPaymentModal'
 import { AdjustOrderPriceModal } from '@/components/admin/AdjustOrderPriceModal'
 import { DownloadDesignButton } from '@/components/orders/DownloadDesignButton'
+import { DownloadProductionPdfButton } from '@/components/admin/DownloadProductionPdfButton'
 import type { AdjustOrderPriceInput, Order, OrderItem, OrderItemPrint, OrderStatus, RecordPaymentInput } from '@/types'
 import clsx from 'clsx'
 
@@ -506,6 +507,12 @@ export default function AdminOrderDetailPage() {
             Placed {new Date(order.creationTime).toLocaleString('en-NZ', { dateStyle: 'medium', timeStyle: 'short' })}
           </p>
         </div>
+        {/* Always available (incl. Cancelled/Completed) for archive/workshop use. */}
+        <DownloadProductionPdfButton
+          orderId={order.id}
+          orderNumber={order.orderNumber}
+          onError={(msg) => showToast(msg, 'error')}
+        />
       </div>
 
       {/* Activation panel 鈥?shown only while in early stages */}
