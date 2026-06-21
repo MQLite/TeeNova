@@ -13,10 +13,14 @@ namespace TeeNova.Orders;
 public class OrderController : TeeNovaControllerBase
 {
     private readonly IOrderAppService _orderAppService;
+    private readonly IOrderProductionPdfService _orderProductionPdfService;
 
-    public OrderController(IOrderAppService orderAppService)
+    public OrderController(
+        IOrderAppService orderAppService,
+        IOrderProductionPdfService orderProductionPdfService)
     {
         _orderAppService = orderAppService;
+        _orderProductionPdfService = orderProductionPdfService;
     }
 
     [HttpPost]
@@ -32,6 +36,16 @@ public class OrderController : TeeNovaControllerBase
     [HttpGet]
     public async Task<PagedResultDto<OrderDto>> GetListAsync([FromQuery] GetOrdersInput input)
         => await _orderAppService.GetListAsync(input);
+
+    // Admin production sheet. Intentionally NOT [AllowAnonymous]: it inherits the
+    // controller-level [Authorize] so it is unreachable from the anonymous customer
+    // order-tracking path that GetAsync above is exposed on.
+    [HttpGet("{id:guid}/production-pdf")]
+    public async Task<IActionResult> GetProductionPdfAsync(Guid id)
+    {
+        var result = await _orderProductionPdfService.GenerateAsync(id);
+        return File(result.Content, result.ContentType, result.FileName);
+    }
 
     [HttpPut("{id:guid}/status")]
     public async Task<OrderDto> UpdateStatusAsync(Guid id, [FromBody] UpdateOrderStatusDto input)
