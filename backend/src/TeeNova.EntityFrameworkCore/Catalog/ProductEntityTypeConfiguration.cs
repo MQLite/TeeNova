@@ -51,6 +51,20 @@ public class ProductEntityTypeConfiguration :
         builder.Property(v => v.Color).IsRequired().HasMaxLength(CatalogConsts.MaxColorLength);
         builder.Property(v => v.Size).IsRequired().HasMaxLength(CatalogConsts.MaxSizeLength);
         builder.Property(v => v.PriceAdjustment).HasColumnType("decimal(18,4)");
+
+        // Inventory (Jira 9002) — informational only.
+        // Stored as int (default 0 = NotRecorded) so existing rows backfill cleanly.
+        builder.Property(v => v.InventoryStatus)
+            .HasConversion<int>()
+            .IsRequired()
+            .HasDefaultValue(VariantInventoryStatus.NotRecorded);
+
+        // StockQuantity is nullable (int?) — null means "not tracked".
+        builder.Property(v => v.InventoryNote)
+            .HasMaxLength(CatalogConsts.MaxInventoryNoteLength);
+
+        builder.Property(v => v.InventoryUpdatedBy)
+            .HasMaxLength(CatalogConsts.MaxInventoryUpdatedByLength);
     }
 
     public void Configure(EntityTypeBuilder<ProductImage> builder)

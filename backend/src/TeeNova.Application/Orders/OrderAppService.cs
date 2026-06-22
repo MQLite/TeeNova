@@ -9,6 +9,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using TeeNova.Email;
+using TeeNova.Inventory;
 using TeeNova.Orders.Dtos;
 using TeeNova.Payments;
 using TeeNova.Pricing;
@@ -34,6 +35,8 @@ public class OrderAppService : ApplicationService, IOrderAppService
     private readonly IOptions<OnlinePaymentOptions>          _onlinePaymentOptions;
     private readonly IOnlinePaymentProviderResolver          _onlinePaymentProviderResolver;
     private readonly IHttpContextAccessor                    _httpContextAccessor;
+    private readonly IOptions<InventoryOptions>              _inventoryOptions;
+    private readonly IInventoryDeductionService              _inventoryDeductionService;
 
     public OrderAppService(
         IRepository<Order, Guid>                 orderRepository,
@@ -48,7 +51,9 @@ public class OrderAppService : ApplicationService, IOrderAppService
         IOrderEmailNotificationService           orderEmailNotificationService,
         IOptions<OnlinePaymentOptions>           onlinePaymentOptions,
         IOnlinePaymentProviderResolver           onlinePaymentProviderResolver,
-        IHttpContextAccessor                     httpContextAccessor)
+        IHttpContextAccessor                     httpContextAccessor,
+        IOptions<InventoryOptions>               inventoryOptions,
+        IInventoryDeductionService               inventoryDeductionService)
     {
         _orderRepository                = orderRepository;
         _productRepository              = productRepository;
@@ -63,6 +68,8 @@ public class OrderAppService : ApplicationService, IOrderAppService
         _onlinePaymentOptions           = onlinePaymentOptions;
         _onlinePaymentProviderResolver  = onlinePaymentProviderResolver;
         _httpContextAccessor            = httpContextAccessor;
+        _inventoryOptions               = inventoryOptions;
+        _inventoryDeductionService      = inventoryDeductionService;
     }
 
     public async Task<OrderDto> CreateAsync(CreateOrderDto input)
@@ -83,6 +90,11 @@ public class OrderAppService : ApplicationService, IOrderAppService
             Notes = input.Notes,
             DeliveryMethod = input.DeliveryMethod,
         };
+
+        // Snapshot the auto-deduction setting now (Jira 9005). Only orders created while the
+        // setting is ON are ever eligible for deduction — enabling it later never affects old orders.
+        // This does NOT deduct stock and never blocks checkout, regardless of inventory state.
+        var inventoryDeductionEligible = _inventoryOptions.Value.AutoDeductOnPressedEnabled;
 
         foreach (var itemDto in input.Items)
         {
@@ -110,7 +122,10 @@ public class OrderAppService : ApplicationService, IOrderAppService
                 GuidGenerator.Create(), order.Id,
                 product.Id, variant.Id,
                 product.Name, variantLabel,
-                itemDto.Quantity, unitPrice);
+                itemDto.Quantity, unitPrice)
+            {
+                InventoryDeductionEligible = inventoryDeductionEligible,
+            };
 
             AddPrintsToItem(item, loadedPrints);
 
@@ -422,8 +437,22 @@ public class OrderAppService : ApplicationService, IOrderAppService
 
     public async Task<OrderDto> MarkReadyAsync(Guid id)
     {
-        var order = await _orderRepository.GetAsync(id);
+        // Load Items so the (optional) inventory deduction can run in this same unit of work.
+        var query = await _orderRepository.GetQueryableAsync();
+        var order = await query
+            .Include(o => o.Items)
+            .FirstOrDefaultAsync(o => o.Id == id)
+            ?? throw new Volo.Abp.Domain.Entities.EntityNotFoundException(typeof(Order), id);
+
+        // MarkReady throws unless the order is currently Printing, so this only ever runs on the
+        // genuine Printing → Ready transition — the first persisted production-complete signal.
+        // (No persisted "Pressed" step exists; see implementation report.) This makes the trigger
+        // one-way and, with per-item InventoryDeductedAt markers, idempotent.
         order.MarkReady();
+
+        // Optional, idempotent stock deduction (Jira 9005). Never blocks the transition.
+        await _inventoryDeductionService.DeductForOrderAsync(order);
+
         await _orderRepository.UpdateAsync(order, autoSave: true);
 
         await AddTimelineEntryAsync(id, OrderEventType.StatusChanged,

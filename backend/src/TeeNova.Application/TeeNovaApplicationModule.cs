@@ -4,6 +4,7 @@ using Microsoft.Extensions.DependencyInjection;
 using TeeNova.Auth;
 using TeeNova.Email;
 using TeeNova.Files;
+using TeeNova.Inventory;
 using TeeNova.Payments;
 using TeeNova.Payments.Mock;
 using TeeNova.Payments.Stripe;
@@ -42,6 +43,10 @@ public class TeeNovaApplicationModule : AbpModule
         context.Services.AddTransient<IOrderEmailNotificationService, OrderEmailNotificationService>();
 
         context.Services.Configure<OnlinePaymentOptions>(configuration.GetSection("OnlinePayments"));
+
+        // Inventory auto-deduction (Jira 9005) — default OFF via InventoryOptions POCO default.
+        context.Services.Configure<InventoryOptions>(configuration.GetSection("Inventory"));
+        context.Services.AddTransient<IInventoryDeductionService, InventoryDeductionService>();
 
         context.Services.AddTransient<IOnlinePaymentProviderResolver, OnlinePaymentProviderResolver>();
 

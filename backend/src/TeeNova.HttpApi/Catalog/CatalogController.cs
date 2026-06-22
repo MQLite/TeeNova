@@ -93,6 +93,15 @@ public class CatalogController : TeeNovaControllerBase
     public async Task DeleteVariantAsync(Guid productId, Guid variantId)
         => await _catalogAppService.DeleteVariantAsync(productId, variantId);
 
+    /// <summary>
+    /// Records informational inventory for a variant (admin only). Does not affect checkout,
+    /// customer availability, or stock deduction.
+    /// </summary>
+    [HttpPut("products/{productId:guid}/variants/{variantId:guid}/inventory")]
+    public async Task<ProductVariantDto> UpdateVariantInventoryAsync(
+        Guid productId, Guid variantId, [FromBody] UpdateVariantInventoryDto input)
+        => await _catalogAppService.UpdateVariantInventoryAsync(productId, variantId, input);
+
     /// <summary>Bulk creates or updates variants for a product from a Size × Color matrix save.</summary>
     [HttpPut("products/{productId:guid}/variants/bulk")]
     public async Task<List<ProductVariantDto>> BulkSaveVariantsAsync(

@@ -8,4 +8,6 @@ public static class CatalogConsts
     public const int MaxColorLength = 64;
     public const int MaxSizeLength = 32;
     public const int MaxImageUrlLength = 1024;
+    public const int MaxInventoryNoteLength = 500;
+    public const int MaxInventoryUpdatedByLength = 256;
 }

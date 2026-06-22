@@ -82,7 +82,12 @@ public class DashboardAppService : ApplicationService, IDashboardAppService
             RevenueThisMonth = billable.Where(o => o.CreationTime >= monthStart).Sum(o => o.TotalAmount),
             TotalProducts = products.Count,
             ActiveProducts = products.Count(p => p.IsActive),
-            LowStockVariants = products.SelectMany(p => p.Variants).Count(v => v.StockQuantity <= 5),
+            // Null/NotRecorded stock never counts as low. A variant is low-stock when it is
+            // explicitly flagged LowStock, or has a tracked quantity at/under its own threshold.
+            LowStockVariants = products.SelectMany(p => p.Variants).Count(v =>
+                v.InventoryStatus == VariantInventoryStatus.LowStock ||
+                (v.StockQuantity.HasValue && v.LowStockThreshold.HasValue &&
+                 v.StockQuantity.Value <= v.LowStockThreshold.Value)),
             RecentOrders = recentOrders,
             DailyOrderCounts = dailyCounts,
         };

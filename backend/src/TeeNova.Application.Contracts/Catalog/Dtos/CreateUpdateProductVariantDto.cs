@@ -18,8 +18,13 @@ public class CreateProductVariantDto
 
     public decimal PriceAdjustment { get; set; } = 0;
 
+    /// <summary>
+    /// Deprecated for write (Jira 9002): inventory is now managed exclusively via
+    /// PUT .../variants/{id}/inventory. Retained (nullable) for payload backward-compatibility;
+    /// ignored on create. New variants default to <see cref="VariantInventoryStatus.NotRecorded"/> / null stock.
+    /// </summary>
     [Range(0, int.MaxValue)]
-    public int StockQuantity { get; set; } = 0;
+    public int? StockQuantity { get; set; }
 
     public bool IsAvailable { get; set; } = true;
 }
@@ -40,14 +45,12 @@ public class UpdateProductVariantDto
 
     public decimal PriceAdjustment { get; set; }
 
+    /// <summary>
+    /// Deprecated for write (Jira 9002): inventory is managed via the inventory endpoint and is
+    /// preserved untouched by this flow. Retained (nullable) for payload backward-compatibility; ignored on update.
+    /// </summary>
     [Range(0, int.MaxValue)]
-    public int StockQuantity { get; set; }
+    public int? StockQuantity { get; set; }
 
     public bool IsAvailable { get; set; }
-}
-
-public class UpdateStockDto
-{
-    [Range(0, int.MaxValue)]
-    public int StockQuantity { get; set; }
 }
