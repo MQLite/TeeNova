@@ -1,6 +1,7 @@
 import { apiClient, type ApiClient } from '@/lib/api-client'
 import type {
   BulkSaveProductVariantsPayload,
+  InventoryStatus,
   PagedResult,
   Product,
   ProductImage,
@@ -54,6 +55,18 @@ export interface UpdateProductImagePayload {
   color?: string | null
 }
 
+/**
+ * Payload for the dedicated variant inventory endpoint (Jira 9003).
+ * This is the ONLY frontend write path for inventory — never send these fields
+ * through create/update/bulk variant saves (the backend ignores them there).
+ */
+export interface UpdateVariantInventoryPayload {
+  inventoryStatus: InventoryStatus
+  stockQuantity?: number | null
+  lowStockThreshold?: number | null
+  inventoryNote?: string | null
+}
+
 export function makeCatalogApi(client: ApiClient) {
   return {
     getProducts(params?: GetProductsParams): Promise<PagedResult<ProductListItem>> {
@@ -92,6 +105,18 @@ export function makeCatalogApi(client: ApiClient) {
 
     deleteVariant(productId: string, variantId: string): Promise<void> {
       return client.delete(`/api/catalog/products/${productId}/variants/${variantId}`)
+    },
+
+    /** Records informational inventory for a variant. The only write path for inventory. */
+    updateVariantInventory(
+      productId: string,
+      variantId: string,
+      payload: UpdateVariantInventoryPayload,
+    ): Promise<ProductVariant> {
+      return client.put(
+        `/api/catalog/products/${productId}/variants/${variantId}/inventory`,
+        payload,
+      )
     },
 
     bulkSaveVariants(productId: string, payload: BulkSaveProductVariantsPayload): Promise<ProductVariant[]> {

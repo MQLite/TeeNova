@@ -2,6 +2,7 @@
 
 import { useState } from 'react'
 import { VariantMatrixEditor } from './VariantMatrixEditor'
+import { VariantInventoryPanel } from './VariantInventoryPanel'
 import type { ProductVariant } from '@/types'
 
 interface Props {
@@ -27,6 +28,14 @@ export function VariantSection({ productId, initialVariants, onColorsChange }: P
         variants={variants}
         onSaved={setVariants}
         onColorsChange={onColorsChange}
+      />
+
+      <VariantInventoryPanel
+        productId={productId}
+        variants={variants}
+        onInventoryUpdated={(updated) =>
+          setVariants((prev) => prev.map((v) => (v.id === updated.id ? updated : v)))
+        }
       />
     </section>
   )

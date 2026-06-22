@@ -11,14 +11,24 @@ export interface ProductListItem {
   variantCount: number
 }
 
+/** Informational inventory state for a variant (Jira 9002/9003). Decoupled from sellability. */
+export type InventoryStatus = 'NotRecorded' | 'InStock' | 'LowStock' | 'OutOfStock'
+
 export interface ProductVariant {
   id: string
   sku: string
   color: string
   size: string
   priceAdjustment: number
-  stockQuantity: number
+  /** Null = not tracked. Always null when inventoryStatus is 'NotRecorded'. */
+  stockQuantity: number | null
   isAvailable: boolean
+  // ── Inventory (informational only — never gates checkout/availability) ──
+  inventoryStatus: InventoryStatus
+  lowStockThreshold: number | null
+  inventoryNote: string | null
+  inventoryUpdatedAt: string | null
+  inventoryUpdatedBy: string | null
 }
 
 export interface UpsertProductVariantItem {
