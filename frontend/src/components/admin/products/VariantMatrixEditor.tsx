@@ -61,7 +61,7 @@ function buildCells(
       const v   = lookup.get(key)
       cells[key] = v
         ? { variantId: v.id, size: v.size, color: v.color, priceAdjustment: v.priceAdjustment,
-            isAvailable: v.isAvailable, sku: v.sku, stockQuantity: v.stockQuantity, isDirty: false }
+            isAvailable: v.isAvailable, sku: v.sku, stockQuantity: v.stockQuantity ?? 0, isDirty: false }
         : { size, color, priceAdjustment: 0, isAvailable: true, stockQuantity: 0, isDirty: false }
     }
   }
