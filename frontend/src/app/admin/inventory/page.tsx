@@ -6,6 +6,7 @@ import { adminApiClient, redirectToLogin } from '@/lib/admin-client'
 import { ApiError } from '@/lib/api-client'
 import { ProductHeader } from '@/components/admin/products/ProductHeader'
 import { StockMatrix } from '@/components/admin/inventory/StockMatrix'
+import { AutoDeductToggle } from '@/components/admin/inventory/AutoDeductToggle'
 import type { Product, ProductListItem } from '@/types'
 
 const catalogApi = makeCatalogApi(adminApiClient)
@@ -66,6 +67,8 @@ export default function AdminInventoryPage() {
         eyebrow="Admin Inventory"
         subtitle="Record on-hand inventory per product variant, in a size × colour matrix."
       />
+
+      <AutoDeductToggle />
 
       {/* Product selector */}
       <div className="flex flex-wrap items-center gap-3">

@@ -449,6 +449,13 @@ export interface EmailSettings {
   adminOrderBaseUrl: string | null
 }
 
+// ─── Inventory Settings ───────────────────────────────────────────────────────
+
+export interface InventorySettings {
+  autoDeductOnPressedEnabled: boolean
+  lastModificationTime: string | null
+}
+
 // ─── Admin Users ──────────────────────────────────────────────────────────────
 
 export interface AdminUser {
