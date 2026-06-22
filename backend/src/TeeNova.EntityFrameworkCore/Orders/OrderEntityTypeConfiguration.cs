@@ -114,6 +114,11 @@ public class OrderEntityTypeConfiguration :
         builder.Property(i => i.VariantLabel).IsRequired().HasMaxLength(128);
         builder.Property(i => i.UnitPrice).HasColumnType("decimal(18,4)");
 
+        // InventoryDeductedAt is DateTime? — EF infers datetime2 nullable. Idempotency marker
+        // for the Jira 9005 post-production deduction.
+        builder.Property(i => i.InventoryDeductionEligible)
+            .HasDefaultValue(false);
+
         builder.HasMany(i => i.Prints)
             .WithOne()
             .HasForeignKey(p => p.OrderItemId)

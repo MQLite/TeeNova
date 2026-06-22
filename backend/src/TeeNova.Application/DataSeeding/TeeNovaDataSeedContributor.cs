@@ -338,7 +338,8 @@ public class TeeNovaDataSeedContributor : IDataSeedContributor, ITransientDepend
                     Guid.NewGuid(), product.Id,
                     $"{skuPrefix}-{color.Replace(" ", "")[..Math.Min(3, color.Replace(" ", "").Length)]}{size}", color, size)
                 {
-                    StockQuantity  = 100,
+                    // Inventory left at the default (NotRecorded / null stock) — sellability
+                    // is governed by IsAvailable, not by recorded inventory.
                     IsAvailable    = true,
                     PriceAdjustment = adjustment
                 });

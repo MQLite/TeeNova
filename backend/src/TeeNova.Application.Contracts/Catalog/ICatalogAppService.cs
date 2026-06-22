@@ -31,6 +31,6 @@ public interface ICatalogAppService : IApplicationService
     Task<ProductVariantDto> CreateVariantAsync(Guid productId, CreateProductVariantDto input);
     Task<ProductVariantDto> UpdateVariantAsync(Guid productId, Guid variantId, UpdateProductVariantDto input);
     Task DeleteVariantAsync(Guid productId, Guid variantId);
-    Task<ProductVariantDto> UpdateStockAsync(Guid productId, Guid variantId, UpdateStockDto input);
+    Task<ProductVariantDto> UpdateVariantInventoryAsync(Guid productId, Guid variantId, UpdateVariantInventoryDto input);
     Task<List<ProductVariantDto>> BulkSaveVariantsAsync(Guid productId, BulkSaveProductVariantsDto input);
 }

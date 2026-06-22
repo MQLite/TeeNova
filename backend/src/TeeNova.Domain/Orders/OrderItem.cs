@@ -19,6 +19,20 @@ public class OrderItem : Entity<Guid>
     public int Quantity { get; set; }
     public decimal UnitPrice { get; set; }
 
+    /// <summary>
+    /// Idempotency marker for the optional post-production stock deduction (Jira 9005).
+    /// Stamped once when the item is processed at the production-complete transition so
+    /// repeated transitions cannot double-deduct. Null = not yet processed.
+    /// </summary>
+    public DateTime? InventoryDeductedAt { get; set; }
+
+    /// <summary>
+    /// Captures, at order-creation time, whether auto-deduction was enabled. Only items created
+    /// while the setting was ON are ever eligible for deduction (Jira 9005), so enabling the
+    /// setting later never retroactively deducts old orders. Defaults to false.
+    /// </summary>
+    public bool InventoryDeductionEligible { get; set; }
+
     public List<OrderItemPrint> Prints { get; private set; } = [];
 
     // Future: DesignProjectId, TemplateId, CropFrameData (JSON)

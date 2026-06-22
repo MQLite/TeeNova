@@ -23,8 +23,13 @@ public class UpsertProductVariantItemDto
 
     public decimal PriceAdjustment { get; set; } = 0;
 
+    /// <summary>
+    /// Deprecated for write (Jira 9002): inventory is managed via the inventory endpoint.
+    /// Existing variants keep their inventory untouched on bulk save; new variants default to
+    /// NotRecorded / null stock. Retained (nullable) for payload backward-compatibility; ignored.
+    /// </summary>
     [Range(0, int.MaxValue)]
-    public int StockQuantity { get; set; } = 0;
+    public int? StockQuantity { get; set; }
 
     public bool IsAvailable { get; set; } = true;
 }

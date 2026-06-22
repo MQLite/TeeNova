@@ -23,8 +23,15 @@ public class ProductVariantDto
     public string Color { get; set; } = default!;
     public string Size { get; set; } = default!;
     public decimal PriceAdjustment { get; set; }
-    public int StockQuantity { get; set; }
     public bool IsAvailable { get; set; }
+
+    // ── Inventory (Jira 9002) — informational only ──────────────────────────────
+    public VariantInventoryStatus InventoryStatus { get; set; }
+    public int? StockQuantity { get; set; }
+    public int? LowStockThreshold { get; set; }
+    public string? InventoryNote { get; set; }
+    public DateTime? InventoryUpdatedAt { get; set; }
+    public string? InventoryUpdatedBy { get; set; }
 }
 
 public class ProductImageDto

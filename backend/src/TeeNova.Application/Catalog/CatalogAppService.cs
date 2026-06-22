@@ -247,10 +247,11 @@ public class CatalogAppService : ApplicationService, ICatalogAppService
             throw new UserFriendlyException(
                 $"A variant with size '{input.Size}' and color '{input.Color}' already exists for this product.");
 
+        // Inventory is intentionally not set here — new variants default to
+        // NotRecorded / null stock and are managed via UpdateVariantInventoryAsync.
         var variant = new ProductVariant(GuidGenerator.Create(), productId, input.Sku, input.Color, input.Size)
         {
             PriceAdjustment = input.PriceAdjustment,
-            StockQuantity   = input.StockQuantity,
             IsAvailable     = input.IsAvailable,
         };
 
@@ -276,11 +277,12 @@ public class CatalogAppService : ApplicationService, ICatalogAppService
             throw new UserFriendlyException(
                 $"A variant with size '{input.Size}' and color '{input.Color}' already exists for this product.");
 
+        // Inventory fields are deliberately left untouched — they are owned by
+        // UpdateVariantInventoryAsync so this flow can never clobber recorded inventory.
         variant.Sku             = input.Sku;
         variant.Color           = input.Color;
         variant.Size            = input.Size;
         variant.PriceAdjustment = input.PriceAdjustment;
-        variant.StockQuantity   = input.StockQuantity;
         variant.IsAvailable     = input.IsAvailable;
 
         await _variantRepository.UpdateAsync(variant, autoSave: true);
@@ -297,8 +299,48 @@ public class CatalogAppService : ApplicationService, ICatalogAppService
         await _variantRepository.DeleteAsync(variant, autoSave: true);
     }
 
-    public Task<ProductVariantDto> UpdateStockAsync(Guid productId, Guid variantId, UpdateStockDto input)
-        => throw new NotImplementedException("CatalogAppService.UpdateStockAsync is not yet implemented.");
+    /// <summary>
+    /// Records informational inventory against a variant (Jira 9002). Inventory is display-only:
+    /// it never blocks checkout, hides the variant, or deducts stock. Sellability stays governed
+    /// by <see cref="ProductVariant.IsAvailable"/>, which this method never touches.
+    /// </summary>
+    public async Task<ProductVariantDto> UpdateVariantInventoryAsync(
+        Guid productId, Guid variantId, UpdateVariantInventoryDto input)
+    {
+        var variant = await _variantRepository.GetAsync(variantId);
+
+        if (variant.ProductId != productId)
+            throw new EntityNotFoundException(typeof(ProductVariant), variantId);
+
+        if (!Enum.IsDefined(typeof(VariantInventoryStatus), input.InventoryStatus))
+            throw new UserFriendlyException($"Invalid inventory status '{input.InventoryStatus}'.");
+
+        if (input.StockQuantity is < 0)
+            throw new UserFriendlyException("Stock quantity cannot be negative.");
+
+        if (input.LowStockThreshold is < 0)
+            throw new UserFriendlyException("Low stock threshold cannot be negative.");
+
+        if (input.Note is { Length: > CatalogConsts.MaxInventoryNoteLength })
+            throw new UserFriendlyException(
+                $"Inventory note cannot exceed {CatalogConsts.MaxInventoryNoteLength} characters.");
+
+        variant.InventoryStatus = input.InventoryStatus;
+
+        // NotRecorded means "untracked" — quantity must always be cleared to null.
+        variant.StockQuantity = input.InventoryStatus == VariantInventoryStatus.NotRecorded
+            ? null
+            : input.StockQuantity;
+
+        variant.LowStockThreshold = input.LowStockThreshold;
+        variant.InventoryNote     = string.IsNullOrWhiteSpace(input.Note) ? null : input.Note.Trim();
+
+        variant.InventoryUpdatedAt = Clock.Now;
+        variant.InventoryUpdatedBy = CurrentUser?.UserName;
+
+        await _variantRepository.UpdateAsync(variant, autoSave: true);
+        return ObjectMapper.Map<ProductVariant, ProductVariantDto>(variant);
+    }
 
     public async Task<List<ProductVariantDto>> BulkSaveVariantsAsync(
         Guid productId, BulkSaveProductVariantsDto input)
@@ -355,11 +397,11 @@ public class CatalogAppService : ApplicationService, ICatalogAppService
                             $"A variant with size '{item.Size}' and color '{item.Color}' already exists for this product.");
                 }
 
+                // Inventory left untouched — owned by UpdateVariantInventoryAsync.
                 variant.Sku             = item.Sku;
                 variant.Color           = item.Color;
                 variant.Size            = item.Size;
                 variant.PriceAdjustment = item.PriceAdjustment;
-                variant.StockQuantity   = item.StockQuantity;
                 variant.IsAvailable     = item.IsAvailable;
                 variant.SortOrder       = index;
 
@@ -377,11 +419,11 @@ public class CatalogAppService : ApplicationService, ICatalogAppService
                     throw new UserFriendlyException(
                         $"A variant with size '{item.Size}' and color '{item.Color}' already exists for this product.");
 
+                // New variant — inventory defaults to NotRecorded / null stock.
                 var variant = new ProductVariant(
                     GuidGenerator.Create(), productId, item.Sku, item.Color, item.Size)
                 {
                     PriceAdjustment = item.PriceAdjustment,
-                    StockQuantity   = item.StockQuantity,
                     IsAvailable     = item.IsAvailable,
                     SortOrder       = index,
                 };
