@@ -86,14 +86,16 @@ public class OrderProductionPdfService : IOrderProductionPdfService, ITransientD
                         .FontSize(11).FontColor(Colors.Grey.Darken1);
                 });
 
-                row.ConstantItem(220).Column(right =>
+                row.ConstantItem(230).Column(right =>
                 {
+                    right.Item().AlignRight().Text("ORDER")
+                        .FontSize(8).FontColor(Colors.Grey.Darken1);
                     right.Item().AlignRight().Text(order.OrderNumber)
-                        .FontSize(15).Bold();
-                    right.Item().AlignRight().Text($"Generated {generatedAt}")
+                        .FontSize(19).Bold();
+                    right.Item().AlignRight().PaddingTop(2).Text($"Generated {generatedAt}")
                         .FontSize(8).FontColor(Colors.Grey.Darken1);
                     right.Item().AlignRight().Text(
-                        $"Order: {order.Status}   ·   Payment: {FormatPaymentStatus(order.PaymentStatus)}")
+                        $"Status: {order.Status}   ·   Payment: {FormatPaymentStatus(order.PaymentStatus)}")
                         .FontSize(8).FontColor(Colors.Grey.Darken1);
                 });
             });
@@ -106,7 +108,7 @@ public class OrderProductionPdfService : IOrderProductionPdfService, ITransientD
     {
         container.Column(col =>
         {
-            col.Spacing(14);
+            col.Spacing(16);
 
             col.Item().Element(c => ComposeCustomerAndDelivery(c, order));
             col.Item().Element(c => ComposeOrderSummary(c, order));
@@ -153,15 +155,16 @@ public class OrderProductionPdfService : IOrderProductionPdfService, ITransientD
             {
                 row.RelativeItem().Column(c =>
                 {
+                    LabelValue(c, "Payment status", FormatPaymentStatus(order.PaymentStatus));
                     LabelValue(c, "Payment requirement", FormatRequirementType(order.PaymentRequirementType));
                     LabelValue(c, "Total amount", FormatMoney(order.TotalAmount));
-                    LabelValue(c, "Required payment", FormatMoney(order.RequiredPaymentAmount));
+                    if (order.RequiredDepositAmount.HasValue)
+                        LabelValue(c, "Required deposit", FormatMoney(order.RequiredDepositAmount.Value));
                 });
 
                 row.RelativeItem().Column(c =>
                 {
-                    if (order.RequiredDepositAmount.HasValue)
-                        LabelValue(c, "Required deposit", FormatMoney(order.RequiredDepositAmount.Value));
+                    LabelValue(c, "Required payment", FormatMoney(order.RequiredPaymentAmount));
                     LabelValue(c, "Paid amount", FormatMoney(order.PaidAmount));
                     LabelValue(c, "Balance", FormatMoney(order.BalanceAmount));
                 });
@@ -279,15 +282,16 @@ public class OrderProductionPdfService : IOrderProductionPdfService, ITransientD
 
         Section(container, "Production Checklist", inner =>
         {
-            inner.Column(col =>
+            inner.Border(1).BorderColor(Colors.Grey.Lighten1).Background(Colors.Grey.Lighten5)
+                .Padding(12).Column(col =>
             {
-                col.Spacing(6);
+                col.Spacing(8);
                 foreach (var step in steps)
                 {
                     col.Item().Row(row =>
                     {
-                        row.ConstantItem(16).AlignMiddle().Height(12).Width(12)
-                            .Border(1).BorderColor(Colors.Grey.Darken1);
+                        row.ConstantItem(18).AlignMiddle().Height(13).Width(13)
+                            .Border(1).BorderColor(Colors.Grey.Darken2);
                         row.RelativeItem().PaddingLeft(8).AlignMiddle().Text(step).FontSize(10);
                     });
                 }
@@ -415,21 +419,46 @@ public class OrderProductionPdfService : IOrderProductionPdfService, ITransientD
     }
 
     /// <summary>
-    /// Returns a safe, display-only label for an uploaded design: the final URL segment
-    /// (the filename) only — never a domain or local filesystem path. Stored URLs are
-    /// root-relative (e.g. "/uploads/designs/abc.png"), so the tail is the filename.
+    /// Returns a safe, display-only label for an uploaded design: the decoded filename
+    /// (final path segment) only — never a scheme, domain, query string, fragment, or
+    /// local filesystem path.
+    ///
+    /// Handles root-relative URLs ("/uploads/designs/file.png"), absolute URLs
+    /// ("https://host/uploads/designs/file.png?v=1#preview" → "file.png"), URL-encoded
+    /// names ("customer%20logo.png" → "customer logo.png"), and defensively strips any
+    /// Windows-style path so "C:\uploads\…\file.png" can never surface as a local path.
     /// </summary>
     private static string DesignFileLabel(string? url)
     {
         if (string.IsNullOrWhiteSpace(url))
             return "No design uploaded";
 
-        var tail = url.Split('/', StringSplitOptions.RemoveEmptyEntries).LastOrDefault();
+        var path = url.Trim();
+
+        if (Uri.TryCreate(path, UriKind.Absolute, out var abs))
+        {
+            // AbsolutePath excludes scheme, host, query and fragment — no domain can leak.
+            path = abs.AbsolutePath;
+        }
+        else
+        {
+            // Relative value: drop fragment first, then query string.
+            var hashIdx = path.IndexOf('#');
+            if (hashIdx >= 0) path = path[..hashIdx];
+            var queryIdx = path.IndexOf('?');
+            if (queryIdx >= 0) path = path[..queryIdx];
+        }
+
+        // Final segment only; split on both separators so neither a web directory nor a
+        // Windows path component (e.g. a "C:" drive) can appear in the output.
+        var tail = path.Split(new[] { '/', '\\' }, StringSplitOptions.RemoveEmptyEntries).LastOrDefault();
         if (string.IsNullOrWhiteSpace(tail))
-            tail = url.TrimStart('/');
+            return "Design file attached";
 
         try { tail = Uri.UnescapeDataString(tail); } catch { /* keep raw tail */ }
-        return string.IsNullOrWhiteSpace(tail) ? "Uploaded design" : tail;
+        tail = tail.Trim();
+
+        return tail.Length == 0 ? "Design file attached" : tail;
     }
 
     private static string SanitizeForFileName(string value)
