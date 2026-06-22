@@ -10,3 +10,7 @@
 Thumbs.db
 frontend/fe_err.log
 frontend/fe.log
+
+# Stray docs accidentally written under subprojects (canonical docs live in /docs)
+docs/
+docs/
