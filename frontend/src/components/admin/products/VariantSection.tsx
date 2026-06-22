@@ -1,8 +1,8 @@
 'use client'
 
 import { useState } from 'react'
+import Link from 'next/link'
 import { VariantMatrixEditor } from './VariantMatrixEditor'
-import { VariantInventoryPanel } from './VariantInventoryPanel'
 import type { ProductVariant } from '@/types'
 
 interface Props {
@@ -30,13 +30,13 @@ export function VariantSection({ productId, initialVariants, onColorsChange }: P
         onColorsChange={onColorsChange}
       />
 
-      <VariantInventoryPanel
-        productId={productId}
-        variants={variants}
-        onInventoryUpdated={(updated) =>
-          setVariants((prev) => prev.map((v) => (v.id === updated.id ? updated : v)))
-        }
-      />
+      <p className="mt-4 text-xs text-black/45" style={{ letterSpacing: '-0.14px' }}>
+        Manage stock levels for these variants on the{' '}
+        <Link href="/admin/inventory" className="text-black/70 underline underline-offset-2 hover:text-black">
+          Stock page
+        </Link>
+        .
+      </p>
     </section>
   )
 }
