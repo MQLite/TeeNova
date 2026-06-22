@@ -35,7 +35,7 @@ public class OrderAppService : ApplicationService, IOrderAppService
     private readonly IOptions<OnlinePaymentOptions>          _onlinePaymentOptions;
     private readonly IOnlinePaymentProviderResolver          _onlinePaymentProviderResolver;
     private readonly IHttpContextAccessor                    _httpContextAccessor;
-    private readonly IOptions<InventoryOptions>              _inventoryOptions;
+    private readonly IInventorySettingsAppService            _inventorySettings;
     private readonly IInventoryDeductionService              _inventoryDeductionService;
 
     public OrderAppService(
@@ -52,7 +52,7 @@ public class OrderAppService : ApplicationService, IOrderAppService
         IOptions<OnlinePaymentOptions>           onlinePaymentOptions,
         IOnlinePaymentProviderResolver           onlinePaymentProviderResolver,
         IHttpContextAccessor                     httpContextAccessor,
-        IOptions<InventoryOptions>               inventoryOptions,
+        IInventorySettingsAppService             inventorySettings,
         IInventoryDeductionService               inventoryDeductionService)
     {
         _orderRepository                = orderRepository;
@@ -68,7 +68,7 @@ public class OrderAppService : ApplicationService, IOrderAppService
         _onlinePaymentOptions           = onlinePaymentOptions;
         _onlinePaymentProviderResolver  = onlinePaymentProviderResolver;
         _httpContextAccessor            = httpContextAccessor;
-        _inventoryOptions               = inventoryOptions;
+        _inventorySettings              = inventorySettings;
         _inventoryDeductionService      = inventoryDeductionService;
     }
 
@@ -91,10 +91,10 @@ public class OrderAppService : ApplicationService, IOrderAppService
             DeliveryMethod = input.DeliveryMethod,
         };
 
-        // Snapshot the auto-deduction setting now (Jira 9005). Only orders created while the
-        // setting is ON are ever eligible for deduction — enabling it later never affects old orders.
-        // This does NOT deduct stock and never blocks checkout, regardless of inventory state.
-        var inventoryDeductionEligible = _inventoryOptions.Value.AutoDeductOnPressedEnabled;
+        // Snapshot the auto-deduction setting now (DB-backed, Jira 9005). Only orders created
+        // while the setting is ON are ever eligible for deduction — enabling it later never
+        // affects old orders. This does NOT deduct stock and never blocks checkout.
+        var inventoryDeductionEligible = (await _inventorySettings.GetAsync()).AutoDeductOnPressedEnabled;
 
         foreach (var itemDto in input.Items)
         {

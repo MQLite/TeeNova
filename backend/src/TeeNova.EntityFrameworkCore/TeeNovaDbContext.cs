@@ -2,6 +2,7 @@ using Microsoft.EntityFrameworkCore;
 using TeeNova.Auth;
 using TeeNova.Catalog;
 using TeeNova.Customization;
+using TeeNova.Inventory;
 using TeeNova.Notifications;
 using TeeNova.Orders;
 using TeeNova.Payments;
@@ -48,6 +49,9 @@ public class TeeNovaDbContext : AbpDbContext<TeeNovaDbContext>
     // Notifications
     public DbSet<EmailNotificationLog> EmailNotificationLogs { get; set; }
     public DbSet<EmailSettings>        EmailSettings         { get; set; }
+
+    // Inventory
+    public DbSet<InventorySettings>    InventorySettings     { get; set; }
 
     public TeeNovaDbContext(DbContextOptions<TeeNovaDbContext> options)
         : base(options)

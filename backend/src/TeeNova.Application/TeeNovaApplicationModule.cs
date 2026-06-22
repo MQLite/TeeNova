@@ -44,8 +44,8 @@ public class TeeNovaApplicationModule : AbpModule
 
         context.Services.Configure<OnlinePaymentOptions>(configuration.GetSection("OnlinePayments"));
 
-        // Inventory auto-deduction (Jira 9005) — default OFF via InventoryOptions POCO default.
-        context.Services.Configure<InventoryOptions>(configuration.GetSection("Inventory"));
+        // Inventory auto-deduction (Jira 9005) — the enable flag is now DB-backed
+        // (InventorySettings), toggled from the admin panel; default OFF.
         context.Services.AddTransient<IInventoryDeductionService, InventoryDeductionService>();
 
         context.Services.AddTransient<IOnlinePaymentProviderResolver, OnlinePaymentProviderResolver>();
