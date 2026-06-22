@@ -17,10 +17,11 @@ interface Props {
 
 interface Cell {
   variant: ProductVariant
-  qty: string                // input string; '' = Not Recorded (null)
-  savedQty: number | null    // last persisted quantity, for dirty comparison
-  threshold: number | null   // preserved on save; edited via the details modal
-  note: string | null        // preserved on save; edited via the details modal
+  qty: string                  // input string; '' = Not Recorded (null)
+  savedQty: number | null      // last persisted quantity, for dirty comparison
+  threshold: number | null     // edited per-cell (modal) or in bulk; persisted on save
+  savedThreshold: number | null // last persisted threshold, for dirty comparison
+  note: string | null          // preserved on save; edited via the details modal
 }
 
 const cellKey = (size: string, color: string) => `${size.toLowerCase()}|${color.toLowerCase()}`
@@ -34,10 +35,21 @@ function buildCells(variants: ProductVariant[]): Record<string, Cell> {
       qty: v.stockQuantity != null ? String(v.stockQuantity) : '',
       savedQty: v.stockQuantity,
       threshold: v.lowStockThreshold,
+      savedThreshold: v.lowStockThreshold,
       note: v.inventoryNote,
     }
   }
   return cells
+}
+
+/** Pre-fill the bulk threshold input when every variant already shares one value. */
+function commonThreshold(variants: ProductVariant[]): string {
+  const values = new Set(variants.map((v) => v.lowStockThreshold))
+  if (values.size === 1) {
+    const only = [...values][0]
+    return only != null ? String(only) : ''
+  }
+  return ''
 }
 
 export function StockMatrix({ productId, variants }: Props) {
@@ -46,6 +58,7 @@ export function StockMatrix({ productId, variants }: Props) {
   const [error, setError] = useState<string | null>(null)
   const [savedCount, setSavedCount] = useState<number | null>(null)
   const [detailsKey, setDetailsKey] = useState<string | null>(null)
+  const [bulkThreshold, setBulkThreshold] = useState<string>(() => commonThreshold(variants))
 
   // Preserve the admin's first-seen order for both axes.
   const sizes  = useMemo(() => [...new Set(variants.map((v) => v.size))], [variants])
@@ -57,7 +70,25 @@ export function StockMatrix({ productId, variants }: Props) {
   }
 
   function isDirty(c: Cell): boolean {
-    return isValidQtyInput(c.qty) && parseQty(c.qty) !== c.savedQty
+    if (!isValidQtyInput(c.qty)) return false
+    return parseQty(c.qty) !== c.savedQty || c.threshold !== c.savedThreshold
+  }
+
+  /** Apply one low-stock threshold to every variant of this product (blank clears it). */
+  function applyThresholdToAll() {
+    const t = bulkThreshold.trim()
+    if (t !== '' && !/^\d+$/.test(t)) {
+      setError('Low-stock threshold must be a whole number of 0 or greater, or blank to clear.')
+      return
+    }
+    const value = t === '' ? null : Number(t)
+    setCells((prev) => {
+      const next: Record<string, Cell> = {}
+      for (const k of Object.keys(prev)) next[k] = { ...prev[k], threshold: value }
+      return next
+    })
+    setSavedCount(null)
+    setError(null)
   }
 
   const dirtyKeys = Object.keys(cells).filter((k) => isDirty(cells[k]))
@@ -78,6 +109,7 @@ export function StockMatrix({ productId, variants }: Props) {
         qty: updated.stockQuantity != null ? String(updated.stockQuantity) : '',
         savedQty: updated.stockQuantity,
         threshold: updated.lowStockThreshold,
+        savedThreshold: updated.lowStockThreshold,
         note: updated.inventoryNote,
       },
     }))
@@ -166,6 +198,33 @@ export function StockMatrix({ productId, variants }: Props) {
           {error}
         </p>
       )}
+
+      {/* Product-level low-stock threshold */}
+      <div className="flex flex-wrap items-center gap-2 rounded-2xl border border-black/[0.06] bg-black/[0.02] px-3 py-2">
+        <span className={`${MONO} text-black/45`}>Low-stock threshold</span>
+        <input
+          type="number"
+          min="0"
+          step="1"
+          value={bulkThreshold}
+          onChange={(e) => setBulkThreshold(e.target.value)}
+          placeholder="none"
+          disabled={saving}
+          className="w-24 rounded-xl border border-black/[0.10] bg-white px-2.5 py-1.5 text-sm text-black placeholder:text-black/30 focus:border-black/30 focus:outline-none disabled:opacity-50"
+        />
+        <button
+          type="button"
+          onClick={applyThresholdToAll}
+          disabled={saving}
+          className="rounded-full border border-black/[0.10] bg-white px-3 py-1.5 text-xs text-black/60 transition-colors hover:border-black/25 hover:text-black disabled:opacity-40"
+          style={{ letterSpacing: '-0.14px' }}
+        >
+          Apply to all variants
+        </button>
+        <span className="text-xs text-black/35" style={{ letterSpacing: '-0.14px' }}>
+          Marks affected cells unsaved — click Save to persist. Blank clears the threshold.
+        </span>
+      </div>
 
       {/* Matrix */}
       <div className="overflow-x-auto rounded-2xl border border-black/[0.08]">
