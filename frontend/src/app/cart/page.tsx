@@ -2,6 +2,7 @@
 
 import Link from 'next/link'
 import { useCartStore } from '@/features/cart/cart-store'
+import { tierHint, useCartPricing } from '@/features/cart/useCartPricing'
 import type { CartItem } from '@/types'
 
 function getPrintSummary(item: CartItem) {
@@ -13,7 +14,9 @@ function getUploadedDesignUrl(item: CartItem) {
 }
 
 export default function CartPage() {
-  const { items, removeItem, updateQuantity, totalPrice } = useCartStore()
+  const { items, removeItem, updateQuantity } = useCartStore()
+  const { pricingByKey, errorsByKey, productTotals, subtotal: recalcSubtotal, error: pricingError } =
+    useCartPricing(items)
 
   if (items.length === 0) {
     return (
@@ -32,7 +35,7 @@ export default function CartPage() {
     )
   }
 
-  const subtotal = totalPrice()
+  const subtotal = recalcSubtotal
 
   return (
     <div className="min-h-screen bg-white">
@@ -55,7 +58,13 @@ export default function CartPage() {
       <div className="mx-auto max-w-6xl px-4 py-8 sm:px-6 lg:px-8">
         <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
           <div className="space-y-4 lg:col-span-2">
-            {items.map((item, idx) => (
+            {items.map((item, idx) => {
+              const linePricing = pricingByKey[item.cartItemKey]
+              const lineError = errorsByKey[item.cartItemKey]
+              const unitPrice = linePricing?.unitPrice ?? item.unitPrice
+              const lineTotal = linePricing?.lineTotal ?? item.unitPrice * item.quantity
+              const hint = tierHint(linePricing, productTotals[item.productId] ?? item.quantity)
+              return (
               <div key={item.cartItemKey} className="card overflow-hidden">
                 <div className="flex gap-4 p-5">
                   <div className="flex h-20 w-20 flex-shrink-0 items-center justify-center overflow-hidden rounded-lg bg-black/[0.03]">
@@ -121,9 +130,39 @@ export default function CartPage() {
                         >+</button>
                       </div>
                       <span className="text-base text-black" style={{ fontWeight: 540, letterSpacing: '-0.26px' }}>
-                        ${(item.unitPrice * item.quantity).toFixed(2)}
+                        ${lineTotal.toFixed(2)}
                       </span>
                     </div>
+
+                    {/* Tier / print context */}
+                    {linePricing?.pricingMode === 'Tiered' && (
+                      <div className="mt-2 flex flex-wrap items-center gap-1.5">
+                        {linePricing.appliedTierMinQuantity != null && (
+                          <span className="rounded-full bg-black/[0.05] px-2 py-0.5 text-[10px] uppercase tracking-[0.54px] text-black/55">
+                            Volume price: {linePricing.appliedTierMinQuantity <= 1 ? '1 pc' : `${linePricing.appliedTierMinQuantity}+`} tier
+                          </span>
+                        )}
+                        <span className="rounded-full bg-black/[0.05] px-2 py-0.5 text-[10px] uppercase tracking-[0.54px] text-black/55">
+                          One-side print included
+                        </span>
+                        {linePricing.hasExtraPrints && (
+                          <span className="rounded-full bg-black/[0.05] px-2 py-0.5 text-[10px] uppercase tracking-[0.54px] text-black/55">
+                            Extra print options added
+                          </span>
+                        )}
+                        {hint && (
+                          <span className="text-[11px] text-black/45" style={{ letterSpacing: '-0.14px' }}>
+                            {hint}
+                          </span>
+                        )}
+                      </div>
+                    )}
+
+                    {lineError && (
+                      <p className="mt-2 text-xs text-red-600" style={{ letterSpacing: '-0.14px' }}>
+                        Could not refresh this item’s price. The amount shown may be out of date.
+                      </p>
+                    )}
                   </div>
                 </div>
 
@@ -132,11 +171,18 @@ export default function CartPage() {
                     Item {idx + 1} of {items.length}
                   </span>
                   <span className="font-mono text-[10px] uppercase tracking-[0.54px] text-black/50">
-                    ${item.unitPrice.toFixed(2)} each
+                    ${unitPrice.toFixed(2)} each
                   </span>
                 </div>
               </div>
-            ))}
+              )
+            })}
+
+            {pricingError && (
+              <p className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+                {pricingError}
+              </p>
+            )}
 
             <div className="flex items-center justify-between pt-2">
               <Link href="/products"

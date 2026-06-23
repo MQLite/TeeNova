@@ -33,4 +33,7 @@ public interface ICatalogAppService : IApplicationService
     Task DeleteVariantAsync(Guid productId, Guid variantId);
     Task<ProductVariantDto> UpdateVariantInventoryAsync(Guid productId, Guid variantId, UpdateVariantInventoryDto input);
     Task<List<ProductVariantDto>> BulkSaveVariantsAsync(Guid productId, BulkSaveProductVariantsDto input);
+
+    // ── Admin: Price Tiers (Jira 9102) ──────────────────────────────────────────
+    Task<ProductDto> SetPriceTiersAsync(Guid productId, SetProductPriceTiersDto input);
 }

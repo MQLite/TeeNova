@@ -32,6 +32,7 @@ public class TeeNovaApplicationAutoMapperProfile : Profile
                     .FirstOrDefault()));
         CreateMap<ProductVariant, ProductVariantDto>();
         CreateMap<ProductImage, ProductImageDto>();
+        CreateMap<ProductPriceTier, ProductPriceTierDto>();
 
         // PrintConfig
         CreateMap<PrintArea, PrintAreaDto>();

@@ -28,6 +28,13 @@ public class Product : FullAuditedAggregateRoot<Guid>
     public ICollection<ProductVariant> Variants { get; set; } = new List<ProductVariant>();
     public ICollection<ProductImage> Images { get; set; } = new List<ProductImage>();
 
+    /// <summary>
+    /// Quantity-break pricing rules (Jira 9102). Empty means this product uses the legacy
+    /// additive formula unchanged. Written exclusively through the dedicated price-tiers
+    /// endpoint so normal product/variant edits never clobber them.
+    /// </summary>
+    public ICollection<ProductPriceTier> PriceTiers { get; set; } = new List<ProductPriceTier>();
+
     // Future: public ICollection<TemplateLayout> SupportedLayouts { get; set; }
 
     protected Product() { }

@@ -7,7 +7,8 @@ namespace TeeNova.EntityFrameworkCore.Catalog;
 public class ProductEntityTypeConfiguration :
     IEntityTypeConfiguration<Product>,
     IEntityTypeConfiguration<ProductVariant>,
-    IEntityTypeConfiguration<ProductImage>
+    IEntityTypeConfiguration<ProductImage>,
+    IEntityTypeConfiguration<ProductPriceTier>
 {
     public void Configure(EntityTypeBuilder<Product> builder)
     {
@@ -35,6 +36,15 @@ public class ProductEntityTypeConfiguration :
         builder.HasMany(p => p.Images)
             .WithOne()
             .HasForeignKey(i => i.ProductId)
+            .OnDelete(DeleteBehavior.Cascade);
+
+        // Price tiers cascade with the product. The variant-override scope is a plain
+        // nullable column (no FK) on purpose — this keeps variant deletion safe (nothing to
+        // violate) and avoids SQL Server multiple-cascade-path errors. Orphaned override rows
+        // (variant later deleted) are harmless: they never match a live variant during resolution.
+        builder.HasMany(p => p.PriceTiers)
+            .WithOne()
+            .HasForeignKey(t => t.ProductId)
             .OnDelete(DeleteBehavior.Cascade);
     }
 
@@ -77,5 +87,25 @@ public class ProductEntityTypeConfiguration :
 
         builder.Property(i => i.Color)
             .HasMaxLength(CatalogConsts.MaxColorLength);
+    }
+
+    public void Configure(EntityTypeBuilder<ProductPriceTier> builder)
+    {
+        builder.ToTable("ProductPriceTiers");
+
+        // Tier prices are validated to 2 decimals (the storefront money precision), so the
+        // column is decimal(18,2). Values flow losslessly into the decimal(18,4) order snapshot.
+        builder.Property(t => t.UnitPrice)
+            .HasColumnType("decimal(18,2)");
+
+        builder.HasIndex(t => t.ProductId);
+
+        // Enforces "no duplicate MinQuantity within the same scope" at the DB level for every
+        // scope — including product-level (ProductVariantId null). HasFilter(null) overrides EF's
+        // default "IS NOT NULL" filter so null-variant rows are covered too; differing MinQuantity
+        // keeps distinct breaks valid, while identical (ProductId, scope, MinQuantity) is rejected.
+        builder.HasIndex(t => new { t.ProductId, t.ProductVariantId, t.MinQuantity })
+            .IsUnique()
+            .HasFilter(null);
     }
 }

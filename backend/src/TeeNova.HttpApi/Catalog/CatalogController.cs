@@ -107,4 +107,15 @@ public class CatalogController : TeeNovaControllerBase
     public async Task<List<ProductVariantDto>> BulkSaveVariantsAsync(
         Guid productId, [FromBody] BulkSaveProductVariantsDto input)
         => await _catalogAppService.BulkSaveVariantsAsync(productId, input);
+
+    // ── Price Tiers ─────────────────────────────────────────────────────────────
+
+    /// <summary>
+    /// Replaces the full set of quantity-break price tiers for a product (admin only, dedicated
+    /// single-writer endpoint). Normal product/variant edits never touch tiers. Sending an empty
+    /// list clears all tiers and reverts the product to additive pricing.
+    /// </summary>
+    [HttpPut("products/{productId:guid}/price-tiers")]
+    public async Task<ProductDto> SetPriceTiersAsync(Guid productId, [FromBody] SetProductPriceTiersDto input)
+        => await _catalogAppService.SetPriceTiersAsync(productId, input);
 }

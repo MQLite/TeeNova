@@ -47,6 +47,7 @@ public class PricingAppService : ApplicationService, IPricingAppService
         var productQuery = await _productRepository.GetQueryableAsync();
         var product = await productQuery
             .Include(p => p.Variants)
+            .Include(p => p.PriceTiers)
             .FirstOrDefaultAsync(p => p.Id == input.ProductId)
             ?? throw new EntityNotFoundException(typeof(Catalog.Product), input.ProductId);
 
@@ -69,12 +70,19 @@ public class PricingAppService : ApplicationService, IPricingAppService
         // ── 4. Load and validate PrintArea / PrintSize entries ──────────────────
         var prints = await LoadAndValidatePrintsAsync(input.Prints);
 
-        // ── 5. Calculate breakdown ──────────────────────────────────────────────
+        // ── 5. Resolve quantity-break tier (Jira 9102) ──────────────────────────
+        // Tier scope is per-product across the order; the caller passes the product-level total
+        // via TierQuantity. When absent, fall back to this line's quantity.
+        var tierQuantity = input.TierQuantity ?? input.Quantity;
+        var resolvedTier = TierPriceResolver.Resolve(product.PriceTiers, variant.Id, tierQuantity);
+
+        // ── 6. Calculate breakdown ──────────────────────────────────────────────
         var result = PriceCalculator.Calculate(
             product.BasePrice,
             variant.PriceAdjustment,
             prints,
-            input.Quantity);
+            input.Quantity,
+            resolvedTier);
 
         Logger.LogInformation(
             "[PricingQuote] ProductId={ProductId} VariantId={VariantId} Quantity={Quantity} PrintCount={PrintCount} UnitPrice={UnitPrice} LineTotal={LineTotal}",
