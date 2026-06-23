@@ -7,6 +7,7 @@ import type {
   ProductImage,
   ProductListItem,
   ProductVariant,
+  SetProductPriceTiersPayload,
 } from '@/types'
 
 interface GetProductsParams {
@@ -121,6 +122,15 @@ export function makeCatalogApi(client: ApiClient) {
 
     bulkSaveVariants(productId: string, payload: BulkSaveProductVariantsPayload): Promise<ProductVariant[]> {
       return client.put<ProductVariant[]>(`/api/catalog/products/${productId}/variants/bulk`, payload)
+    },
+
+    /**
+     * Replaces the full set of quantity-break price tiers for a product (the only write path for
+     * tiers — never sent through product update or variant bulk-save). Sending an empty list
+     * clears all tiers, reverting the product to additive pricing. Returns the updated product.
+     */
+    setProductPriceTiers(productId: string, payload: SetProductPriceTiersPayload): Promise<Product> {
+      return client.put<Product>(`/api/catalog/products/${productId}/price-tiers`, payload)
     },
 
     uploadProductImage(productId: string, file: File): Promise<ProductImage> {

@@ -14,6 +14,12 @@ public class ProductDto
     public DateTime CreationTime { get; set; }
     public List<ProductVariantDto> Variants { get; set; } = new();
     public List<ProductImageDto> Images { get; set; } = new();
+
+    /// <summary>
+    /// Quantity-break price tiers (Jira 9102). Empty = legacy additive pricing.
+    /// Ordered by scope then MinQuantity. Written only via the dedicated price-tiers endpoint.
+    /// </summary>
+    public List<ProductPriceTierDto> PriceTiers { get; set; } = new();
 }
 
 public class ProductVariantDto

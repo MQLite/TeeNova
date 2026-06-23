@@ -96,11 +96,18 @@ public class OrderAppService : ApplicationService, IOrderAppService
         // affects old orders. This does NOT deduct stock and never blocks checkout.
         var inventoryDeductionEligible = (await _inventorySettings.GetAsync()).AutoDeductOnPressedEnabled;
 
+        // Quantity-break tier scope (Jira 9102): per product across all variant lines in THIS
+        // order. Different products never aggregate together.
+        var productQuantities = input.Items
+            .GroupBy(i => i.ProductId)
+            .ToDictionary(g => g.Key, g => g.Sum(i => i.Quantity));
+
         foreach (var itemDto in input.Items)
         {
             var productQuery = await _productRepository.GetQueryableAsync();
             var product = await productQuery
                 .Include(p => p.Variants)
+                .Include(p => p.PriceTiers)
                 .FirstOrDefaultAsync(p => p.Id == itemDto.ProductId)
                 ?? throw new Volo.Abp.Domain.Entities.EntityNotFoundException(
                     typeof(Catalog.Product), itemDto.ProductId);
@@ -114,8 +121,20 @@ public class OrderAppService : ApplicationService, IOrderAppService
                 ? await LoadOrderItemPrintsAsync(itemDto.Prints)
                 : [];
 
-            var printAddOnTotal = loadedPrints.Sum(p => p.Area.BasePrice + p.Size.BasePrice);
-            var unitPrice = product.BasePrice + variant.PriceAdjustment + printAddOnTotal;
+            // Resolve the tier using the product-level total quantity, then price through the
+            // shared PriceCalculator so the saved order price matches the storefront quote exactly.
+            var tierQuantity = productQuantities[itemDto.ProductId];
+            var resolvedTier = TierPriceResolver.Resolve(product.PriceTiers, variant.Id, tierQuantity);
+
+            var printEntries = loadedPrints
+                .Select(p => new PrintPricingEntry(
+                    p.Area.Id, p.Area.Name, p.Area.BasePrice,
+                    p.Size.Id, p.Size.Name, p.Size.BasePrice))
+                .ToList();
+
+            var unitPrice = PriceCalculator
+                .Calculate(product.BasePrice, variant.PriceAdjustment, printEntries, itemDto.Quantity, resolvedTier)
+                .UnitPrice;
             var variantLabel = $"{variant.Color} / {variant.Size}";
 
             var item = new OrderItem(

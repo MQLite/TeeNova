@@ -18,21 +18,24 @@ namespace TeeNova.Catalog;
 
 public class CatalogAppService : ApplicationService, ICatalogAppService
 {
-    private readonly IRepository<Product, Guid>        _productRepository;
-    private readonly IRepository<ProductVariant, Guid> _variantRepository;
-    private readonly IRepository<ProductImage, Guid>   _imageRepository;
-    private readonly IFileStorageService               _fileStorageService;
+    private readonly IRepository<Product, Guid>          _productRepository;
+    private readonly IRepository<ProductVariant, Guid>   _variantRepository;
+    private readonly IRepository<ProductImage, Guid>     _imageRepository;
+    private readonly IRepository<ProductPriceTier, Guid> _priceTierRepository;
+    private readonly IFileStorageService                 _fileStorageService;
 
     public CatalogAppService(
-        IRepository<Product, Guid>        productRepository,
-        IRepository<ProductVariant, Guid> variantRepository,
-        IRepository<ProductImage, Guid>   imageRepository,
-        IFileStorageService               fileStorageService)
+        IRepository<Product, Guid>          productRepository,
+        IRepository<ProductVariant, Guid>   variantRepository,
+        IRepository<ProductImage, Guid>     imageRepository,
+        IRepository<ProductPriceTier, Guid> priceTierRepository,
+        IFileStorageService                 fileStorageService)
     {
-        _productRepository  = productRepository;
-        _variantRepository  = variantRepository;
-        _imageRepository    = imageRepository;
-        _fileStorageService = fileStorageService;
+        _productRepository   = productRepository;
+        _variantRepository   = variantRepository;
+        _imageRepository     = imageRepository;
+        _priceTierRepository = priceTierRepository;
+        _fileStorageService  = fileStorageService;
     }
 
     public async Task<PagedResultDto<ProductListItemDto>> GetListAsync(GetProductsInput input)
@@ -41,7 +44,8 @@ public class CatalogAppService : ApplicationService, ICatalogAppService
 
         query = query
             .Include(p => p.Images)
-            .Include(p => p.Variants);
+            .Include(p => p.Variants)
+            .Include(p => p.PriceTiers);
 
         if (input.IsActive.HasValue)
             query = query.Where(p => p.IsActive == input.IsActive.Value);
@@ -60,10 +64,21 @@ public class CatalogAppService : ApplicationService, ICatalogAppService
             .Take(input.MaxResultCount)
             .ToListAsync();
 
-        return new PagedResultDto<ProductListItemDto>(
-            totalCount,
-            ObjectMapper.Map<List<Product>, List<ProductListItemDto>>(items)
-        );
+        var dtos = ObjectMapper.Map<List<Product>, List<ProductListItemDto>>(items);
+
+        // Compute the storefront "from" price (cheapest product-level tier) per product.
+        foreach (var (dto, product) in dtos.Zip(items))
+        {
+            var productLevelPrices = product.PriceTiers
+                .Where(t => t.ProductVariantId == null)
+                .Select(t => t.UnitPrice)
+                .ToList();
+
+            dto.FromPrice     = productLevelPrices.Count > 0 ? productLevelPrices.Min() : null;
+            dto.HasPriceTiers = product.PriceTiers.Count > 0;
+        }
+
+        return new PagedResultDto<ProductListItemDto>(totalCount, dtos);
     }
 
     public async Task<ProductDto> GetAsync(Guid id)
@@ -73,12 +88,22 @@ public class CatalogAppService : ApplicationService, ICatalogAppService
         var product = await query
             .Include(p => p.Variants.OrderBy(v => v.SortOrder))
             .Include(p => p.Images)
+            .Include(p => p.PriceTiers)
             .FirstOrDefaultAsync(p => p.Id == id);
 
         if (product == null)
             throw new Volo.Abp.Domain.Entities.EntityNotFoundException(typeof(Product), id);
 
-        return ObjectMapper.Map<Product, ProductDto>(product);
+        var dto = ObjectMapper.Map<Product, ProductDto>(product);
+
+        // Stable, readable order: product-level tiers first, then by quantity break.
+        dto.PriceTiers = dto.PriceTiers
+            .OrderBy(t => t.ProductVariantId.HasValue)
+            .ThenBy(t => t.ProductVariantId)
+            .ThenBy(t => t.MinQuantity)
+            .ToList();
+
+        return dto;
     }
 
     // ── Admin: Products ───────────────────────────────────────────────────────
@@ -441,5 +466,79 @@ public class CatalogAppService : ApplicationService, ICatalogAppService
             .OrderBy(v => v.SortOrder)
             .ToList();
         return ObjectMapper.Map<List<ProductVariant>, List<ProductVariantDto>>(allVariants);
+    }
+
+    // ── Admin: Price Tiers (Jira 9102) ──────────────────────────────────────────
+
+    /// <summary>
+    /// Replaces the full set of quantity-break price tiers for a product (dedicated single-writer
+    /// endpoint). Normal product update and variant matrix bulk-save deliberately never touch
+    /// tiers, mirroring the inventory single-writer pattern. An empty list clears all tiers,
+    /// reverting the product to the legacy additive formula.
+    /// </summary>
+    public async Task<ProductDto> SetPriceTiersAsync(Guid productId, SetProductPriceTiersDto input)
+    {
+        // Load the product with its variants so variant-override scopes can be validated.
+        var query = await _productRepository.GetQueryableAsync();
+        var product = await query
+            .Include(p => p.Variants)
+            .FirstOrDefaultAsync(p => p.Id == productId)
+            ?? throw new EntityNotFoundException(typeof(Product), productId);
+
+        var validVariantIds = product.Variants.Select(v => v.Id).ToHashSet();
+
+        // ── Per-row validation ──────────────────────────────────────────────────
+        foreach (var tier in input.Tiers)
+        {
+            if (tier.MinQuantity < 1)
+                throw new UserFriendlyException("Tier minimum quantity must be at least 1.");
+
+            if (tier.UnitPrice <= 0)
+                throw new UserFriendlyException("Tier unit price must be greater than zero.");
+
+            if (decimal.Round(tier.UnitPrice, 2) != tier.UnitPrice)
+                throw new UserFriendlyException("Tier unit price cannot have more than 2 decimal places.");
+
+            if (tier.ProductVariantId.HasValue && !validVariantIds.Contains(tier.ProductVariantId.Value))
+                throw new UserFriendlyException(
+                    $"Tier references a variant that does not belong to this product (id: {tier.ProductVariantId.Value}).");
+        }
+
+        // ── Per-scope validation (product-level set + each variant-override set) ──
+        foreach (var scope in input.Tiers.GroupBy(t => t.ProductVariantId))
+        {
+            var minQuantities = scope.Select(t => t.MinQuantity).ToList();
+
+            if (minQuantities.Count != minQuantities.Distinct().Count())
+                throw new UserFriendlyException(
+                    "Duplicate minimum quantities are not allowed within the same pricing scope.");
+
+            // A MinQuantity == 1 row is required so every quantity ≥ 1 resolves to a tier.
+            if (!minQuantities.Contains(1))
+                throw new UserFriendlyException(
+                    "Each pricing scope must include a tier starting at minimum quantity 1.");
+        }
+
+        // ── Replace the full set for this product (all scopes) ───────────────────
+        // Delete is flushed before the inserts so a re-used (scope, MinQuantity) does not collide
+        // with the unique index within the same transaction. The ambient request unit of work
+        // still wraps both phases atomically.
+        var existing = await _priceTierRepository.GetListAsync(t => t.ProductId == productId);
+        if (existing.Count > 0)
+            await _priceTierRepository.DeleteManyAsync(existing, autoSave: true);
+
+        foreach (var tier in input.Tiers)
+        {
+            await _priceTierRepository.InsertAsync(
+                new ProductPriceTier(
+                    GuidGenerator.Create(),
+                    productId,
+                    tier.ProductVariantId,
+                    tier.MinQuantity,
+                    tier.UnitPrice),
+                autoSave: true);
+        }
+
+        return await GetAsync(productId);
     }
 }

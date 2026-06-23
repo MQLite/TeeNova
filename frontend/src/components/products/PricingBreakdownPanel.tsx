@@ -1,5 +1,6 @@
 'use client'
 
+import { formatTierLabel } from '@/lib/pricing'
 import type { PriceCalculationResponse } from '@/types'
 
 interface SelectedVariantLine {
@@ -79,6 +80,11 @@ export function PricingBreakdownPanel({
                       <p className="mt-1 text-xs text-black/50 tabular-nums">
                         {pricing.currency} ${pricing.unitPrice.toFixed(2)} each
                       </p>
+                      {pricing.pricingMode === 'Tiered' && pricing.appliedTierMinQuantity != null && (
+                        <p className="mt-1 text-[11px] text-black/45" style={{ letterSpacing: '-0.14px' }}>
+                          {formatTierLabel(pricing.appliedTierMinQuantity)} tier · one-side print included
+                        </p>
+                      )}
                     </div>
                   ) : lineError ? (
                     <span className="text-xs text-red-600">Pricing failed</span>
@@ -89,6 +95,11 @@ export function PricingBreakdownPanel({
 
                 {pricing && pricing.printAddOns.length > 0 && (
                   <div className="mt-3 space-y-1.5 rounded-xl bg-black/[0.02] px-3 py-2">
+                    {pricing.pricingMode === 'Tiered' && (
+                      <p className="font-mono text-[10px] uppercase tracking-[0.54px] text-black/45">
+                        Extra print options
+                      </p>
+                    )}
                     {pricing.printAddOns.map((addOn) => (
                       <div key={`${addOn.printAreaId}:${addOn.printSizeId}`} className="flex items-center justify-between gap-3 text-xs">
                         <span className="text-black/60" style={{ letterSpacing: '-0.14px' }}>

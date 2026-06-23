@@ -10,8 +10,10 @@ import { printConfigApi } from '@/api/print-config'
 import { PricingBreakdownPanel } from '@/components/products/PricingBreakdownPanel'
 import { PrintAreaSelector } from '@/components/products/PrintAreaSelector'
 import { PrintSizeSelector } from '@/components/products/PrintSizeSelector'
+import { TierPricingStrip } from '@/components/products/TierPricingStrip'
 import { useCartStore } from '@/features/cart/cart-store'
 import { filterImagesForColor, resolveImageUrl } from '@/lib/image-utils'
+import { formatMoneyNZD, productLevelTiers } from '@/lib/pricing'
 import type {
   CartItemPrint,
   PriceCalculationResponse,
@@ -140,6 +142,32 @@ export default function ProductDetailPage() {
   )
 
   const totalQty = selectedVariantLines.reduce((sum, line) => sum + line.quantity, 0)
+
+  // ── Tiered pricing (Jira 9104) ──────────────────────────────────────────────
+  const tierList = useMemo(() => productLevelTiers(product?.priceTiers ?? []), [product])
+  const hasTiers = tierList.length > 0
+  // Honest "from" price = the cheapest configured tier (the highest-quantity break).
+  const tierFromPrice = hasTiers ? Math.min(...tierList.map((t) => t.unitPrice)) : null
+
+  // All lines share one product + one tierQuantity, so the applied tier is identical across lines.
+  // Read it off the first tiered quote response that has arrived.
+  const appliedTierPricing = useMemo(() => {
+    for (const line of selectedVariantLines) {
+      const pricing = pricingByVariantId[line.variantId]
+      if (pricing && pricing.pricingMode === 'Tiered') return pricing
+    }
+    return undefined
+  }, [selectedVariantLines, pricingByVariantId])
+
+  // Small, non-intrusive next-tier hint.
+  const nextTierHint = useMemo(() => {
+    if (!appliedTierPricing) return null
+    if (appliedTierPricing.nextTierMinQuantity == null || appliedTierPricing.nextTierUnitPrice == null)
+      return 'Best tier applied'
+    const remaining = appliedTierPricing.nextTierMinQuantity - totalQty
+    if (remaining <= 0) return 'Best tier applied'
+    return `Add ${remaining} more to reach ${formatMoneyNZD(appliedTierPricing.nextTierUnitPrice)} ea`
+  }, [appliedTierPricing, totalQty])
 
   const pricingGrandTotal = selectedVariantLines.reduce(
     (sum, line) => sum + (pricingByVariantId[line.variantId]?.lineTotal ?? 0),
@@ -288,6 +316,10 @@ export default function ProductDetailPage() {
       printSizeId: printSizeByArea[areaId]!,
     }))
 
+    // Tier scope is per-product across the page: every line's quote uses the SAME tierQuantity =
+    // total quantity of this product across all selected variant lines (matches backend order rule).
+    const tierQuantity = debouncedSelectedVariantLines.reduce((sum, line) => sum + line.quantity, 0)
+
     let cancelled = false
     setPricingLoading(true)
     setPricingError(null)
@@ -298,6 +330,7 @@ export default function ProductDetailPage() {
           productId: product.id,
           variantId: line.variantId,
           quantity: line.quantity,
+          tierQuantity,
           prints,
         }),
       ),
@@ -687,18 +720,61 @@ export default function ProductDetailPage() {
                   {product.description}
                 </p>
               )}
-              <div className="mt-4 flex items-baseline gap-2">
-                <span className="text-3xl text-black" style={{ fontWeight: 400, letterSpacing: '-0.96px' }}>
-                  ${product.basePrice.toFixed(2)}
-                </span>
-                <span className="text-sm text-black/55" style={{ letterSpacing: '-0.14px' }}>base garment price</span>
-              </div>
-              {priceAdjustments.length > 0 && (
-                <p className="mt-1 font-mono text-[11px] uppercase tracking-[0.54px] text-black/50">
-                  {priceAdjustments.map((item) => `${item.size}: +$${item.adjustment.toFixed(2)}`).join(' | ')}
-                </p>
+              {hasTiers && tierFromPrice !== null ? (
+                <>
+                  <p className="mt-4 font-mono text-[11px] uppercase tracking-[0.54px] text-black/45">
+                    Single-side printed price
+                  </p>
+                  <div className="mt-1 flex items-baseline gap-2">
+                    <span className="text-3xl text-black" style={{ fontWeight: 400, letterSpacing: '-0.96px' }}>
+                      From {formatMoneyNZD(tierFromPrice)}
+                    </span>
+                    <span className="text-sm text-black/55" style={{ letterSpacing: '-0.14px' }}>ea</span>
+                  </div>
+                  <p className="mt-1 text-sm text-black/55" style={{ letterSpacing: '-0.14px' }}>
+                    Includes one-side standard print · price depends on quantity
+                  </p>
+                </>
+              ) : (
+                <>
+                  <div className="mt-4 flex items-baseline gap-2">
+                    <span className="text-3xl text-black" style={{ fontWeight: 400, letterSpacing: '-0.96px' }}>
+                      ${product.basePrice.toFixed(2)}
+                    </span>
+                    <span className="text-sm text-black/55" style={{ letterSpacing: '-0.14px' }}>base garment price</span>
+                  </div>
+                  {priceAdjustments.length > 0 && (
+                    <p className="mt-1 font-mono text-[11px] uppercase tracking-[0.54px] text-black/50">
+                      {priceAdjustments.map((item) => `${item.size}: +$${item.adjustment.toFixed(2)}`).join(' | ')}
+                    </p>
+                  )}
+                </>
               )}
             </div>
+
+            {hasTiers && (
+              <div className="card p-6">
+                <div className="mb-3 flex items-center justify-between gap-3">
+                  <div>
+                    <p className="text-sm text-black" style={{ fontWeight: 480, letterSpacing: '-0.14px' }}>
+                      Volume pricing
+                    </p>
+                    <p className="mt-1 font-mono text-[10px] uppercase tracking-[0.54px] text-black/45">
+                      Per single-side printed item
+                    </p>
+                  </div>
+                  {nextTierHint && (
+                    <span className="rounded-full border border-black/[0.10] bg-black/[0.02] px-3 py-1 text-[11px] text-black/60" style={{ letterSpacing: '-0.14px' }}>
+                      {nextTierHint}
+                    </span>
+                  )}
+                </div>
+                <TierPricingStrip
+                  tiers={product.priceTiers}
+                  appliedMinQuantity={appliedTierPricing?.appliedTierMinQuantity ?? null}
+                />
+              </div>
+            )}
 
             <div className="card p-6">
               <PrintAreaSelector

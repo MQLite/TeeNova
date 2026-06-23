@@ -23,6 +23,7 @@ public class TeeNovaDbContext : AbpDbContext<TeeNovaDbContext>
     public DbSet<Product> Products { get; set; }
     public DbSet<ProductVariant> ProductVariants { get; set; }
     public DbSet<ProductImage> ProductImages { get; set; }
+    public DbSet<ProductPriceTier> ProductPriceTiers { get; set; }
 
     // Customization
     public DbSet<UploadedAsset> UploadedAssets { get; set; }

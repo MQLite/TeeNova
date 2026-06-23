@@ -1,5 +1,6 @@
 import Link from 'next/link'
 import { resolveImageUrl } from '@/lib/image-utils'
+import { formatMoneyNZD } from '@/lib/pricing'
 import type { ProductListItem } from '@/types'
 
 interface ProductCardProps {
@@ -7,6 +8,10 @@ interface ProductCardProps {
 }
 
 export function ProductCard({ product }: ProductCardProps) {
+  // Lead with the printed "from" price when tiers exist; otherwise fall back to the existing
+  // base-price display. fromPrice is the cheapest product-level tier (honest, achievable).
+  const showPrinted = product.hasPriceTiers && product.fromPrice !== null
+
   return (
     <Link
       href={`/products/${product.id}`}
@@ -46,12 +51,19 @@ export function ProductCard({ product }: ProductCardProps) {
         <p className="text-xs text-black/55" style={{ letterSpacing: '-0.14px' }}>
           {product.variantCount} variants
         </p>
-        <div className="mt-2 flex items-center justify-between">
+        <div className="mt-2 flex items-end justify-between">
           <div>
-            <span className="font-mono text-[10px] uppercase tracking-[0.54px] text-black/55">From</span>
+            <span className="font-mono text-[10px] uppercase tracking-[0.54px] text-black/55">
+              {showPrinted ? 'Printed from' : 'From'}
+            </span>
             <p className="text-base text-black" style={{ fontWeight: 540, letterSpacing: '-0.26px' }}>
-              ${product.basePrice.toFixed(2)}
+              {showPrinted ? `${formatMoneyNZD(product.fromPrice!)} ea` : formatMoneyNZD(product.basePrice)}
             </p>
+            {showPrinted && (
+              <p className="mt-0.5 text-[11px] text-black/45" style={{ letterSpacing: '-0.14px' }}>
+                Includes one-side print
+              </p>
+            )}
           </div>
           <span className="text-xs text-black/55 underline underline-offset-2 transition-opacity group-hover:opacity-50"
                 style={{ letterSpacing: '-0.14px' }}>

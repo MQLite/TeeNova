@@ -9,6 +9,10 @@ export interface ProductListItem {
   thumbnailUrl: string | null
   primaryImageUrl: string | null
   variantCount: number
+  /** Cheapest product-level tier price (the standard printed "from" price), or null when none. */
+  fromPrice: number | null
+  /** True when the product has any quantity-break tiers configured. */
+  hasPriceTiers: boolean
 }
 
 /** Informational inventory state for a variant (Jira 9002/9003). Decoupled from sellability. */
@@ -65,6 +69,30 @@ export interface ProductImage {
   color: string | null
 }
 
+/**
+ * Quantity-break price tier (Jira 9102/9103). UnitPrice is the final price of the standard
+ * printed product (garment + one standard one-side print). Scope: productVariantId null = the
+ * product-level default; non-null = a variant override.
+ */
+export interface ProductPriceTier {
+  id: string
+  productVariantId: string | null
+  minQuantity: number
+  unitPrice: number
+}
+
+/** One tier row in a SetProductPriceTiers replace payload. */
+export interface CreateUpdateProductPriceTier {
+  productVariantId?: string | null
+  minQuantity: number
+  unitPrice: number
+}
+
+/** Replace-the-whole-set payload for the dedicated price-tiers endpoint. Empty list clears tiers. */
+export interface SetProductPriceTiersPayload {
+  tiers: CreateUpdateProductPriceTier[]
+}
+
 export interface Product {
   id: string
   name: string
@@ -75,6 +103,8 @@ export interface Product {
   creationTime: string
   variants: ProductVariant[]
   images: ProductImage[]
+  /** Quantity-break tiers. Empty = legacy additive pricing. Written only via setProductPriceTiers. */
+  priceTiers: ProductPriceTier[]
 }
 
 // ─── Customization ────────────────────────────────────────────────────────────
@@ -137,8 +167,15 @@ export interface PriceCalculationRequest {
   productId: string
   variantId: string
   quantity: number
+  /**
+   * Total quantity of this product across all selected variant lines on the page (Jira 9104).
+   * Drives quantity-break tier resolution. When omitted the backend falls back to `quantity`.
+   */
+  tierQuantity?: number
   prints: PriceCalculationPrintItem[]
 }
+
+export type PricingMode = 'Additive' | 'Tiered'
 
 export interface PrintAddOnPrice {
   printAreaId: string
@@ -158,6 +195,16 @@ export interface PriceCalculationResponse {
   quantity: number
   lineTotal: number
   currency: string
+  // ── Tiered pricing (Jira 9102/9104) ──
+  pricingMode: PricingMode
+  /** The resolved tier's break + unit price (the standard printed unit price). Null in Additive mode. */
+  appliedTierMinQuantity: number | null
+  appliedTierUnitPrice: number | null
+  /** The next higher break, for "add N more to reach $X ea" hints. Null when already at the top. */
+  nextTierMinQuantity: number | null
+  nextTierUnitPrice: number | null
+  /** The print add-on bundled into the tier price (the included standard one-side print). 0 otherwise. */
+  includedStandardPrintAmount: number
 }
 
 // ─── Files ────────────────────────────────────────────────────────────────────

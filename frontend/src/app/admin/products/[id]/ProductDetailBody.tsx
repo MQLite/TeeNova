@@ -3,6 +3,7 @@
 import { useState } from 'react'
 import { ProductStatusToggle } from '@/components/admin/products/ProductStatusToggle'
 import { VariantSection } from '@/components/admin/products/VariantSection'
+import { PriceTierSection } from '@/components/admin/products/PriceTierSection'
 import { ColorImageManager } from '@/components/admin/products/ColorImageManager'
 import type { Product } from '@/types'
 
@@ -144,6 +145,12 @@ export function ProductDetailBody({ product }: Props) {
         productId={product.id}
         initialVariants={product.variants}
         onColorsChange={setVariantColors}
+      />
+
+      <PriceTierSection
+        productId={product.id}
+        initialTiers={product.priceTiers}
+        variants={product.variants}
       />
     </>
   )

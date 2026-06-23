@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { useCartStore } from '@/features/cart/cart-store'
+import { useCartPricing } from '@/features/cart/useCartPricing'
 import { ordersApi } from '@/api/orders'
 import { Button } from '@/components/ui/Button'
 import { PaymentRequirementSummary } from '@/components/checkout/PaymentRequirementSummary'
@@ -28,7 +29,14 @@ const PROVIDER_OPTIONS: { value: PaymentProvider; label: string }[] = [
 
 export default function CheckoutPage() {
   const router = useRouter()
-  const { items, clearCart, totalPrice } = useCartStore()
+  const { items, clearCart } = useCartStore()
+  const {
+    pricingByKey,
+    subtotal: recalcSubtotal,
+    isComplete: pricingComplete,
+    loading: pricingLoading,
+    error: pricingError,
+  } = useCartPricing(items)
   const [submitPhase, setSubmitPhase] = useState<SubmitPhase>('idle')
   const [submitted, setSubmitted] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -65,6 +73,16 @@ export default function CheckoutPage() {
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
     if (isSubmitting || submitted) return
+
+    // Never submit on stale/unknown prices: require a clean, fresh recalculation first.
+    if (pricingLoading || !pricingComplete) {
+      setError(
+        pricingError ??
+          'Prices are still updating. Please wait for the order summary to finish refreshing before placing your order.',
+      )
+      return
+    }
+
     setSubmitPhase('creating-order')
     setError(null)
     setSessionError(null)
@@ -139,7 +157,7 @@ export default function CheckoutPage() {
     return null
   }
 
-  const subtotal = totalPrice()
+  const subtotal = recalcSubtotal
 
   return (
     <div className="min-h-screen bg-white">
@@ -429,7 +447,7 @@ export default function CheckoutPage() {
                         )}
                       </div>
                       <span className="text-sm text-black" style={{ fontWeight: 480 }}>
-                        ${(item.unitPrice * item.quantity).toFixed(2)}
+                        ${(pricingByKey[item.cartItemKey]?.lineTotal ?? item.unitPrice * item.quantity).toFixed(2)}
                       </span>
                     </div>
                   ))}
@@ -453,10 +471,26 @@ export default function CheckoutPage() {
                       ${subtotal.toFixed(2)}
                     </span>
                   </div>
+                  {pricingLoading && (
+                    <p className="font-mono text-[11px] uppercase tracking-[0.54px] text-black/40">
+                      Updating prices…
+                    </p>
+                  )}
+                  {pricingError && (
+                    <p className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700" style={{ letterSpacing: '-0.14px' }}>
+                      {pricingError}
+                    </p>
+                  )}
                 </div>
 
                 <div className="px-5 pb-5">
-                  <Button type="submit" className="w-full" size="lg" loading={isSubmitting} disabled={isSubmitting || (submitted && !!sessionError)}>
+                  <Button
+                    type="submit"
+                    className="w-full"
+                    size="lg"
+                    loading={isSubmitting}
+                    disabled={isSubmitting || pricingLoading || !pricingComplete || (submitted && !!sessionError)}
+                  >
                     {getSubmitLabel()}
                   </Button>
                   <p className="mt-3 text-center font-mono text-[11px] uppercase tracking-[0.54px] text-black/40">
