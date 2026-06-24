@@ -1,12 +1,18 @@
 import { apiClient, type ApiClient } from '@/lib/api-client'
 import type {
   BulkSaveProductVariantsPayload,
+  CreateUpdatePrintPricingGroup,
   InventoryStatus,
   PagedResult,
+  PrintPricingGroup,
   Product,
   ProductImage,
   ProductListItem,
+  ProductPrintConfigOption,
+  ProductPrintPriceTier,
   ProductVariant,
+  SetProductPrintConfigOptionsPayload,
+  SetProductPrintPriceTiersPayload,
   SetProductPriceTiersPayload,
 } from '@/types'
 
@@ -24,6 +30,8 @@ export interface CreateProductPayload {
   basePrice: number
   productType: string
   isActive: boolean
+  /** Optional print-pricing group assignment (Jira 9203). Null = ungrouped. */
+  printPricingGroupId?: string | null
 }
 
 export interface UpdateProductPayload {
@@ -32,6 +40,11 @@ export interface UpdateProductPayload {
   basePrice: number
   productType: string
   isActive: boolean
+  /**
+   * Print-pricing group assignment (Jira 9203). The product update is a full replace of the
+   * product's own scalar fields, so this MUST be sent on every update or the assignment is cleared.
+   */
+  printPricingGroupId?: string | null
 }
 
 export interface CreateVariantPayload {
@@ -125,12 +138,52 @@ export function makeCatalogApi(client: ApiClient) {
     },
 
     /**
-     * Replaces the full set of quantity-break price tiers for a product (the only write path for
-     * tiers — never sent through product update or variant bulk-save). Sending an empty list
-     * clears all tiers, reverting the product to additive pricing. Returns the updated product.
+     * @deprecated Legacy all-in price tiers (Jira 9102). Inert in backend pricing since 9203.
+     * Do not call from new UI — use {@link setPrintPriceTiers} for print-only pricing.
      */
     setProductPriceTiers(productId: string, payload: SetProductPriceTiersPayload): Promise<Product> {
       return client.put<Product>(`/api/catalog/products/${productId}/price-tiers`, payload)
+    },
+
+    // ── Print pricing groups (Jira 9203) ──────────────────────────────────────
+
+    listPrintPricingGroups(isActive?: boolean): Promise<PrintPricingGroup[]> {
+      return client.get('/api/catalog/print-pricing-groups', { isActive })
+    },
+
+    createPrintPricingGroup(payload: CreateUpdatePrintPricingGroup): Promise<PrintPricingGroup> {
+      return client.post('/api/catalog/print-pricing-groups', payload)
+    },
+
+    updatePrintPricingGroup(groupId: string, payload: CreateUpdatePrintPricingGroup): Promise<PrintPricingGroup> {
+      return client.put(`/api/catalog/print-pricing-groups/${groupId}`, payload)
+    },
+
+    /** Print-only tiers for a group. */
+    getPrintPriceTiers(groupId: string): Promise<ProductPrintPriceTier[]> {
+      return client.get(`/api/catalog/print-pricing-groups/${groupId}/print-price-tiers`)
+    },
+
+    /**
+     * Replaces a group's full print-tier set (single-writer). Empty list clears the group's tiers
+     * (printing falls back to PrintSize.BasePrice). Does not touch products/variants/options.
+     */
+    setPrintPriceTiers(groupId: string, payload: SetProductPrintPriceTiersPayload): Promise<ProductPrintPriceTier[]> {
+      return client.put(`/api/catalog/print-pricing-groups/${groupId}/print-price-tiers`, payload)
+    },
+
+    // ── Product/size scoped allowed print options (Jira 9204) ──────────────────
+
+    getProductPrintConfigOptions(productId: string): Promise<ProductPrintConfigOption[]> {
+      return client.get(`/api/catalog/products/${productId}/print-config-options`)
+    },
+
+    /**
+     * Replaces a product's full scoped allowed-option set (single-writer). Empty list reverts the
+     * product to the global PrintAreaSizeOption matrix. Selectability only — never affects price.
+     */
+    setProductPrintConfigOptions(productId: string, payload: SetProductPrintConfigOptionsPayload): Promise<ProductPrintConfigOption[]> {
+      return client.put(`/api/catalog/products/${productId}/print-config-options`, payload)
     },
 
     uploadProductImage(productId: string, file: File): Promise<ProductImage> {

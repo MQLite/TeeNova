@@ -24,6 +24,9 @@ public class TeeNovaDbContext : AbpDbContext<TeeNovaDbContext>
     public DbSet<ProductVariant> ProductVariants { get; set; }
     public DbSet<ProductImage> ProductImages { get; set; }
     public DbSet<ProductPriceTier> ProductPriceTiers { get; set; }
+    public DbSet<PrintPricingGroup> PrintPricingGroups { get; set; }
+    public DbSet<ProductPrintPriceTier> ProductPrintPriceTiers { get; set; }
+    public DbSet<ProductPrintConfigOption> ProductPrintConfigOptions { get; set; }
 
     // Customization
     public DbSet<UploadedAsset> UploadedAssets { get; set; }

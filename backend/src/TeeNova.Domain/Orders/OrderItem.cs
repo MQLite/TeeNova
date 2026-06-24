@@ -65,6 +65,8 @@ public class OrderItem : Entity<Guid>
         string printSizeName,
         string printSizeCode,
         decimal printSizePrice,
+        decimal resolvedUnitPrintPrice = 0m,
+        int? appliedPrintTierMinQuantity = null,
         int sortOrder = 0,
         string? notes = null,
         Guid? uploadedAssetId = null,
@@ -75,6 +77,7 @@ public class OrderItem : Entity<Guid>
             id, Id,
             printAreaId, printAreaName, printAreaCode, printAreaPrice,
             printSizeId, printSizeName, printSizeCode, printSizePrice,
+            resolvedUnitPrintPrice, appliedPrintTierMinQuantity,
             sortOrder, notes, uploadedAssetId, uploadedAssetUrl, designNote));
     }
 

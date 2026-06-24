@@ -26,6 +26,18 @@ public class OrderItemPrint : Entity<Guid>
     public string PrintSizeCode { get; private set; } = default!;
     public decimal PrintSizePrice { get; private set; }
 
+    // ── Resolved print-tier snapshot (Jira 9203) ──────────────────────────────
+    /// <summary>
+    /// The print price actually charged for this print at placement (print-only tiered pricing).
+    /// Under the new model this is the resolved <c>ProductPrintPriceTier.UnitPrintPrice</c> for the
+    /// effective group + garment size + quantity, or <c>PrintSize.BasePrice</c> when no tier applied.
+    /// May differ from <see cref="PrintSizePrice"/> (the size's base price snapshot).
+    /// </summary>
+    public decimal ResolvedUnitPrintPrice { get; private set; }
+
+    /// <summary>The applied print-tier MinQuantity, or null when no tier applied (base-price fallback).</summary>
+    public int? AppliedPrintTierMinQuantity { get; private set; }
+
     // ── Ordering / metadata ───────────────────────────────────────────────────
     public int SortOrder { get; private set; }
     public string? Notes { get; private set; }
@@ -46,6 +58,8 @@ public class OrderItemPrint : Entity<Guid>
         string printSizeName,
         string printSizeCode,
         decimal printSizePrice,
+        decimal resolvedUnitPrintPrice = 0m,
+        int? appliedPrintTierMinQuantity = null,
         int sortOrder = 0,
         string? notes = null,
         Guid? uploadedAssetId = null,
@@ -62,6 +76,8 @@ public class OrderItemPrint : Entity<Guid>
         PrintSizeName = printSizeName;
         PrintSizeCode = printSizeCode;
         PrintSizePrice = printSizePrice;
+        ResolvedUnitPrintPrice = resolvedUnitPrintPrice;
+        AppliedPrintTierMinQuantity = appliedPrintTierMinQuantity;
         SortOrder = sortOrder;
         Notes = notes;
         UploadedAssetId = uploadedAssetId;

@@ -86,13 +86,15 @@ export const useCartStore = create<CartStore>()(
     }),
     {
       name: 'teenova-cart',
-      version: 3,
+      version: 4,
       migrate: (persistedState) => {
         const state = persistedState as {
           items?: Array<CartItem & { cartItemKey?: string }>
         } | undefined
         return {
-          items: (state?.items ?? []).map(({ cartItemKey, productId, productVariantId, productName, variantLabel, color, size, unitPrice, quantity, prints }) => ({
+          // printPricingGroupId is intentionally left undefined for legacy items so useCartPricing
+          // backfills it from product metadata (Jira 9207) rather than assuming "ungrouped".
+          items: (state?.items ?? []).map(({ cartItemKey, productId, productVariantId, productName, variantLabel, color, size, unitPrice, quantity, printPricingGroupId, prints }) => ({
             cartItemKey: cartItemKey ?? `${productVariantId}__blank`,
             productId,
             productVariantId,
@@ -102,6 +104,7 @@ export const useCartStore = create<CartStore>()(
             size,
             unitPrice,
             quantity,
+            printPricingGroupId,
             prints: prints ?? [],
           })),
         }

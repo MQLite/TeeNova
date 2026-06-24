@@ -3,7 +3,8 @@
 import { useState } from 'react'
 import { ProductStatusToggle } from '@/components/admin/products/ProductStatusToggle'
 import { VariantSection } from '@/components/admin/products/VariantSection'
-import { PriceTierSection } from '@/components/admin/products/PriceTierSection'
+import { PrintPricesSection } from '@/components/admin/products/PrintPricesSection'
+import { PrintOptionsSection } from '@/components/admin/products/PrintOptionsSection'
 import { ColorImageManager } from '@/components/admin/products/ColorImageManager'
 import type { Product } from '@/types'
 
@@ -38,6 +39,9 @@ export function ProductDetailBody({ product }: Props) {
   )
 
   const adjustments = product.variants.map((v) => v.priceAdjustment)
+
+  // Distinct garment sizes (preserving order) for size-override scopes in the print panels.
+  const variantSizes = Array.from(new Set(product.variants.map((v) => v.size).filter(Boolean)))
 
   return (
     <>
@@ -147,10 +151,14 @@ export function ProductDetailBody({ product }: Props) {
         onColorsChange={setVariantColors}
       />
 
-      <PriceTierSection
+      <PrintPricesSection
+        printPricingGroupId={product.printPricingGroupId}
+        variantSizes={variantSizes}
+      />
+
+      <PrintOptionsSection
         productId={product.id}
-        initialTiers={product.priceTiers}
-        variants={product.variants}
+        variantSizes={variantSizes}
       />
     </>
   )

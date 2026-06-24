@@ -2,6 +2,7 @@
 
 import { useRef, useState } from 'react'
 import { Button } from '@/components/ui/Button'
+import { PrintPricingGroupField } from './PrintPricingGroupField'
 
 export interface ProductFormValues {
   name: string
@@ -9,6 +10,8 @@ export interface ProductFormValues {
   basePrice: string
   productType: string
   isActive: boolean
+  /** Print-pricing group id, or '' for ungrouped (Jira 9203). */
+  printPricingGroupId: string
 }
 
 interface ProductFormProps {
@@ -62,6 +65,7 @@ export function ProductForm({ initialValues, onSubmit, onCancel, saving }: Produ
     basePrice:   initialValues?.basePrice   ?? '',
     productType: initialValues?.productType ?? 'tshirt',
     isActive:    initialValues?.isActive    ?? true,
+    printPricingGroupId: initialValues?.printPricingGroupId ?? '',
   }
 
   const [values,     setValues]     = useState<ProductFormValues>(resolved)
@@ -109,7 +113,8 @@ export function ProductForm({ initialValues, onSubmit, onCancel, saving }: Produ
     values.description !== init.description ||
     values.basePrice   !== init.basePrice   ||
     values.productType !== init.productType ||
-    values.isActive    !== init.isActive
+    values.isActive    !== init.isActive    ||
+    values.printPricingGroupId !== init.printPricingGroupId
 
   // ── Submit ────────────────────────────────────────────────────────────────
 
@@ -268,6 +273,13 @@ export function ProductForm({ initialValues, onSubmit, onCancel, saving }: Produ
               : 'Inactive — hidden from storefront'}
           </button>
         </div>
+
+        {/* Print pricing group assignment (Jira 9203) */}
+        <PrintPricingGroupField
+          value={values.printPricingGroupId}
+          onChange={(v) => set('printPricingGroupId', v)}
+          disabled={saving}
+        />
       </div>
 
       {/* Error banner */}

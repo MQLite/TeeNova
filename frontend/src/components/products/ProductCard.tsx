@@ -8,8 +8,8 @@ interface ProductCardProps {
 }
 
 export function ProductCard({ product }: ProductCardProps) {
-  // Lead with the printed "from" price when tiers exist; otherwise fall back to the existing
-  // base-price display. fromPrice is the cheapest product-level tier (honest, achievable).
+  // Lead with the printed "from" price when print tiers exist; otherwise fall back to the base
+  // garment price. fromPrice (Jira 9203) = fixed garment price + cheapest achievable print price.
   const showPrinted = product.hasPriceTiers && product.fromPrice !== null
 
   return (
@@ -61,7 +61,7 @@ export function ProductCard({ product }: ProductCardProps) {
             </p>
             {showPrinted && (
               <p className="mt-0.5 text-[11px] text-black/45" style={{ letterSpacing: '-0.14px' }}>
-                Includes one-side print
+                Garment + print · varies by size & quantity
               </p>
             )}
           </div>

@@ -9,9 +9,9 @@ export interface ProductListItem {
   thumbnailUrl: string | null
   primaryImageUrl: string | null
   variantCount: number
-  /** Cheapest product-level tier price (the standard printed "from" price), or null when none. */
+  /** Printed "from" price (Jira 9203): fixed garment price + cheapest active print tier, or null. */
   fromPrice: number | null
-  /** True when the product has any quantity-break tiers configured. */
+  /** True when the product's group has active print price tiers (Jira 9203). */
   hasPriceTiers: boolean
 }
 
@@ -70,9 +70,9 @@ export interface ProductImage {
 }
 
 /**
- * Quantity-break price tier (Jira 9102/9103). UnitPrice is the final price of the standard
- * printed product (garment + one standard one-side print). Scope: productVariantId null = the
- * product-level default; non-null = a variant override.
+ * DEPRECATED (Jira 9203): legacy all-in quantity-break price tier (Jira 9102/9103). No longer used
+ * by pricing. Kept only for backward compatibility; do not build new UI against this.
+ * Use {@link ProductPrintPriceTier} (print-only tiers) instead.
  */
 export interface ProductPriceTier {
   id: string
@@ -81,16 +81,100 @@ export interface ProductPriceTier {
   unitPrice: number
 }
 
-/** One tier row in a SetProductPriceTiers replace payload. */
+/** @deprecated Legacy all-in tier row. See {@link CreateUpdateProductPrintPriceTier}. */
 export interface CreateUpdateProductPriceTier {
   productVariantId?: string | null
   minQuantity: number
   unitPrice: number
 }
 
-/** Replace-the-whole-set payload for the dedicated price-tiers endpoint. Empty list clears tiers. */
+/** @deprecated Legacy all-in replace payload. See {@link SetProductPrintPriceTiersPayload}. */
 export interface SetProductPriceTiersPayload {
   tiers: CreateUpdateProductPriceTier[]
+}
+
+// ─── Print pricing groups + print-only tiers (Jira 9203) ────────────────────────
+
+/**
+ * Print-pricing aggregation group. Products in the same group combine quantities when resolving
+ * print-tier breaks. The group governs the tier threshold only; PrintSize selects the price ladder.
+ * Garment price is unaffected by groups.
+ */
+export interface PrintPricingGroup {
+  id: string
+  name: string
+  code: string
+  isActive: boolean
+  sortOrder: number
+}
+
+export interface CreateUpdatePrintPricingGroup {
+  name: string
+  code: string
+  isActive: boolean
+  sortOrder: number
+}
+
+/**
+ * Print-only quantity-break tier (Jira 9203). UnitPrintPrice is the resolved price for printing one
+ * PrintSize on one garment at/above MinQuantity — NOT an all-in unit price. Belongs to a group.
+ * size null = group default; non-null = garment-size override matching ProductVariant.Size.
+ */
+export interface ProductPrintPriceTier {
+  id: string
+  printPricingGroupId: string
+  size: string | null
+  printSizeId: string
+  minQuantity: number
+  unitPrintPrice: number
+  isActive: boolean
+  sortOrder: number
+}
+
+/** One tier row in a SetProductPrintPriceTiers replace payload. */
+export interface CreateUpdateProductPrintPriceTier {
+  size?: string | null
+  printSizeId: string
+  minQuantity: number
+  unitPrintPrice: number
+  isActive: boolean
+  sortOrder: number
+}
+
+/** Replace-the-whole-set payload for a group's print price tiers. Empty list clears them. */
+export interface SetProductPrintPriceTiersPayload {
+  tiers: CreateUpdateProductPrintPriceTier[]
+}
+
+// ─── Product/size scoped allowed print options (Jira 9204) ──────────────────────
+
+/**
+ * A product/size scoped allowed print option (Jira 9204): which (PrintArea, PrintSize) a product —
+ * optionally a specific garment size — permits a customer to select. Governs selectability only,
+ * never price. size null = product default; non-null = garment-size override.
+ */
+export interface ProductPrintConfigOption {
+  id: string
+  productId: string
+  size: string | null
+  printAreaId: string
+  printSizeId: string
+  isActive: boolean
+  sortOrder: number
+}
+
+/** One row in a SetProductPrintConfigOptions replace payload. */
+export interface CreateUpdateProductPrintConfigOption {
+  size?: string | null
+  printAreaId: string
+  printSizeId: string
+  isActive: boolean
+  sortOrder: number
+}
+
+/** Replace-the-whole-set payload for a product's scoped print options. Empty list reverts to global. */
+export interface SetProductPrintConfigOptionsPayload {
+  options: CreateUpdateProductPrintConfigOption[]
 }
 
 export interface Product {
@@ -101,10 +185,16 @@ export interface Product {
   productType: string
   isActive: boolean
   creationTime: string
+  /** Print-pricing group assignment (Jira 9203). Null = ungrouped. Written via product update. */
+  printPricingGroupId: string | null
   variants: ProductVariant[]
   images: ProductImage[]
-  /** Quantity-break tiers. Empty = legacy additive pricing. Written only via setProductPriceTiers. */
+  /** @deprecated Legacy all-in tiers (Jira 9102). Inert in pricing; do not use in new UI. */
   priceTiers: ProductPriceTier[]
+  /** Print-only tiers resolved from this product's group (Jira 9203). Read-only here. */
+  printPriceTiers: ProductPrintPriceTier[]
+  /** Product/size scoped allowed print options (Jira 9204). Empty = global matrix fallback. */
+  printConfigOptions: ProductPrintConfigOption[]
 }
 
 // ─── Customization ────────────────────────────────────────────────────────────
@@ -180,10 +270,20 @@ export type PricingMode = 'Additive' | 'Tiered'
 export interface PrintAddOnPrice {
   printAreaId: string
   printAreaName: string
+  /** PrintArea base price — informational only; NOT charged under the print-only model (Jira 9203). */
   printAreaPrice: number
   printSizeId: string
   printSizeName: string
+  /** PrintSize base price (informational). */
   printSizePrice: number
+  /** The print price actually charged for this print (resolved tier or PrintSize base fallback). */
+  resolvedUnitPrintPrice: number
+  /** Applied print-tier break for this print, or null when base-price fallback was used. */
+  appliedTierMinQuantity: number | null
+  /** Next higher print-tier break for this print (for "add N more" hints), or null at the top. */
+  nextTierMinQuantity: number | null
+  nextTierUnitPrintPrice: number | null
+  /** Charged amount for this print entry (= resolvedUnitPrintPrice). */
   linePrice: number
 }
 
@@ -191,19 +291,25 @@ export interface PriceCalculationResponse {
   productBasePrice: number
   variantAdjustment: number
   printAddOns: PrintAddOnPrice[]
+  /** Fixed garment unit price = productBasePrice + variantAdjustment. Never discounted (Jira 9203). */
+  garmentUnitPrice: number
+  /** Sum of resolved print prices across all selected prints (0 when none). */
+  printUnitPrice: number
+  /** garmentUnitPrice + printUnitPrice. */
   unitPrice: number
   quantity: number
   lineTotal: number
   currency: string
-  // ── Tiered pricing (Jira 9102/9104) ──
+  /** "Additive" (no print tier applied) or "Tiered" (≥1 print tier applied). */
   pricingMode: PricingMode
-  /** The resolved tier's break + unit price (the standard printed unit price). Null in Additive mode. */
+  /** Backward-compat: applied print-tier break of the first tiered print, or null. */
   appliedTierMinQuantity: number | null
+  /** Backward-compat: resolved print price of the first tiered print, or null. */
   appliedTierUnitPrice: number | null
-  /** The next higher break, for "add N more to reach $X ea" hints. Null when already at the top. */
+  /** Backward-compat: next break of the first tiered print, for hints. */
   nextTierMinQuantity: number | null
   nextTierUnitPrice: number | null
-  /** The print add-on bundled into the tier price (the included standard one-side print). 0 otherwise. */
+  /** @deprecated Always 0 under the print-only model (Jira 9203). No standard print is included. */
   includedStandardPrintAmount: number
 }
 
@@ -398,6 +504,12 @@ export interface CartItem {
   size?: string
   unitPrice: number
   quantity: number
+  /**
+   * Print-pricing group of the product (Jira 9207). `string` = grouped, `null` = ungrouped,
+   * `undefined` = legacy cart item from before this field existed (backfilled by useCartPricing).
+   * Drives group-aware print-tier quantity aggregation in the cart/checkout quote.
+   */
+  printPricingGroupId?: string | null
   prints?: CartItemPrint[]
 }
 

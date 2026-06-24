@@ -159,6 +159,12 @@ public class OrderEntityTypeConfiguration :
         builder.Property(p => p.PrintSizePrice)
             .HasColumnType("decimal(18,4)");
 
+        // Resolved print-tier snapshot (Jira 9203). Defaults to 0 for historical rows added before
+        // this column existed; new orders always set the resolved price explicitly.
+        builder.Property(p => p.ResolvedUnitPrintPrice)
+            .HasColumnType("decimal(18,4)")
+            .HasDefaultValue(0m);
+
         builder.Property(p => p.Notes).HasMaxLength(2000);
         builder.Property(p => p.UploadedAssetUrl).HasMaxLength(1024);
         builder.Property(p => p.DesignNote).HasMaxLength(2000);

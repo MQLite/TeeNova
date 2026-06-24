@@ -3,6 +3,7 @@ using System;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Metadata;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using TeeNova.EntityFrameworkCore;
 using Volo.Abp.EntityFrameworkCore;
@@ -12,9 +13,11 @@ using Volo.Abp.EntityFrameworkCore;
 namespace TeeNova.Migrations
 {
     [DbContext(typeof(TeeNovaDbContext))]
-    partial class TeeNovaDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260624060240_AddPrintPricingGroupsAndProductPrintPriceTiers")]
+    partial class AddPrintPricingGroupsAndProductPrintPriceTiers
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -250,40 +253,6 @@ namespace TeeNova.Migrations
                         .IsUnique();
 
                     b.ToTable("ProductPriceTiers", "teenova");
-                });
-
-            modelBuilder.Entity("TeeNova.Catalog.ProductPrintConfigOption", b =>
-                {
-                    b.Property<Guid>("Id")
-                        .HasColumnType("uniqueidentifier");
-
-                    b.Property<bool>("IsActive")
-                        .HasColumnType("bit");
-
-                    b.Property<Guid>("PrintAreaId")
-                        .HasColumnType("uniqueidentifier");
-
-                    b.Property<Guid>("PrintSizeId")
-                        .HasColumnType("uniqueidentifier");
-
-                    b.Property<Guid>("ProductId")
-                        .HasColumnType("uniqueidentifier");
-
-                    b.Property<string>("Size")
-                        .HasMaxLength(32)
-                        .HasColumnType("nvarchar(32)");
-
-                    b.Property<int>("SortOrder")
-                        .HasColumnType("int");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("ProductId");
-
-                    b.HasIndex("ProductId", "Size", "PrintAreaId", "PrintSizeId")
-                        .IsUnique();
-
-                    b.ToTable("ProductPrintConfigOptions", "teenova");
                 });
 
             modelBuilder.Entity("TeeNova.Catalog.ProductPrintPriceTier", b =>
@@ -1219,15 +1188,6 @@ namespace TeeNova.Migrations
                 {
                     b.HasOne("TeeNova.Catalog.Product", null)
                         .WithMany("PriceTiers")
-                        .HasForeignKey("ProductId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-                });
-
-            modelBuilder.Entity("TeeNova.Catalog.ProductPrintConfigOption", b =>
-                {
-                    b.HasOne("TeeNova.Catalog.Product", null)
-                        .WithMany()
                         .HasForeignKey("ProductId")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();

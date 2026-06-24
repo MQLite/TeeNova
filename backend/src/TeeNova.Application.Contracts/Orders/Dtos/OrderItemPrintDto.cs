@@ -16,6 +16,12 @@ public class OrderItemPrintDto
     public string PrintSizeCode { get; set; } = default!;
     public decimal PrintSizePrice { get; set; }
 
+    /// <summary>The print price actually charged at placement (Jira 9203 print-only model).</summary>
+    public decimal ResolvedUnitPrintPrice { get; set; }
+
+    /// <summary>Applied print-tier MinQuantity, or null when base-price fallback was used.</summary>
+    public int? AppliedPrintTierMinQuantity { get; set; }
+
     public int SortOrder { get; set; }
     public string? Notes { get; set; }
 

@@ -10,4 +10,8 @@ public static class CatalogConsts
     public const int MaxImageUrlLength = 1024;
     public const int MaxInventoryNoteLength = 500;
     public const int MaxInventoryUpdatedByLength = 256;
+
+    // Print pricing groups (Jira 9203) — quantity-aggregation scope for print-only tiers.
+    public const int MaxPrintPricingGroupNameLength = 128;
+    public const int MaxPrintPricingGroupCodeLength = 64;
 }

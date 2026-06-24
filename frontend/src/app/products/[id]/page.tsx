@@ -10,15 +10,17 @@ import { printConfigApi } from '@/api/print-config'
 import { PricingBreakdownPanel } from '@/components/products/PricingBreakdownPanel'
 import { PrintAreaSelector } from '@/components/products/PrintAreaSelector'
 import { PrintSizeSelector } from '@/components/products/PrintSizeSelector'
-import { TierPricingStrip } from '@/components/products/TierPricingStrip'
+import { PrintPriceTierTable } from '@/components/products/PrintPriceTierTable'
 import { useCartStore } from '@/features/cart/cart-store'
 import { filterImagesForColor, resolveImageUrl } from '@/lib/image-utils'
-import { formatMoneyNZD, productLevelTiers } from '@/lib/pricing'
+import { formatMoneyNZD, cheapestPrintTierPrice, groupDefaultPrintLadders } from '@/lib/pricing'
+import { resolveAllowedPrintOptions } from '@/lib/print-options'
 import type {
   CartItemPrint,
   PriceCalculationResponse,
   PrintArea,
   PrintAreaSizeOption,
+  PrintSize,
   Product,
   UploadedAsset,
 } from '@/types'
@@ -61,6 +63,8 @@ export default function ProductDetailPage() {
 
   const [product, setProduct] = useState<Product | null>(null)
   const [printAreas, setPrintAreas] = useState<PrintArea[]>([])
+  const [printSizes, setPrintSizes] = useState<PrintSize[]>([])
+  const [resetNotice, setResetNotice] = useState<string | null>(null)
   const [selectedPrintAreas, setSelectedPrintAreas] = useState<string[]>([])
   const [printSizeByArea, setPrintSizeByArea] = useState<Record<string, string | undefined>>({})
   const [allowedSizesByArea, setAllowedSizesByArea] = useState<Record<string, PrintAreaSizeOption[]>>({})
@@ -109,18 +113,69 @@ export default function ProductDetailPage() {
     [printAreas, selectedPrintAreas],
   )
 
+  const printSizeNames = useMemo(
+    () => Object.fromEntries(printSizes.map((s) => [s.id, s.name])),
+    [printSizes],
+  )
+
+  // ── Product/size scoped allowed print options (Jira 9206) ────────────────────
+  // Distinct garment sizes the customer has entered quantities for (drives option scoping).
+  const selectedSizes = useMemo(
+    () => Array.from(new Set(selectedVariantLines.map((l) => l.size))),
+    [selectedVariantLines],
+  )
+
+  const activeScopedOptions = useMemo(
+    () => (product?.printConfigOptions ?? []).filter((o) => o.isActive),
+    [product],
+  )
+
+  // 'global' = use the global PrintAreaSizeOption matrix (unchanged); 'scoped' = narrow to the
+  // resolved pairs; 'empty' = selected sizes share no common print option (block prints).
+  const scopeResolution = useMemo(
+    () => resolveAllowedPrintOptions(activeScopedOptions, selectedSizes),
+    [activeScopedOptions, selectedSizes],
+  )
+
+  const printSelectionBlocked = scopeResolution.mode === 'empty'
+
+  // Areas offered to the customer: all global areas, or (scoped) only those with an allowed size.
+  const availableAreas = useMemo(() => {
+    if (scopeResolution.mode === 'scoped') {
+      return printAreas.filter((a) => scopeResolution.allowed.has(a.id))
+    }
+    if (scopeResolution.mode === 'empty') return []
+    return printAreas
+  }, [printAreas, scopeResolution])
+
+  // Per-area print sizes for display: the loaded global options, narrowed by the scoped set when scoped.
+  const displayAllowedSizesByArea = useMemo(() => {
+    if (scopeResolution.mode !== 'scoped') return allowedSizesByArea
+    const out: Record<string, PrintAreaSizeOption[]> = {}
+    for (const [areaId, opts] of Object.entries(allowedSizesByArea)) {
+      const allowedSet = scopeResolution.allowed.get(areaId)
+      out[areaId] = allowedSet ? opts.filter((o) => allowedSet.has(o.printSizeId)) : []
+    }
+    return out
+  }, [allowedSizesByArea, scopeResolution])
+
+  const multiSizeScopedNote =
+    scopeResolution.mode === 'scoped' && selectedSizes.length > 1
+      ? 'Some selected sizes support different print options. Only shared print options are shown.'
+      : null
+
   const missingPrintSizeAreaIds = useMemo(
     () =>
       selectedPrintAreas.filter((areaId) => {
         if (allowedSizesLoadingByArea[areaId]) return true
         if (allowedSizesErrorByArea[areaId]) return true
-        const allowed = allowedSizesByArea[areaId]
+        const allowed = displayAllowedSizesByArea[areaId]
         if (!allowed || allowed.length === 0) return true
         const selectedSizeId = printSizeByArea[areaId]
         if (!selectedSizeId) return true
         return !allowed.some((o) => o.printSizeId === selectedSizeId)
       }),
-    [allowedSizesByArea, allowedSizesErrorByArea, allowedSizesLoadingByArea, printSizeByArea, selectedPrintAreas],
+    [displayAllowedSizesByArea, allowedSizesErrorByArea, allowedSizesLoadingByArea, printSizeByArea, selectedPrintAreas],
   )
 
   const perAreaValidationErrors = useMemo(
@@ -128,7 +183,7 @@ export default function ProductDetailPage() {
       Object.fromEntries(
         missingPrintSizeAreaIds
           .filter((areaId) => {
-            const allowed = allowedSizesByArea[areaId]
+            const allowed = displayAllowedSizesByArea[areaId]
             return (
               allowed &&
               allowed.length > 0 &&
@@ -138,19 +193,30 @@ export default function ProductDetailPage() {
           })
           .map((areaId) => [areaId, 'Choose a print size for this area.']),
       ),
-    [allowedSizesByArea, allowedSizesErrorByArea, allowedSizesLoadingByArea, missingPrintSizeAreaIds],
+    [displayAllowedSizesByArea, allowedSizesErrorByArea, allowedSizesLoadingByArea, missingPrintSizeAreaIds],
   )
 
   const totalQty = selectedVariantLines.reduce((sum, line) => sum + line.quantity, 0)
 
-  // ── Tiered pricing (Jira 9104) ──────────────────────────────────────────────
-  const tierList = useMemo(() => productLevelTiers(product?.priceTiers ?? []), [product])
-  const hasTiers = tierList.length > 0
-  // Honest "from" price = the cheapest configured tier (the highest-quantity break).
-  const tierFromPrice = hasTiers ? Math.min(...tierList.map((t) => t.unitPrice)) : null
+  // ── Print-only pricing (Jira 9206) ──────────────────────────────────────────
+  const printTiers = useMemo(() => product?.printPriceTiers ?? [], [product])
+  const hasPrintTiers = useMemo(() => groupDefaultPrintLadders(printTiers).length > 0, [printTiers])
 
-  // All lines share one product + one tierQuantity, so the applied tier is identical across lines.
-  // Read it off the first tiered quote response that has arrived.
+  // Fixed garment "from" = base price + cheapest variant adjustment (garment price never discounted).
+  const garmentFromPrice = useMemo(() => {
+    if (!product) return null
+    const adjustments = product.variants.map((v) => v.priceAdjustment)
+    return product.basePrice + (adjustments.length ? Math.min(...adjustments) : 0)
+  }, [product])
+
+  // Cheapest achievable printed-from = fixed garment + cheapest active print tier price.
+  const cheapestPrint = useMemo(() => cheapestPrintTierPrice(printTiers), [printTiers])
+  const printedFromPrice =
+    hasPrintTiers && garmentFromPrice !== null && cheapestPrint !== null
+      ? garmentFromPrice + cheapestPrint
+      : null
+
+  // First tiered quote response that has arrived — used to highlight the applied print break.
   const appliedTierPricing = useMemo(() => {
     for (const line of selectedVariantLines) {
       const pricing = pricingByVariantId[line.variantId]
@@ -159,14 +225,15 @@ export default function ProductDetailPage() {
     return undefined
   }, [selectedVariantLines, pricingByVariantId])
 
-  // Small, non-intrusive next-tier hint.
+  // Print-volume preview hint. Phrased as a product-page preview because this page only knows THIS
+  // product's quantity — full cross-product group totals are resolved at checkout (Jira 9207).
   const nextTierHint = useMemo(() => {
     if (!appliedTierPricing) return null
     if (appliedTierPricing.nextTierMinQuantity == null || appliedTierPricing.nextTierUnitPrice == null)
-      return 'Best tier applied'
+      return 'Best print price applied'
     const remaining = appliedTierPricing.nextTierMinQuantity - totalQty
-    if (remaining <= 0) return 'Best tier applied'
-    return `Add ${remaining} more to reach ${formatMoneyNZD(appliedTierPricing.nextTierUnitPrice)} ea`
+    if (remaining <= 0) return 'Best print price applied'
+    return `Add ${remaining} more in this group to reach ${formatMoneyNZD(appliedTierPricing.nextTierUnitPrice)} print`
   }, [appliedTierPricing, totalQty])
 
   const pricingGrandTotal = selectedVariantLines.reduce(
@@ -190,6 +257,8 @@ export default function ProductDetailPage() {
     if (loadError) return loadError
     if (!product) return 'Product could not be loaded.'
     if (selectedVariantLines.length === 0) return 'Enter at least one quantity to preview pricing.'
+    if (printSelectionBlocked)
+      return 'The selected sizes do not share a common print option. Please split the order or choose different sizes/options.'
     if (selectedPrintAreas.some((id) => allowedSizesLoadingByArea[id]))
       return 'Loading available print sizes…'
     if (selectedPrintAreas.some((id) => allowedSizesErrorByArea[id]))
@@ -203,6 +272,7 @@ export default function ProductDetailPage() {
     loadError,
     missingPrintSizeAreaIds.length,
     pricingError,
+    printSelectionBlocked,
     product,
     selectedPrintAreas,
     selectedVariantLines.length,
@@ -217,12 +287,14 @@ export default function ProductDetailPage() {
     Promise.all([
       catalogApi.getProduct(id),
       printConfigApi.getAreas(),
+      printConfigApi.getSizes(),
     ])
-      .then(([loadedProduct, loadedAreas]) => {
+      .then(([loadedProduct, loadedAreas, loadedSizes]) => {
         if (!isMounted) return
 
         setProduct(loadedProduct)
         setPrintAreas(loadedAreas)
+        setPrintSizes(loadedSizes)
         setSelectedColor(loadedProduct.variants[0]?.color ?? null)
       })
       .catch((error) => {
@@ -389,6 +461,42 @@ export default function ProductDetailPage() {
     return () => window.clearTimeout(timeout)
   }, [addedToCart])
 
+  // Reset print selections that become invalid when the scoped allowed options change (e.g. the
+  // customer switches garment sizes). Depends only on the scope (synchronous) so it never races
+  // with the async per-area global-size loads. Global mode imposes no scoped narrowing here.
+  useEffect(() => {
+    if (scopeResolution.mode === 'global') return
+    const allowed = scopeResolution.mode === 'scoped'
+      ? scopeResolution.allowed
+      : new Map<string, Set<string>>()
+
+    const validAreas = selectedPrintAreas.filter((areaId) => allowed.has(areaId))
+    const sizeResets = validAreas.filter((areaId) => {
+      const sel = printSizeByArea[areaId]
+      const set = allowed.get(areaId)
+      return sel != null && (!set || !set.has(sel))
+    })
+    const areasChanged = validAreas.length !== selectedPrintAreas.length
+    if (!areasChanged && sizeResets.length === 0) return
+
+    if (areasChanged) handlePrintAreasChange(validAreas)
+    if (sizeResets.length > 0) {
+      setPrintSizeByArea((prev) => {
+        const next = { ...prev }
+        sizeResets.forEach((areaId) => { next[areaId] = undefined })
+        return next
+      })
+    }
+    setResetNotice('Your print selection was reset because it is not available for the selected size.')
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [scopeResolution])
+
+  useEffect(() => {
+    if (!resetNotice) return
+    const timeout = window.setTimeout(() => setResetNotice(null), 5000)
+    return () => window.clearTimeout(timeout)
+  }, [resetNotice])
+
   async function handlePrintAreaFileUpload(areaId: string, file: File) {
     setUploadingPrintAreaId(areaId)
     setPrintAreaUploadErrors((prev) => ({ ...prev, [areaId]: undefined }))
@@ -494,6 +602,11 @@ export default function ProductDetailPage() {
       return
     }
 
+    if (printSelectionBlocked) {
+      setAddToCartError('The selected sizes do not share a common print option. Split the order or choose different sizes/options.')
+      return
+    }
+
     if (missingPrintSizeAreaIds.length > 0) {
       setAddToCartError('Select a print size for every chosen print area before adding to cart.')
       return
@@ -508,7 +621,7 @@ export default function ProductDetailPage() {
       const prints: CartItemPrint[] = selectedPrintAreas.map((areaId) => {
         const area = printAreas.find((item) => item.id === areaId)
         const selectedSizeId = printSizeByArea[areaId]
-        const sizeOption = allowedSizesByArea[areaId]?.find((o) => o.printSizeId === selectedSizeId)
+        const sizeOption = displayAllowedSizesByArea[areaId]?.find((o) => o.printSizeId === selectedSizeId)
 
         if (!area || !sizeOption) {
           throw new Error('Print configuration is incomplete.')
@@ -551,6 +664,8 @@ export default function ProductDetailPage() {
           size: line.size,
           unitPrice: pricing.unitPrice,
           quantity: line.quantity,
+          // Persist group membership so the cart can aggregate print-tier quantity group-wide (Jira 9207).
+          printPricingGroupId: product.printPricingGroupId ?? null,
           prints,
         })
       })
@@ -720,47 +835,45 @@ export default function ProductDetailPage() {
                   {product.description}
                 </p>
               )}
-              {hasTiers && tierFromPrice !== null ? (
-                <>
-                  <p className="mt-4 font-mono text-[11px] uppercase tracking-[0.54px] text-black/45">
-                    Single-side printed price
-                  </p>
-                  <div className="mt-1 flex items-baseline gap-2">
-                    <span className="text-3xl text-black" style={{ fontWeight: 400, letterSpacing: '-0.96px' }}>
-                      From {formatMoneyNZD(tierFromPrice)}
-                    </span>
-                    <span className="text-sm text-black/55" style={{ letterSpacing: '-0.14px' }}>ea</span>
-                  </div>
-                  <p className="mt-1 text-sm text-black/55" style={{ letterSpacing: '-0.14px' }}>
-                    Includes one-side standard print · price depends on quantity
-                  </p>
-                </>
-              ) : (
-                <>
-                  <div className="mt-4 flex items-baseline gap-2">
-                    <span className="text-3xl text-black" style={{ fontWeight: 400, letterSpacing: '-0.96px' }}>
-                      ${product.basePrice.toFixed(2)}
-                    </span>
-                    <span className="text-sm text-black/55" style={{ letterSpacing: '-0.14px' }}>base garment price</span>
-                  </div>
-                  {priceAdjustments.length > 0 && (
-                    <p className="mt-1 font-mono text-[11px] uppercase tracking-[0.54px] text-black/50">
-                      {priceAdjustments.map((item) => `${item.size}: +$${item.adjustment.toFixed(2)}`).join(' | ')}
-                    </p>
-                  )}
-                </>
+              <p className="mt-4 font-mono text-[11px] uppercase tracking-[0.54px] text-black/45">
+                Garment price (fixed)
+              </p>
+              <div className="mt-1 flex items-baseline gap-2">
+                <span className="text-3xl text-black" style={{ fontWeight: 400, letterSpacing: '-0.96px' }}>
+                  {garmentFromPrice !== null && garmentFromPrice !== product.basePrice
+                    ? `From ${formatMoneyNZD(garmentFromPrice)}`
+                    : formatMoneyNZD(product.basePrice)}
+                </span>
+                <span className="text-sm text-black/55" style={{ letterSpacing: '-0.14px' }}>
+                  {priceAdjustments.length > 0 ? 'ea · varies by size' : 'ea'}
+                </span>
+              </div>
+              <p className="mt-1 text-sm text-black/55" style={{ letterSpacing: '-0.14px' }}>
+                {hasPrintTiers
+                  ? 'Garment price stays fixed. Print price depends on print size and quantity.'
+                  : 'Garment price stays fixed. Print options are added to the garment price.'}
+              </p>
+              {printedFromPrice !== null && (
+                <p className="mt-1 font-mono text-[11px] uppercase tracking-[0.54px] text-black/45">
+                  Printed from {formatMoneyNZD(printedFromPrice)} ea · your total updates as you choose print options
+                </p>
+              )}
+              {priceAdjustments.length > 0 && (
+                <p className="mt-1 font-mono text-[11px] uppercase tracking-[0.54px] text-black/50">
+                  {priceAdjustments.map((item) => `${item.size}: +$${item.adjustment.toFixed(2)}`).join(' | ')}
+                </p>
               )}
             </div>
 
-            {hasTiers && (
+            {hasPrintTiers && (
               <div className="card p-6">
                 <div className="mb-3 flex items-center justify-between gap-3">
                   <div>
                     <p className="text-sm text-black" style={{ fontWeight: 480, letterSpacing: '-0.14px' }}>
-                      Volume pricing
+                      Print volume pricing
                     </p>
                     <p className="mt-1 font-mono text-[10px] uppercase tracking-[0.54px] text-black/45">
-                      Per single-side printed item
+                      Print price per item · garment price is separate
                     </p>
                   </div>
                   {nextTierHint && (
@@ -769,19 +882,39 @@ export default function ProductDetailPage() {
                     </span>
                   )}
                 </div>
-                <TierPricingStrip
-                  tiers={product.priceTiers}
+                <PrintPriceTierTable
+                  tiers={printTiers}
+                  printSizeNames={printSizeNames}
                   appliedMinQuantity={appliedTierPricing?.appliedTierMinQuantity ?? null}
                 />
               </div>
             )}
 
             <div className="card p-6">
-              <PrintAreaSelector
-                areas={printAreas}
-                selectedAreaIds={selectedPrintAreas}
-                onChange={handlePrintAreasChange}
-              />
+              {printSelectionBlocked ? (
+                <div className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+                  The selected sizes do not share a common print option. Please split the order or choose
+                  different sizes/options to add prints.
+                </div>
+              ) : (
+                <>
+                  <PrintAreaSelector
+                    areas={availableAreas}
+                    selectedAreaIds={selectedPrintAreas}
+                    onChange={handlePrintAreasChange}
+                  />
+                  {multiSizeScopedNote && (
+                    <p className="mt-3 rounded-2xl border border-black/[0.08] bg-black/[0.02] px-4 py-2.5 text-xs text-black/55" style={{ letterSpacing: '-0.14px' }}>
+                      {multiSizeScopedNote}
+                    </p>
+                  )}
+                  {resetNotice && (
+                    <p className="mt-3 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-2.5 text-xs text-amber-800" style={{ letterSpacing: '-0.14px' }}>
+                      {resetNotice}
+                    </p>
+                  )}
+                </>
+              )}
             </div>
 
             <div className="card p-6">
@@ -790,12 +923,12 @@ export default function ProductDetailPage() {
                   Print Sizes
                 </p>
                 <p className="mt-1 font-mono text-[10px] uppercase tracking-[0.54px] text-black/45">
-                  One shared print setup is applied to every selected garment line
+                  PrintArea controls placement · PrintSize controls print price
                 </p>
               </div>
               <PrintSizeSelector
                 selectedAreas={selectedAreaDetails}
-                allowedSizesByArea={allowedSizesByArea}
+                allowedSizesByArea={displayAllowedSizesByArea}
                 allowedSizesLoadingByArea={allowedSizesLoadingByArea}
                 allowedSizesErrorByArea={allowedSizesErrorByArea}
                 printSizeByArea={printSizeByArea}
@@ -821,7 +954,7 @@ export default function ProductDetailPage() {
                     Sizes and Quantities
                   </p>
                   <p className="mt-1 font-mono text-[10px] uppercase tracking-[0.54px] text-black/45">
-                    Matrix selections share one print configuration
+                    Choose quantities per size and colour
                   </p>
                 </div>
                 {totalQty > 0 && (
@@ -931,7 +1064,7 @@ export default function ProductDetailPage() {
               <button
                 type="button"
                 onClick={handleAddToCart}
-                disabled={pricingLoading || uploadingPrintAreaId !== null}
+                disabled={pricingLoading || uploadingPrintAreaId !== null || printSelectionBlocked}
                 className="btn-black w-full py-3 text-sm disabled:opacity-40"
               >
                 {addedToCart

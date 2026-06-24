@@ -23,6 +23,7 @@ export default function NewProductPage() {
         basePrice: parseFloat(values.basePrice),
         productType: values.productType,
         isActive: values.isActive,
+        printPricingGroupId: values.printPricingGroupId || null,
       })
       router.push(`/admin/products/${product.id}`)
     } catch (err) {

@@ -15,7 +15,7 @@ function getUploadedDesignUrl(item: CartItem) {
 
 export default function CartPage() {
   const { items, removeItem, updateQuantity } = useCartStore()
-  const { pricingByKey, errorsByKey, productTotals, subtotal: recalcSubtotal, error: pricingError } =
+  const { pricingByKey, errorsByKey, groupTotals, groupKeyByItemKey, subtotal: recalcSubtotal, error: pricingError } =
     useCartPricing(items)
 
   if (items.length === 0) {
@@ -63,7 +63,9 @@ export default function CartPage() {
               const lineError = errorsByKey[item.cartItemKey]
               const unitPrice = linePricing?.unitPrice ?? item.unitPrice
               const lineTotal = linePricing?.lineTotal ?? item.unitPrice * item.quantity
-              const hint = tierHint(linePricing, productTotals[item.productId] ?? item.quantity)
+              const groupKey = groupKeyByItemKey[item.cartItemKey]
+              const groupQuantity = (groupKey ? groupTotals[groupKey] : undefined) ?? item.quantity
+              const hint = tierHint(linePricing, groupQuantity)
               return (
               <div key={item.cartItemKey} className="card overflow-hidden">
                 <div className="flex gap-4 p-5">
@@ -134,22 +136,41 @@ export default function CartPage() {
                       </span>
                     </div>
 
-                    {/* Tier / print context */}
-                    {linePricing?.pricingMode === 'Tiered' && (
+                    {/* Print-only price breakdown: fixed garment + summed print prices (Jira 9207) */}
+                    {linePricing && !lineError && (
+                      <div className="mt-3 space-y-1 rounded-lg bg-black/[0.02] px-3 py-2 text-xs text-black/60">
+                        <div className="flex items-center justify-between" style={{ letterSpacing: '-0.14px' }}>
+                          <span>Garment</span>
+                          <span className="text-black/75">${linePricing.garmentUnitPrice.toFixed(2)}</span>
+                        </div>
+                        {linePricing.prints.map((print) => (
+                          <div
+                            key={`${print.printAreaId}:${print.printSizeId}`}
+                            className="flex items-center justify-between"
+                            style={{ letterSpacing: '-0.14px' }}
+                          >
+                            <span>{print.printAreaName} · {print.printSizeName} <span className="text-black/40">print</span></span>
+                            <span className="text-black/75">${print.resolvedUnitPrintPrice.toFixed(2)}</span>
+                          </div>
+                        ))}
+                        <div className="flex items-center justify-between border-t border-black/[0.06] pt-1" style={{ letterSpacing: '-0.14px' }}>
+                          <span className="text-black/75" style={{ fontWeight: 480 }}>Unit total</span>
+                          <span className="text-black" style={{ fontWeight: 540 }}>${unitPrice.toFixed(2)}</span>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Print volume tier note */}
+                    {linePricing && !lineError && linePricing.pricingMode === 'Tiered' && (
                       <div className="mt-2 flex flex-wrap items-center gap-1.5">
                         {linePricing.appliedTierMinQuantity != null && (
                           <span className="rounded-full bg-black/[0.05] px-2 py-0.5 text-[10px] uppercase tracking-[0.54px] text-black/55">
-                            Volume price: {linePricing.appliedTierMinQuantity <= 1 ? '1 pc' : `${linePricing.appliedTierMinQuantity}+`} tier
+                            Print volume price: {linePricing.appliedTierMinQuantity <= 1 ? '1 pc' : `${linePricing.appliedTierMinQuantity}+`}
                           </span>
                         )}
                         <span className="rounded-full bg-black/[0.05] px-2 py-0.5 text-[10px] uppercase tracking-[0.54px] text-black/55">
-                          One-side print included
+                          Group quantity: {groupQuantity}
                         </span>
-                        {linePricing.hasExtraPrints && (
-                          <span className="rounded-full bg-black/[0.05] px-2 py-0.5 text-[10px] uppercase tracking-[0.54px] text-black/55">
-                            Extra print options added
-                          </span>
-                        )}
                         {hint && (
                           <span className="text-[11px] text-black/45" style={{ letterSpacing: '-0.14px' }}>
                             {hint}
@@ -159,9 +180,12 @@ export default function CartPage() {
                     )}
 
                     {lineError && (
-                      <p className="mt-2 text-xs text-red-600" style={{ letterSpacing: '-0.14px' }}>
-                        Could not refresh this item’s price. The amount shown may be out of date.
-                      </p>
+                      <div className="mt-2 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700" style={{ letterSpacing: '-0.14px' }}>
+                        <p>{lineError}</p>
+                        <p className="mt-1 text-red-600">
+                          This print option may no longer be available for the selected size. Please remove this item and add it again.
+                        </p>
+                      </div>
                     )}
                   </div>
                 </div>

@@ -12,14 +12,35 @@ public class ProductDto
     public string ProductType { get; set; } = default!;
     public bool IsActive { get; set; }
     public DateTime CreationTime { get; set; }
+
+    /// <summary>
+    /// Print-pricing aggregation group (Jira 9203). Null = ungrouped (isolated for print tiers).
+    /// Products sharing a group combine quantities when resolving print tiers.
+    /// </summary>
+    public Guid? PrintPricingGroupId { get; set; }
+
     public List<ProductVariantDto> Variants { get; set; } = new();
     public List<ProductImageDto> Images { get; set; } = new();
 
     /// <summary>
-    /// Quantity-break price tiers (Jira 9102). Empty = legacy additive pricing.
-    /// Ordered by scope then MinQuantity. Written only via the dedicated price-tiers endpoint.
+    /// DEPRECATED (Jira 9203): legacy all-in quantity-break tiers (Jira 9102). No longer used by
+    /// pricing — retained only for backward compatibility until the old admin UI is removed.
     /// </summary>
     public List<ProductPriceTierDto> PriceTiers { get; set; } = new();
+
+    /// <summary>
+    /// Print-only quantity-break tiers resolved for this product's group (Jira 9203). Empty when the
+    /// product is ungrouped or its group has no tiers (printing falls back to PrintSize.BasePrice).
+    /// Written only via the group-scoped print-price-tiers endpoint.
+    /// </summary>
+    public List<ProductPrintPriceTierDto> PrintPriceTiers { get; set; } = new();
+
+    /// <summary>
+    /// Product/size scoped allowed print options (Jira 9204). Empty = no scoped options; the product
+    /// uses the global PrintAreaSizeOption matrix. Written only via the print-config-options endpoint.
+    /// Governs selectability only — unrelated to print price.
+    /// </summary>
+    public List<ProductPrintConfigOptionDto> PrintConfigOptions { get; set; } = new();
 }
 
 public class ProductVariantDto

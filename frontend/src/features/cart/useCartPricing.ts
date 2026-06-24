@@ -2,27 +2,50 @@
 
 import { useEffect, useMemo, useState } from 'react'
 import { pricingApi } from '@/api/pricing'
+import { catalogApi } from '@/api/catalog'
 import type { CartItem, PriceCalculationResponse } from '@/types'
 
+/** Resolved print price for one selected print placement on a cart line. */
+export interface CartLinePrintPricing {
+  printAreaId: string
+  printAreaName: string
+  printSizeId: string
+  printSizeName: string
+  /** The print price actually charged for this print (resolved group tier or PrintSize base fallback). */
+  resolvedUnitPrintPrice: number
+  appliedTierMinQuantity: number | null
+  nextTierMinQuantity: number | null
+  nextTierUnitPrintPrice: number | null
+}
+
 export interface CartLinePricing {
+  /** Fixed garment unit price (base + variant adjustment); never tier-discounted (Jira 9203). */
+  garmentUnitPrice: number
+  /** Sum of resolved print prices across all selected prints (0 when none). */
+  printUnitPrice: number
+  /** garmentUnitPrice + printUnitPrice. */
   unitPrice: number
   lineTotal: number
   pricingMode: PriceCalculationResponse['pricingMode']
+  /** Per-print resolved pricing for the cart-line breakdown. */
+  prints: CartLinePrintPricing[]
+  /** Applied print-tier break of the first tiered print (for the line tier note), or null. */
   appliedTierMinQuantity: number | null
+  /** Next higher print-tier break (for "add N more" hints), or null at the top. */
   nextTierMinQuantity: number | null
-  nextTierUnitPrice: number | null
-  includedStandardPrintAmount: number
-  hasExtraPrints: boolean
+  nextTierUnitPrintPrice: number | null
   currency: string
 }
 
 export interface CartPricingResult {
   /** Recalculated pricing per cartItemKey. Undefined while loading or if that line errored. */
   pricingByKey: Record<string, CartLinePricing | undefined>
-  /** Per-line error messages keyed by cartItemKey. */
+  /** Per-line error messages keyed by cartItemKey (e.g. a now-invalid scoped print option). */
   errorsByKey: Record<string, string | undefined>
-  /** Total quantity per productId (the tier scope) — same value drives every line of that product. */
-  productTotals: Record<string, number>
+  /** Print-pricing-group key per cartItemKey (`g:{groupId}` or `p:{productId}`). */
+  groupKeyByItemKey: Record<string, string>
+  /** Total garment quantity per group key — the print-tier scope; shared by every line in the group. */
+  groupTotals: Record<string, number>
   /** True while a recalculation request is in flight. */
   loading: boolean
   /** True once every line has fresh pricing and no line errored. */
@@ -34,42 +57,109 @@ export interface CartPricingResult {
   error: string | null
 }
 
-/** Stable signature so the effect only re-runs on a meaningful change (avoids render loops). */
-function signatureOf(items: CartItem[]): string {
-  return JSON.stringify(
-    items.map((i) => ({
-      k: i.cartItemKey,
-      p: i.productId,
-      v: i.productVariantId,
-      q: i.quantity,
-      prints: (i.prints ?? [])
-        .map((pr) => `${pr.printAreaId}:${pr.printSizeId}`)
-        .sort(),
-    })),
-  )
+/**
+ * Print-pricing-group key for a cart item (Jira 9207).
+ * `g:{groupId}` when the product belongs to a group (quantities combine across products and
+ * PrintSize values in that group); otherwise `p:{productId}` so ungrouped products stay isolated.
+ * A still-unknown legacy group (undefined, pending backfill) falls back to the isolated key.
+ */
+function groupKeyFor(item: CartItem, resolvedGroups: Record<string, string | null>): string {
+  const groupId =
+    item.printPricingGroupId !== undefined ? item.printPricingGroupId : resolvedGroups[item.productId]
+  return groupId ? `g:${groupId}` : `p:${item.productId}`
 }
 
 /**
- * Recalculates cart line pricing through the backend quote API, applying quantity-break tiers
- * with tierQuantity aggregated per product across variants (Jira 9105). Backend stays the source
- * of truth for the final order; this only refreshes the displayed prices.
+ * Recalculates cart line pricing through the backend quote API under the print-only model (Jira 9203/9207):
+ * fixed garment price + summed resolved print prices, with the print-tier quantity aggregated per
+ * PrintPricingGroup across products and PrintSize values. Backend stays the source of truth for the
+ * final order; this only refreshes the displayed prices.
  */
 export function useCartPricing(items: CartItem[]): CartPricingResult {
-  const signature = useMemo(() => signatureOf(items), [items])
+  // Backfilled group ids for legacy cart items that predate the printPricingGroupId field.
+  const [resolvedGroups, setResolvedGroups] = useState<Record<string, string | null>>({})
 
-  // Tier scope: total quantity per product across all its variant lines in the cart.
-  const productTotals = useMemo(() => {
+  const itemsSignature = useMemo(
+    () =>
+      JSON.stringify(
+        items.map((i) => ({
+          k: i.cartItemKey,
+          p: i.productId,
+          v: i.productVariantId,
+          q: i.quantity,
+          g: i.printPricingGroupId === undefined ? '?' : i.printPricingGroupId,
+          prints: (i.prints ?? []).map((pr) => `${pr.printAreaId}:${pr.printSizeId}`).sort(),
+        })),
+      ),
+    [items],
+  )
+
+  // Backfill group membership for legacy items (printPricingGroupId === undefined) by fetching product
+  // metadata. Fresh items already carry the field, so no fetch happens for normal carts.
+  useEffect(() => {
+    const unknown = Array.from(
+      new Set(
+        items
+          .filter((i) => i.printPricingGroupId === undefined && !(i.productId in resolvedGroups))
+          .map((i) => i.productId),
+      ),
+    )
+    if (unknown.length === 0) return
+
+    let cancelled = false
+    Promise.allSettled(unknown.map((id) => catalogApi.getProduct(id))).then((results) => {
+      if (cancelled) return
+      setResolvedGroups((prev) => {
+        const next = { ...prev }
+        results.forEach((res, idx) => {
+          const id = unknown[idx]
+          // On failure, isolate the product (safe fallback) rather than mis-aggregating it.
+          next[id] = res.status === 'fulfilled' ? res.value.printPricingGroupId ?? null : null
+        })
+        return next
+      })
+    })
+
+    return () => {
+      cancelled = true
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [itemsSignature, resolvedGroups])
+
+  // Group keys + per-group total garment quantity (each cart line counted once, regardless of how
+  // many prints it has — Jira 9207).
+  const { groupKeyByItemKey, groupTotals } = useMemo(() => {
+    const byKey: Record<string, string> = {}
     const totals: Record<string, number> = {}
     for (const item of items) {
-      totals[item.productId] = (totals[item.productId] ?? 0) + item.quantity
+      const key = groupKeyFor(item, resolvedGroups)
+      byKey[item.cartItemKey] = key
+      totals[key] = (totals[key] ?? 0) + item.quantity
     }
-    return totals
-  }, [items])
+    return { groupKeyByItemKey: byKey, groupTotals: totals }
+  }, [items, resolvedGroups])
 
   const [pricingByKey, setPricingByKey] = useState<Record<string, CartLinePricing | undefined>>({})
   const [errorsByKey, setErrorsByKey] = useState<Record<string, string | undefined>>({})
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
+
+  // Quote signature includes the resolved group tierQuantity so a quantity change anywhere in a group
+  // re-quotes every line in that group.
+  const quoteSignature = useMemo(
+    () =>
+      JSON.stringify(
+        items.map((i) => ({
+          k: i.cartItemKey,
+          p: i.productId,
+          v: i.productVariantId,
+          q: i.quantity,
+          tq: groupTotals[groupKeyByItemKey[i.cartItemKey]] ?? i.quantity,
+          prints: (i.prints ?? []).map((pr) => `${pr.printAreaId}:${pr.printSizeId}`).sort(),
+        })),
+      ),
+    [items, groupTotals, groupKeyByItemKey],
+  )
 
   useEffect(() => {
     if (items.length === 0) {
@@ -87,19 +177,23 @@ export function useCartPricing(items: CartItem[]): CartPricingResult {
     // Debounce so rapid +/- clicks batch into a single round of quotes.
     const timeout = window.setTimeout(() => {
       // Snapshot the lines for this run so indexes line up with results.
-      const lines = items.map((item) => ({
-        key: item.cartItemKey,
-        request: {
-          productId: item.productId,
-          variantId: item.productVariantId,
-          quantity: item.quantity,
-          tierQuantity: productTotals[item.productId],
-          prints: (item.prints ?? []).map((pr) => ({
-            printAreaId: pr.printAreaId,
-            printSizeId: pr.printSizeId,
-          })),
-        },
-      }))
+      const lines = items.map((item) => {
+        const groupKey = groupKeyByItemKey[item.cartItemKey]
+        return {
+          key: item.cartItemKey,
+          request: {
+            productId: item.productId,
+            variantId: item.productVariantId,
+            quantity: item.quantity,
+            // Group-aware tier scope: total quantity across the whole print pricing group.
+            tierQuantity: groupTotals[groupKey] ?? item.quantity,
+            prints: (item.prints ?? []).map((pr) => ({
+              printAreaId: pr.printAreaId,
+              printSizeId: pr.printSizeId,
+            })),
+          },
+        }
+      })
 
       Promise.allSettled(lines.map((l) => pricingApi.calculatePricing(l.request)))
         .then((results) => {
@@ -114,14 +208,24 @@ export function useCartPricing(items: CartItem[]): CartPricingResult {
             if (result.status === 'fulfilled') {
               const r = result.value
               nextPricing[line.key] = {
+                garmentUnitPrice: r.garmentUnitPrice,
+                printUnitPrice: r.printUnitPrice,
                 unitPrice: r.unitPrice,
                 lineTotal: r.lineTotal,
                 pricingMode: r.pricingMode,
+                prints: r.printAddOns.map((p) => ({
+                  printAreaId: p.printAreaId,
+                  printAreaName: p.printAreaName,
+                  printSizeId: p.printSizeId,
+                  printSizeName: p.printSizeName,
+                  resolvedUnitPrintPrice: p.resolvedUnitPrintPrice,
+                  appliedTierMinQuantity: p.appliedTierMinQuantity,
+                  nextTierMinQuantity: p.nextTierMinQuantity,
+                  nextTierUnitPrintPrice: p.nextTierUnitPrintPrice,
+                })),
                 appliedTierMinQuantity: r.appliedTierMinQuantity,
                 nextTierMinQuantity: r.nextTierMinQuantity,
-                nextTierUnitPrice: r.nextTierUnitPrice,
-                includedStandardPrintAmount: r.includedStandardPrintAmount,
-                hasExtraPrints: r.printAddOns.length > 0,
+                nextTierUnitPrintPrice: r.nextTierUnitPrice,
                 currency: r.currency,
               }
             } else {
@@ -155,9 +259,9 @@ export function useCartPricing(items: CartItem[]): CartPricingResult {
       cancelled = true
       window.clearTimeout(timeout)
     }
-    // signature captures the meaningful contents of items; productTotals derives from the same.
+    // quoteSignature captures the meaningful contents of items + group totals.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [signature])
+  }, [quoteSignature])
 
   const isComplete =
     items.length > 0 &&
@@ -169,18 +273,21 @@ export function useCartPricing(items: CartItem[]): CartPricingResult {
     return sum + (fresh ? fresh.lineTotal : item.unitPrice * item.quantity)
   }, 0)
 
-  return { pricingByKey, errorsByKey, productTotals, loading, isComplete, subtotal, error }
+  return { pricingByKey, errorsByKey, groupKeyByItemKey, groupTotals, loading, isComplete, subtotal, error }
 }
 
 /**
- * Small, non-intrusive tier hint for a cart line. Returns null when no tier is applied.
- *   - top tier:        "Best tier applied"
- *   - more to go:      "Add 3 more to reach $25.00 ea"
+ * Small, non-intrusive print-tier hint for a cart line (Jira 9207). Returns null when no print tier
+ * applies. groupQuantity is the total garment quantity across the line's print pricing group.
+ *   - top tier:   "Best print price tier applied"
+ *   - more to go: "Add 3 more in this print pricing group to reach $25.00 print"
  */
-export function tierHint(line: CartLinePricing | undefined, productTotalQuantity: number): string | null {
+export function tierHint(line: CartLinePricing | undefined, groupQuantity: number): string | null {
   if (!line || line.pricingMode !== 'Tiered') return null
-  if (line.nextTierMinQuantity == null || line.nextTierUnitPrice == null) return 'Best tier applied'
-  const remaining = line.nextTierMinQuantity - productTotalQuantity
-  if (remaining <= 0) return 'Best tier applied'
-  return `Add ${remaining} more to reach $${line.nextTierUnitPrice.toFixed(2)} ea`
+  if (line.nextTierMinQuantity == null || line.nextTierUnitPrintPrice == null) {
+    return 'Best print price tier applied'
+  }
+  const remaining = line.nextTierMinQuantity - groupQuantity
+  if (remaining <= 0) return 'Best print price tier applied'
+  return `Add ${remaining} more in this print pricing group to reach $${line.nextTierUnitPrintPrice.toFixed(2)} print`
 }

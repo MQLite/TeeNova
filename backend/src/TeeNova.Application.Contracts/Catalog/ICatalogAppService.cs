@@ -34,6 +34,19 @@ public interface ICatalogAppService : IApplicationService
     Task<ProductVariantDto> UpdateVariantInventoryAsync(Guid productId, Guid variantId, UpdateVariantInventoryDto input);
     Task<List<ProductVariantDto>> BulkSaveVariantsAsync(Guid productId, BulkSaveProductVariantsDto input);
 
-    // ── Admin: Price Tiers (Jira 9102) ──────────────────────────────────────────
+    // ── Admin: Price Tiers (Jira 9102, DEPRECATED — inert in pricing) ────────────
     Task<ProductDto> SetPriceTiersAsync(Guid productId, SetProductPriceTiersDto input);
+
+    // ── Print Pricing Groups (Jira 9203) ─────────────────────────────────────────
+    Task<List<PrintPricingGroupDto>> GetPrintPricingGroupsAsync(bool? isActive = null);
+    Task<PrintPricingGroupDto> CreatePrintPricingGroupAsync(CreateUpdatePrintPricingGroupDto input);
+    Task<PrintPricingGroupDto> UpdatePrintPricingGroupAsync(Guid groupId, CreateUpdatePrintPricingGroupDto input);
+
+    // ── Print Price Tiers (Jira 9203, group-scoped single-writer) ─────────────────
+    Task<List<ProductPrintPriceTierDto>> GetPrintPriceTiersAsync(Guid groupId);
+    Task<List<ProductPrintPriceTierDto>> SetPrintPriceTiersAsync(Guid groupId, SetProductPrintPriceTiersDto input);
+
+    // ── Print Config Options (Jira 9204, product-scoped single-writer) ────────────
+    Task<List<ProductPrintConfigOptionDto>> GetPrintConfigOptionsAsync(Guid productId);
+    Task<List<ProductPrintConfigOptionDto>> SetPrintConfigOptionsAsync(Guid productId, SetProductPrintConfigOptionsDto input);
 }

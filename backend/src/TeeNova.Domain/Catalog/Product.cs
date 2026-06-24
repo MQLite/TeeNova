@@ -25,6 +25,15 @@ public class Product : FullAuditedAggregateRoot<Guid>
     /// </summary>
     public string ProductType { get; set; } = "tshirt";
 
+    /// <summary>
+    /// Optional print-pricing aggregation scope (Jira 9203). Products sharing a
+    /// <see cref="PrintPricingGroup"/> combine their quantities when resolving print tiers.
+    /// Null = ungrouped: this product is isolated and never aggregates with others.
+    /// Plain nullable column (no FK navigation) — resolution checks the group at runtime, and this
+    /// keeps product/group deletion free of cascade-path concerns (mirrors ProductPriceTier scope).
+    /// </summary>
+    public Guid? PrintPricingGroupId { get; set; }
+
     public ICollection<ProductVariant> Variants { get; set; } = new List<ProductVariant>();
     public ICollection<ProductImage> Images { get; set; } = new List<ProductImage>();
 

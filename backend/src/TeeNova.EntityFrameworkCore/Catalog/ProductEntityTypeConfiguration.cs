@@ -46,6 +46,12 @@ public class ProductEntityTypeConfiguration :
             .WithOne()
             .HasForeignKey(t => t.ProductId)
             .OnDelete(DeleteBehavior.Cascade);
+
+        // Print-pricing group (Jira 9203). Plain nullable column with an index, no FK navigation —
+        // the pricing resolver validates the group/tiers at runtime, and avoiding the FK keeps
+        // product/group deletion free of cascade-path concerns (same discipline as the price-tier
+        // variant-override scope above).
+        builder.HasIndex(p => p.PrintPricingGroupId);
     }
 
     public void Configure(EntityTypeBuilder<ProductVariant> builder)

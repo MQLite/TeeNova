@@ -22,6 +22,10 @@ interface PricingBreakdownPanelProps {
   validationMessage?: string | null
 }
 
+/**
+ * Print-only pricing preview (Jira 9206): fixed garment price + summed resolved print prices.
+ * No "included" print, no all-in tier. PrintArea is placement only and is not shown as a price.
+ */
 export function PricingBreakdownPanel({
   selectedLines,
   pricingByVariantId,
@@ -41,7 +45,7 @@ export function PricingBreakdownPanel({
             Pricing Preview
           </p>
           <p className="mt-1 font-mono text-[10px] uppercase tracking-[0.54px] text-black/45">
-            Backend pricing per selected variant line
+            Fixed garment price + print price per selected line
           </p>
         </div>
         {loading && <div className="h-5 w-5 animate-spin rounded-full border-2 border-black/10 border-t-black" />}
@@ -80,11 +84,6 @@ export function PricingBreakdownPanel({
                       <p className="mt-1 text-xs text-black/50 tabular-nums">
                         {pricing.currency} ${pricing.unitPrice.toFixed(2)} each
                       </p>
-                      {pricing.pricingMode === 'Tiered' && pricing.appliedTierMinQuantity != null && (
-                        <p className="mt-1 text-[11px] text-black/45" style={{ letterSpacing: '-0.14px' }}>
-                          {formatTierLabel(pricing.appliedTierMinQuantity)} tier · one-side print included
-                        </p>
-                      )}
                     </div>
                   ) : lineError ? (
                     <span className="text-xs text-red-600">Pricing failed</span>
@@ -93,21 +92,40 @@ export function PricingBreakdownPanel({
                   )}
                 </div>
 
-                {pricing && pricing.printAddOns.length > 0 && (
+                {pricing && (
                   <div className="mt-3 space-y-1.5 rounded-xl bg-black/[0.02] px-3 py-2">
-                    {pricing.pricingMode === 'Tiered' && (
-                      <p className="font-mono text-[10px] uppercase tracking-[0.54px] text-black/45">
-                        Extra print options
-                      </p>
+                    {/* Garment (fixed) */}
+                    <div className="flex items-center justify-between gap-3 text-xs">
+                      <span className="text-black/60" style={{ letterSpacing: '-0.14px' }}>Garment</span>
+                      <span className="tabular-nums text-black/55">${pricing.garmentUnitPrice.toFixed(2)}</span>
+                    </div>
+
+                    {/* Prints (resolved print prices) */}
+                    {pricing.printAddOns.length > 0 && (
+                      <>
+                        <p className="font-mono text-[10px] uppercase tracking-[0.54px] text-black/45">Prints</p>
+                        {pricing.printAddOns.map((addOn) => (
+                          <div
+                            key={`${addOn.printAreaId}:${addOn.printSizeId}`}
+                            className="flex items-center justify-between gap-3 text-xs"
+                          >
+                            <span className="text-black/60" style={{ letterSpacing: '-0.14px' }}>
+                              {addOn.printAreaName} · {addOn.printSizeName}
+                              {addOn.appliedTierMinQuantity != null && (
+                                <span className="ml-1 text-black/40">({formatTierLabel(addOn.appliedTierMinQuantity)})</span>
+                              )}
+                            </span>
+                            <span className="tabular-nums text-black/55">+${addOn.resolvedUnitPrintPrice.toFixed(2)}</span>
+                          </div>
+                        ))}
+                      </>
                     )}
-                    {pricing.printAddOns.map((addOn) => (
-                      <div key={`${addOn.printAreaId}:${addOn.printSizeId}`} className="flex items-center justify-between gap-3 text-xs">
-                        <span className="text-black/60" style={{ letterSpacing: '-0.14px' }}>
-                          {addOn.printAreaName} · {addOn.printSizeName}
-                        </span>
-                        <span className="tabular-nums text-black/55">+${addOn.linePrice.toFixed(2)}</span>
-                      </div>
-                    ))}
+
+                    {/* Unit total */}
+                    <div className="flex items-center justify-between gap-3 border-t border-black/[0.06] pt-1.5 text-xs">
+                      <span className="text-black/70" style={{ fontWeight: 480, letterSpacing: '-0.14px' }}>Unit total</span>
+                      <span className="tabular-nums text-black" style={{ fontWeight: 480 }}>${pricing.unitPrice.toFixed(2)}</span>
+                    </div>
                   </div>
                 )}
 

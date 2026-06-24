@@ -22,8 +22,9 @@ namespace TeeNova.Orders;
 
 public class OrderAppService : ApplicationService, IOrderAppService
 {
-    private readonly IRepository<Order, Guid>                _orderRepository;
-    private readonly IRepository<Catalog.Product, Guid>      _productRepository;
+    private readonly IRepository<Order, Guid>                       _orderRepository;
+    private readonly IRepository<Catalog.Product, Guid>             _productRepository;
+    private readonly IRepository<Catalog.ProductPrintPriceTier, Guid> _printPriceTierRepository;
     private readonly IRepository<OrderTimelineEntry, Guid>   _timelineRepository;
     private readonly IRepository<PaymentTransaction, Guid>   _paymentTransactionRepository;
     private readonly IRepository<OrderPriceAdjustment, Guid> _priceAdjustmentRepository;
@@ -31,6 +32,7 @@ public class OrderAppService : ApplicationService, IOrderAppService
     private readonly IRepository<PrintSize, Guid>            _printSizeRepository;
     private readonly IRepository<OnlinePaymentSession, Guid> _onlinePaymentSessionRepository;
     private readonly PrintConfigValidator                    _printConfigValidator;
+    private readonly Catalog.ProductPrintConfigOptionResolver _printConfigOptionResolver;
     private readonly IOrderEmailNotificationService          _orderEmailNotificationService;
     private readonly IOptions<OnlinePaymentOptions>          _onlinePaymentOptions;
     private readonly IOnlinePaymentProviderResolver          _onlinePaymentProviderResolver;
@@ -41,6 +43,7 @@ public class OrderAppService : ApplicationService, IOrderAppService
     public OrderAppService(
         IRepository<Order, Guid>                 orderRepository,
         IRepository<Catalog.Product, Guid>       productRepository,
+        IRepository<Catalog.ProductPrintPriceTier, Guid> printPriceTierRepository,
         IRepository<OrderTimelineEntry, Guid>    timelineRepository,
         IRepository<PaymentTransaction, Guid>    paymentTransactionRepository,
         IRepository<OrderPriceAdjustment, Guid>  priceAdjustmentRepository,
@@ -48,6 +51,7 @@ public class OrderAppService : ApplicationService, IOrderAppService
         IRepository<PrintSize, Guid>             printSizeRepository,
         IRepository<OnlinePaymentSession, Guid>  onlinePaymentSessionRepository,
         PrintConfigValidator                     printConfigValidator,
+        Catalog.ProductPrintConfigOptionResolver printConfigOptionResolver,
         IOrderEmailNotificationService           orderEmailNotificationService,
         IOptions<OnlinePaymentOptions>           onlinePaymentOptions,
         IOnlinePaymentProviderResolver           onlinePaymentProviderResolver,
@@ -57,6 +61,7 @@ public class OrderAppService : ApplicationService, IOrderAppService
     {
         _orderRepository                = orderRepository;
         _productRepository              = productRepository;
+        _printPriceTierRepository       = printPriceTierRepository;
         _timelineRepository             = timelineRepository;
         _paymentTransactionRepository   = paymentTransactionRepository;
         _priceAdjustmentRepository      = priceAdjustmentRepository;
@@ -64,6 +69,7 @@ public class OrderAppService : ApplicationService, IOrderAppService
         _printSizeRepository            = printSizeRepository;
         _onlinePaymentSessionRepository = onlinePaymentSessionRepository;
         _printConfigValidator           = printConfigValidator;
+        _printConfigOptionResolver      = printConfigOptionResolver;
         _orderEmailNotificationService  = orderEmailNotificationService;
         _onlinePaymentOptions           = onlinePaymentOptions;
         _onlinePaymentProviderResolver  = onlinePaymentProviderResolver;
@@ -96,44 +102,87 @@ public class OrderAppService : ApplicationService, IOrderAppService
         // affects old orders. This does NOT deduct stock and never blocks checkout.
         var inventoryDeductionEligible = (await _inventorySettings.GetAsync()).AutoDeductOnPressedEnabled;
 
-        // Quantity-break tier scope (Jira 9102): per product across all variant lines in THIS
-        // order. Different products never aggregate together.
-        var productQuantities = input.Items
-            .GroupBy(i => i.ProductId)
-            .ToDictionary(g => g.Key, g => g.Sum(i => i.Quantity));
+        // Load every referenced product (with variants) once, up front.
+        var productIds = input.Items.Select(i => i.ProductId).Distinct().ToList();
+        var productQueryable = await _productRepository.GetQueryableAsync();
+        var products = (await productQueryable
+                .Include(p => p.Variants)
+                .Where(p => productIds.Contains(p.Id))
+                .ToListAsync())
+            .ToDictionary(p => p.Id);
+
+        foreach (var id in productIds)
+            if (!products.ContainsKey(id))
+                throw new Volo.Abp.Domain.Entities.EntityNotFoundException(typeof(Catalog.Product), id);
+
+        // Print-tier quantity scope (Jira 9203): the PrintPricingGroup TOTAL quantity. Products that
+        // share a group combine; different PrintSize values in a group also combine for the break
+        // threshold. Ungrouped products are isolated (keyed by their own id). Count each item's
+        // garment quantity ONCE for the group, regardless of how many prints it carries.
+        var groupQuantities = new Dictionary<string, int>();
+        foreach (var itemDto in input.Items)
+        {
+            var key = PrintPricingGroupKey(products[itemDto.ProductId]);
+            groupQuantities[key] = groupQuantities.GetValueOrDefault(key) + itemDto.Quantity;
+        }
+
+        // Load all tiers for the real groups referenced by this order, grouped for resolution.
+        var groupIds = products.Values
+            .Where(p => p.PrintPricingGroupId.HasValue)
+            .Select(p => p.PrintPricingGroupId!.Value)
+            .Distinct()
+            .ToList();
+
+        var tiersByGroup = groupIds.Count == 0
+            ? new Dictionary<Guid, List<Catalog.ProductPrintPriceTier>>()
+            : (await _printPriceTierRepository.GetListAsync(t => groupIds.Contains(t.PrintPricingGroupId)))
+                .GroupBy(t => t.PrintPricingGroupId)
+                .ToDictionary(g => g.Key, g => g.ToList());
 
         foreach (var itemDto in input.Items)
         {
-            var productQuery = await _productRepository.GetQueryableAsync();
-            var product = await productQuery
-                .Include(p => p.Variants)
-                .Include(p => p.PriceTiers)
-                .FirstOrDefaultAsync(p => p.Id == itemDto.ProductId)
-                ?? throw new Volo.Abp.Domain.Entities.EntityNotFoundException(
-                    typeof(Catalog.Product), itemDto.ProductId);
+            var product = products[itemDto.ProductId];
 
             var variant = product.Variants.FirstOrDefault(v => v.Id == itemDto.ProductVariantId)
                 ?? throw new Volo.Abp.BusinessException("TeeNova:Catalog:VariantNotFound");
 
             // Load prints first so their prices feed into the final unit price before
             // OrderItem is constructed (unit price is immutable after construction).
+            // LoadOrderItemPrintsAsync enforces global active-state + matrix; then narrow by the
+            // product/size scoped allowed options (Jira 9204) — a no-op for unconfigured products.
             var loadedPrints = itemDto.Prints?.Count > 0
                 ? await LoadOrderItemPrintsAsync(itemDto.Prints)
                 : [];
 
-            // Resolve the tier using the product-level total quantity, then price through the
-            // shared PriceCalculator so the saved order price matches the storefront quote exactly.
-            var tierQuantity = productQuantities[itemDto.ProductId];
-            var resolvedTier = TierPriceResolver.Resolve(product.PriceTiers, variant.Id, tierQuantity);
+            await _printConfigOptionResolver.ValidateSelectionAsync(
+                product.Id,
+                variant.Size,
+                loadedPrints.Select(p => (p.Area.Id, p.Size.Id)).ToList());
 
-            var printEntries = loadedPrints
-                .Select(p => new PrintPricingEntry(
-                    p.Area.Id, p.Area.Name, p.Area.BasePrice,
-                    p.Size.Id, p.Size.Name, p.Size.BasePrice))
+            // Resolve each selected print against the effective group's tiers + group quantity,
+            // then price through the shared PriceCalculator so the saved order price matches the
+            // storefront quote exactly (print-only formula: garment fixed + Σ resolved print prices).
+            var groupQuantity = groupQuantities[PrintPricingGroupKey(product)];
+            var groupTiers = product.PrintPricingGroupId.HasValue
+                && tiersByGroup.TryGetValue(product.PrintPricingGroupId.Value, out var gt)
+                    ? gt
+                    : null;
+
+            var resolvedByPrint = loadedPrints
+                .Select(p => PrintTierPriceResolver.Resolve(
+                    groupTiers, variant.Size, p.Size.Id, groupQuantity, p.Size.BasePrice))
+                .ToList();
+
+            var resolvedPrints = loadedPrints
+                .Select((p, idx) => new ResolvedPrintAddOn(
+                    new PrintPricingEntry(
+                        p.Area.Id, p.Area.Name, p.Area.BasePrice,
+                        p.Size.Id, p.Size.Name, p.Size.BasePrice),
+                    resolvedByPrint[idx]))
                 .ToList();
 
             var unitPrice = PriceCalculator
-                .Calculate(product.BasePrice, variant.PriceAdjustment, printEntries, itemDto.Quantity, resolvedTier)
+                .Calculate(product.BasePrice, variant.PriceAdjustment, resolvedPrints, itemDto.Quantity)
                 .UnitPrice;
             var variantLabel = $"{variant.Color} / {variant.Size}";
 
@@ -146,16 +195,17 @@ public class OrderAppService : ApplicationService, IOrderAppService
                 InventoryDeductionEligible = inventoryDeductionEligible,
             };
 
-            AddPrintsToItem(item, loadedPrints);
+            AddPrintsToItem(item, loadedPrints, resolvedByPrint);
 
             order.AddItem(item);
 
             Logger.LogInformation(
-                "[OrderPricing] OrderId={OrderId} ProductId={ProductId} ProductVariantId={ProductVariantId} Quantity={Quantity} PrintCount={PrintCount} UnitPrice={UnitPrice} LineTotal={LineTotal}",
+                "[OrderPricing] OrderId={OrderId} ProductId={ProductId} ProductVariantId={ProductVariantId} Quantity={Quantity} GroupQuantity={GroupQuantity} PrintCount={PrintCount} UnitPrice={UnitPrice} LineTotal={LineTotal}",
                 order.Id,
                 product.Id,
                 variant.Id,
                 itemDto.Quantity,
+                groupQuantity,
                 loadedPrints.Count,
                 unitPrice,
                 unitPrice * itemDto.Quantity);
@@ -835,24 +885,41 @@ public class OrderAppService : ApplicationService, IOrderAppService
     }
 
     /// <summary>
-    /// Writes OrderItemPrint records onto the item from already-loaded entities.
+    /// Writes OrderItemPrint records onto the item from already-loaded entities, snapshotting the
+    /// resolved print-tier price (Jira 9203) actually charged for each print.
     /// Synchronous — no DB access, entities were loaded by LoadOrderItemPrintsAsync.
     /// </summary>
-    private void AddPrintsToItem(OrderItem item, IReadOnlyList<LoadedOrderItemPrint> prints)
+    private void AddPrintsToItem(
+        OrderItem item,
+        IReadOnlyList<LoadedOrderItemPrint> prints,
+        IReadOnlyList<ResolvedPrintTier> resolved)
     {
         var sortOrder = 0;
-        foreach (var print in prints)
+        for (var i = 0; i < prints.Count; i++)
         {
+            var print = prints[i];
+            var r     = resolved[i];
             item.AddPrint(
                 GuidGenerator.Create(),
                 print.Area.Id, print.Area.Name, print.Area.Code, print.Area.BasePrice,
                 print.Size.Id, print.Size.Name, print.Size.Code, print.Size.BasePrice,
-                sortOrder++,
+                resolvedUnitPrintPrice: r.UnitPrintPrice,
+                appliedPrintTierMinQuantity: r.AppliedMinQuantity,
+                sortOrder: sortOrder++,
                 uploadedAssetId: print.UploadedAssetId,
                 uploadedAssetUrl: print.UploadedAssetUrl,
                 designNote: print.DesignNote);
         }
     }
+
+    /// <summary>
+    /// Print-tier aggregation key (Jira 9203): the PrintPricingGroup id when the product is grouped,
+    /// otherwise an isolated per-product key so ungrouped products never aggregate with others.
+    /// </summary>
+    private static string PrintPricingGroupKey(Catalog.Product product)
+        => product.PrintPricingGroupId.HasValue
+            ? $"g:{product.PrintPricingGroupId.Value}"
+            : $"p:{product.Id}";
 
     private record LoadedOrderItemPrint(
         PrintArea Area,

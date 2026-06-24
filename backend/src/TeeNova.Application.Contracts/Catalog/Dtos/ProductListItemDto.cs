@@ -14,12 +14,16 @@ public class ProductListItemDto
     public string? PrimaryImageUrl { get; set; }
     public int VariantCount { get; set; }
 
+    /// <summary>Print-pricing group (Jira 9203). Null = ungrouped.</summary>
+    public Guid? PrintPricingGroupId { get; set; }
+
     /// <summary>
-    /// Cheapest product-level tier unit price (the standard printed "from" price), or null when
-    /// the product has no product-level tiers. Backend support for the 9104 "from $X ea" card.
+    /// Cheapest achievable printed "from" price (Jira 9203): fixed garment BasePrice plus the
+    /// cheapest active print-tier price across the product's group (falling back to PrintSize.BasePrice
+    /// when a print size has no tiers). Null when no printable price can be derived.
     /// </summary>
     public decimal? FromPrice { get; set; }
 
-    /// <summary>True when the product has any quantity-break tiers configured.</summary>
+    /// <summary>True when the product's group has any active print price tiers (Jira 9203).</summary>
     public bool HasPriceTiers { get; set; }
 }

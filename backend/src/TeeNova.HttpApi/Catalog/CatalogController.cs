@@ -118,4 +118,53 @@ public class CatalogController : TeeNovaControllerBase
     [HttpPut("products/{productId:guid}/price-tiers")]
     public async Task<ProductDto> SetPriceTiersAsync(Guid productId, [FromBody] SetProductPriceTiersDto input)
         => await _catalogAppService.SetPriceTiersAsync(productId, input);
+
+    // ── Print Pricing Groups (Jira 9203) ─────────────────────────────────────────
+
+    /// <summary>Lists print pricing groups. Pass isActive to filter; omit for all.</summary>
+    [HttpGet("print-pricing-groups")]
+    [AllowAnonymous]
+    public async Task<List<PrintPricingGroupDto>> GetPrintPricingGroupsAsync([FromQuery] bool? isActive = null)
+        => await _catalogAppService.GetPrintPricingGroupsAsync(isActive);
+
+    /// <summary>Creates a print pricing group (admin).</summary>
+    [HttpPost("print-pricing-groups")]
+    public async Task<PrintPricingGroupDto> CreatePrintPricingGroupAsync([FromBody] CreateUpdatePrintPricingGroupDto input)
+        => await _catalogAppService.CreatePrintPricingGroupAsync(input);
+
+    /// <summary>Updates a print pricing group (admin).</summary>
+    [HttpPut("print-pricing-groups/{groupId:guid}")]
+    public async Task<PrintPricingGroupDto> UpdatePrintPricingGroupAsync(Guid groupId, [FromBody] CreateUpdatePrintPricingGroupDto input)
+        => await _catalogAppService.UpdatePrintPricingGroupAsync(groupId, input);
+
+    // ── Print Price Tiers (Jira 9203, group-scoped single-writer) ─────────────────
+
+    /// <summary>Returns the print price tiers for a group.</summary>
+    [HttpGet("print-pricing-groups/{groupId:guid}/print-price-tiers")]
+    [AllowAnonymous]
+    public async Task<List<ProductPrintPriceTierDto>> GetPrintPriceTiersAsync(Guid groupId)
+        => await _catalogAppService.GetPrintPriceTiersAsync(groupId);
+
+    /// <summary>
+    /// Replaces the full set of print price tiers for a group (admin, single-writer). Sending an
+    /// empty list clears the group's print tiers (printing falls back to PrintSize.BasePrice).
+    /// </summary>
+    [HttpPut("print-pricing-groups/{groupId:guid}/print-price-tiers")]
+    public async Task<List<ProductPrintPriceTierDto>> SetPrintPriceTiersAsync(Guid groupId, [FromBody] SetProductPrintPriceTiersDto input)
+        => await _catalogAppService.SetPrintPriceTiersAsync(groupId, input);
+
+    // ── Print Config Options (Jira 9204, product-scoped single-writer) ────────────
+
+    /// <summary>Returns a product's scoped allowed print options (admin, incl. inactive rows).</summary>
+    [HttpGet("products/{productId:guid}/print-config-options")]
+    public async Task<List<ProductPrintConfigOptionDto>> GetPrintConfigOptionsAsync(Guid productId)
+        => await _catalogAppService.GetPrintConfigOptionsAsync(productId);
+
+    /// <summary>
+    /// Replaces the full set of product/size scoped allowed print options (admin, single-writer).
+    /// Sending an empty list clears scoped options (the product reverts to the global matrix).
+    /// </summary>
+    [HttpPut("products/{productId:guid}/print-config-options")]
+    public async Task<List<ProductPrintConfigOptionDto>> SetPrintConfigOptionsAsync(Guid productId, [FromBody] SetProductPrintConfigOptionsDto input)
+        => await _catalogAppService.SetPrintConfigOptionsAsync(productId, input);
 }

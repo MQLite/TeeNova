@@ -18,24 +18,42 @@ namespace TeeNova.Catalog;
 
 public class CatalogAppService : ApplicationService, ICatalogAppService
 {
-    private readonly IRepository<Product, Guid>          _productRepository;
-    private readonly IRepository<ProductVariant, Guid>   _variantRepository;
-    private readonly IRepository<ProductImage, Guid>     _imageRepository;
-    private readonly IRepository<ProductPriceTier, Guid> _priceTierRepository;
-    private readonly IFileStorageService                 _fileStorageService;
+    private readonly IRepository<Product, Guid>               _productRepository;
+    private readonly IRepository<ProductVariant, Guid>        _variantRepository;
+    private readonly IRepository<ProductImage, Guid>          _imageRepository;
+    private readonly IRepository<ProductPriceTier, Guid>      _priceTierRepository;
+    private readonly IRepository<PrintPricingGroup, Guid>          _printPricingGroupRepository;
+    private readonly IRepository<ProductPrintPriceTier, Guid>      _printPriceTierRepository;
+    private readonly IRepository<ProductPrintConfigOption, Guid>   _printConfigOptionRepository;
+    private readonly IRepository<PrintConfig.PrintArea, Guid>      _printAreaRepository;
+    private readonly IRepository<PrintConfig.PrintSize, Guid>      _printSizeRepository;
+    private readonly PrintConfig.PrintConfigValidator             _printConfigValidator;
+    private readonly IFileStorageService                          _fileStorageService;
 
     public CatalogAppService(
-        IRepository<Product, Guid>          productRepository,
-        IRepository<ProductVariant, Guid>   variantRepository,
-        IRepository<ProductImage, Guid>     imageRepository,
-        IRepository<ProductPriceTier, Guid> priceTierRepository,
-        IFileStorageService                 fileStorageService)
+        IRepository<Product, Guid>                  productRepository,
+        IRepository<ProductVariant, Guid>           variantRepository,
+        IRepository<ProductImage, Guid>             imageRepository,
+        IRepository<ProductPriceTier, Guid>         priceTierRepository,
+        IRepository<PrintPricingGroup, Guid>        printPricingGroupRepository,
+        IRepository<ProductPrintPriceTier, Guid>    printPriceTierRepository,
+        IRepository<ProductPrintConfigOption, Guid> printConfigOptionRepository,
+        IRepository<PrintConfig.PrintArea, Guid>    printAreaRepository,
+        IRepository<PrintConfig.PrintSize, Guid>    printSizeRepository,
+        PrintConfig.PrintConfigValidator            printConfigValidator,
+        IFileStorageService                         fileStorageService)
     {
-        _productRepository   = productRepository;
-        _variantRepository   = variantRepository;
-        _imageRepository     = imageRepository;
-        _priceTierRepository = priceTierRepository;
-        _fileStorageService  = fileStorageService;
+        _productRepository           = productRepository;
+        _variantRepository           = variantRepository;
+        _imageRepository             = imageRepository;
+        _priceTierRepository         = priceTierRepository;
+        _printPricingGroupRepository = printPricingGroupRepository;
+        _printPriceTierRepository    = printPriceTierRepository;
+        _printConfigOptionRepository = printConfigOptionRepository;
+        _printAreaRepository         = printAreaRepository;
+        _printSizeRepository         = printSizeRepository;
+        _printConfigValidator        = printConfigValidator;
+        _fileStorageService          = fileStorageService;
     }
 
     public async Task<PagedResultDto<ProductListItemDto>> GetListAsync(GetProductsInput input)
@@ -44,8 +62,7 @@ public class CatalogAppService : ApplicationService, ICatalogAppService
 
         query = query
             .Include(p => p.Images)
-            .Include(p => p.Variants)
-            .Include(p => p.PriceTiers);
+            .Include(p => p.Variants);
 
         if (input.IsActive.HasValue)
             query = query.Where(p => p.IsActive == input.IsActive.Value);
@@ -66,16 +83,40 @@ public class CatalogAppService : ApplicationService, ICatalogAppService
 
         var dtos = ObjectMapper.Map<List<Product>, List<ProductListItemDto>>(items);
 
-        // Compute the storefront "from" price (cheapest product-level tier) per product.
+        // Compute the storefront "from" price (Jira 9203): fixed garment BasePrice plus the cheapest
+        // active print-tier price across the product's PrintPricingGroup. Cheapest tier price across
+        // print sizes is an honest, achievable printed-from price. Products with no group/active tiers
+        // get FromPrice = null (the card falls back to the base garment price).
+        var groupIds = items
+            .Where(p => p.PrintPricingGroupId.HasValue)
+            .Select(p => p.PrintPricingGroupId!.Value)
+            .Distinct()
+            .ToList();
+
+        var cheapestTierByGroup = new Dictionary<Guid, decimal>();
+        if (groupIds.Count > 0)
+        {
+            var activeTiers = await _printPriceTierRepository.GetListAsync(
+                t => groupIds.Contains(t.PrintPricingGroupId) && t.IsActive);
+
+            cheapestTierByGroup = activeTiers
+                .GroupBy(t => t.PrintPricingGroupId)
+                .ToDictionary(g => g.Key, g => g.Min(t => t.UnitPrintPrice));
+        }
+
         foreach (var (dto, product) in dtos.Zip(items))
         {
-            var productLevelPrices = product.PriceTiers
-                .Where(t => t.ProductVariantId == null)
-                .Select(t => t.UnitPrice)
-                .ToList();
-
-            dto.FromPrice     = productLevelPrices.Count > 0 ? productLevelPrices.Min() : null;
-            dto.HasPriceTiers = product.PriceTiers.Count > 0;
+            if (product.PrintPricingGroupId.HasValue
+                && cheapestTierByGroup.TryGetValue(product.PrintPricingGroupId.Value, out var cheapestPrint))
+            {
+                dto.FromPrice     = product.BasePrice + cheapestPrint;
+                dto.HasPriceTiers = true;
+            }
+            else
+            {
+                dto.FromPrice     = null;
+                dto.HasPriceTiers = false;
+            }
         }
 
         return new PagedResultDto<ProductListItemDto>(totalCount, dtos);
@@ -96,24 +137,71 @@ public class CatalogAppService : ApplicationService, ICatalogAppService
 
         var dto = ObjectMapper.Map<Product, ProductDto>(product);
 
-        // Stable, readable order: product-level tiers first, then by quantity break.
+        // Legacy all-in tiers (DEPRECATED, inert): kept for back-compat display ordering only.
         dto.PriceTiers = dto.PriceTiers
             .OrderBy(t => t.ProductVariantId.HasValue)
             .ThenBy(t => t.ProductVariantId)
             .ThenBy(t => t.MinQuantity)
             .ToList();
 
+        // Print-only tiers (Jira 9203) resolved from the product's group, ordered for readability.
+        // GetAsync (GET /products/{id}) is public/anonymous, so expose ACTIVE rows only — inactive
+        // admin rows must not leak to the storefront. Admin panels read the dedicated endpoints.
+        dto.PrintPriceTiers = (await LoadGroupPrintTierDtosAsync(product.PrintPricingGroupId))
+            .Where(t => t.IsActive)
+            .ToList();
+
+        // Product/size scoped allowed print options (Jira 9204), active rows only (public-safe).
+        dto.PrintConfigOptions = (await LoadPrintConfigOptionDtosAsync(product.Id))
+            .Where(o => o.IsActive)
+            .ToList();
+
         return dto;
+    }
+
+    /// <summary>Loads a product's scoped print options as DTOs (incl. inactive), ordered for display.</summary>
+    private async Task<List<ProductPrintConfigOptionDto>> LoadPrintConfigOptionDtosAsync(Guid productId)
+    {
+        var options = await _printConfigOptionRepository.GetListAsync(o => o.ProductId == productId);
+
+        return options
+            .OrderBy(o => o.Size != null)   // product defaults first, then size overrides
+            .ThenBy(o => o.Size)
+            .ThenBy(o => o.SortOrder)
+            .ThenBy(o => o.PrintAreaId)
+            .ThenBy(o => o.PrintSizeId)
+            .Select(o => ObjectMapper.Map<ProductPrintConfigOption, ProductPrintConfigOptionDto>(o))
+            .ToList();
+    }
+
+    /// <summary>Loads a group's print price tiers as DTOs, ordered for readable display. Empty when ungrouped.</summary>
+    private async Task<List<ProductPrintPriceTierDto>> LoadGroupPrintTierDtosAsync(Guid? groupId)
+    {
+        if (groupId == null)
+            return new List<ProductPrintPriceTierDto>();
+
+        var tiers = await _printPriceTierRepository.GetListAsync(t => t.PrintPricingGroupId == groupId.Value);
+
+        return tiers
+            .OrderBy(t => t.Size != null)   // group defaults first, then size overrides
+            .ThenBy(t => t.Size)
+            .ThenBy(t => t.PrintSizeId)
+            .ThenBy(t => t.MinQuantity)
+            .Select(t => ObjectMapper.Map<ProductPrintPriceTier, ProductPrintPriceTierDto>(t))
+            .ToList();
     }
 
     // ── Admin: Products ───────────────────────────────────────────────────────
 
     public async Task<ProductDto> CreateAsync(CreateProductDto input)
     {
+        await EnsurePrintPricingGroupValidAsync(input.PrintPricingGroupId);
+
         var product = new Product(GuidGenerator.Create(), input.Name, input.BasePrice, input.ProductType)
         {
             Description = input.Description,
             IsActive = input.IsActive,
+            PrintPricingGroupId = input.PrintPricingGroupId,
         };
 
         await _productRepository.InsertAsync(product, autoSave: true);
@@ -122,12 +210,15 @@ public class CatalogAppService : ApplicationService, ICatalogAppService
 
     public async Task<ProductDto> UpdateAsync(Guid id, UpdateProductDto input)
     {
+        await EnsurePrintPricingGroupValidAsync(input.PrintPricingGroupId);
+
         var product = await _productRepository.GetAsync(id);
         product.Name = input.Name;
         product.Description = input.Description;
         product.BasePrice = input.BasePrice;
         product.ProductType = input.ProductType;
         product.IsActive = input.IsActive;
+        product.PrintPricingGroupId = input.PrintPricingGroupId;
         await _productRepository.UpdateAsync(product, autoSave: true);
         return await GetAsync(id);
     }
@@ -540,5 +631,255 @@ public class CatalogAppService : ApplicationService, ICatalogAppService
         }
 
         return await GetAsync(productId);
+    }
+
+    // ── Admin: Print Pricing Groups (Jira 9203) ──────────────────────────────────
+
+    public async Task<List<PrintPricingGroupDto>> GetPrintPricingGroupsAsync(bool? isActive = null)
+    {
+        var groups = await _printPricingGroupRepository.GetListAsync();
+        var filtered = isActive.HasValue
+            ? groups.Where(g => g.IsActive == isActive.Value)
+            : groups;
+
+        return filtered
+            .OrderBy(g => g.SortOrder)
+            .ThenBy(g => g.Name)
+            .Select(g => ObjectMapper.Map<PrintPricingGroup, PrintPricingGroupDto>(g))
+            .ToList();
+    }
+
+    public async Task<PrintPricingGroupDto> CreatePrintPricingGroupAsync(CreateUpdatePrintPricingGroupDto input)
+    {
+        var code = input.Code.Trim();
+        if (await _printPricingGroupRepository.AnyAsync(g => g.Code == code))
+            throw new UserFriendlyException($"A print pricing group with code '{code}' already exists.");
+
+        var group = new PrintPricingGroup(GuidGenerator.Create(), input.Name.Trim(), code)
+        {
+            IsActive  = input.IsActive,
+            SortOrder = input.SortOrder,
+        };
+
+        await _printPricingGroupRepository.InsertAsync(group, autoSave: true);
+        return ObjectMapper.Map<PrintPricingGroup, PrintPricingGroupDto>(group);
+    }
+
+    public async Task<PrintPricingGroupDto> UpdatePrintPricingGroupAsync(
+        Guid groupId, CreateUpdatePrintPricingGroupDto input)
+    {
+        var group = await _printPricingGroupRepository.GetAsync(groupId);
+
+        var code = input.Code.Trim();
+        if (await _printPricingGroupRepository.AnyAsync(g => g.Code == code && g.Id != groupId))
+            throw new UserFriendlyException($"A print pricing group with code '{code}' already exists.");
+
+        group.Name      = input.Name.Trim();
+        group.Code      = code;
+        group.IsActive  = input.IsActive;
+        group.SortOrder = input.SortOrder;
+
+        await _printPricingGroupRepository.UpdateAsync(group, autoSave: true);
+        return ObjectMapper.Map<PrintPricingGroup, PrintPricingGroupDto>(group);
+    }
+
+    // ── Admin: Print Price Tiers (Jira 9203, group-scoped single-writer) ─────────
+
+    public async Task<List<ProductPrintPriceTierDto>> GetPrintPriceTiersAsync(Guid groupId)
+    {
+        // Ensure the group exists (404 otherwise).
+        await _printPricingGroupRepository.GetAsync(groupId);
+        return await LoadGroupPrintTierDtosAsync(groupId);
+    }
+
+    /// <summary>
+    /// Replaces the full set of print price tiers for a group (dedicated single-writer endpoint).
+    /// Mirrors the price-tier replace pattern: never touches Product/Variant/inventory fields or the
+    /// legacy ProductPriceTier rows. An empty list clears the group's print tiers (printing then
+    /// falls back to PrintSize.BasePrice).
+    /// </summary>
+    public async Task<List<ProductPrintPriceTierDto>> SetPrintPriceTiersAsync(
+        Guid groupId, SetProductPrintPriceTiersDto input)
+    {
+        var group = await _printPricingGroupRepository.GetAsync(groupId);
+        if (!group.IsActive)
+            throw new UserFriendlyException("Cannot set print price tiers on an inactive pricing group.");
+
+        // Valid garment sizes = sizes of every variant of every product assigned to this group.
+        var productIdsInGroup = (await _productRepository.GetListAsync(p => p.PrintPricingGroupId == groupId))
+            .Select(p => p.Id)
+            .ToHashSet();
+        var groupSizes = productIdsInGroup.Count == 0
+            ? new HashSet<string>(StringComparer.Ordinal)
+            : (await _variantRepository.GetListAsync(v => productIdsInGroup.Contains(v.ProductId)))
+                .Select(v => v.Size)
+                .ToHashSet(StringComparer.Ordinal);
+
+        // Validate referenced PrintSizes exist and are active (single batched load).
+        var printSizeIds = input.Tiers.Select(t => t.PrintSizeId).Distinct().ToList();
+        var printSizes = (await _printSizeRepository.GetListAsync(s => printSizeIds.Contains(s.Id)))
+            .ToDictionary(s => s.Id);
+
+        // ── Per-row validation ──────────────────────────────────────────────────
+        foreach (var tier in input.Tiers)
+        {
+            if (tier.MinQuantity < 1)
+                throw new UserFriendlyException("Tier minimum quantity must be at least 1.");
+
+            if (tier.UnitPrintPrice <= 0)
+                throw new UserFriendlyException("Tier unit print price must be greater than zero.");
+
+            if (decimal.Round(tier.UnitPrintPrice, 2) != tier.UnitPrintPrice)
+                throw new UserFriendlyException("Tier unit print price cannot have more than 2 decimal places.");
+
+            if (!printSizes.TryGetValue(tier.PrintSizeId, out var printSize))
+                throw new UserFriendlyException($"Tier references a print size that does not exist (id: {tier.PrintSizeId}).");
+
+            if (!printSize.IsActive)
+                throw new UserFriendlyException($"Tier references an inactive print size '{printSize.Name}'.");
+
+            if (tier.Size != null && !groupSizes.Contains(tier.Size))
+                throw new UserFriendlyException(
+                    $"Size override '{tier.Size}' does not match any variant size of the products in this group.");
+        }
+
+        // ── Per-scope validation: (Size, PrintSizeId) ─────────────────────────────
+        foreach (var scope in input.Tiers.GroupBy(t => new { t.Size, t.PrintSizeId }))
+        {
+            var minQuantities = scope.Select(t => t.MinQuantity).ToList();
+
+            if (minQuantities.Count != minQuantities.Distinct().Count())
+                throw new UserFriendlyException(
+                    "Duplicate minimum quantities are not allowed within the same size + print size scope.");
+
+            if (!minQuantities.Contains(1))
+                throw new UserFriendlyException(
+                    "Each size + print size scope must include a tier starting at minimum quantity 1.");
+        }
+
+        // ── Replace the full set for this group ───────────────────────────────────
+        // Delete flushed before inserts so a re-used natural key cannot collide with the unique index
+        // inside the same transaction (same approach as legacy price tiers).
+        var existing = await _printPriceTierRepository.GetListAsync(t => t.PrintPricingGroupId == groupId);
+        if (existing.Count > 0)
+            await _printPriceTierRepository.DeleteManyAsync(existing, autoSave: true);
+
+        foreach (var tier in input.Tiers)
+        {
+            await _printPriceTierRepository.InsertAsync(
+                new ProductPrintPriceTier(
+                    GuidGenerator.Create(),
+                    groupId,
+                    tier.Size,
+                    tier.PrintSizeId,
+                    tier.MinQuantity,
+                    tier.UnitPrintPrice,
+                    tier.IsActive,
+                    tier.SortOrder),
+                autoSave: true);
+        }
+
+        return await LoadGroupPrintTierDtosAsync(groupId);
+    }
+
+    /// <summary>Throws when a non-null PrintPricingGroupId does not reference an existing group.</summary>
+    private async Task EnsurePrintPricingGroupValidAsync(Guid? groupId)
+    {
+        if (groupId == null)
+            return;
+
+        if (!await _printPricingGroupRepository.AnyAsync(g => g.Id == groupId.Value))
+            throw new UserFriendlyException("The selected print pricing group does not exist.");
+    }
+
+    // ── Admin: Print Config Options (Jira 9204, product-scoped single-writer) ─────
+
+    public async Task<List<ProductPrintConfigOptionDto>> GetPrintConfigOptionsAsync(Guid productId)
+    {
+        if (!await _productRepository.AnyAsync(p => p.Id == productId))
+            throw new EntityNotFoundException(typeof(Product), productId);
+
+        return await LoadPrintConfigOptionDtosAsync(productId);
+    }
+
+    /// <summary>
+    /// Replaces the full set of product/size scoped allowed print options (dedicated single-writer
+    /// endpoint). Never touches Product/Variant/inventory fields, price tiers, group assignment, or
+    /// the legacy ProductPriceTier rows. An empty list clears scoped options (the product reverts to
+    /// the global PrintAreaSizeOption matrix). Selectability only — no effect on price.
+    /// </summary>
+    public async Task<List<ProductPrintConfigOptionDto>> SetPrintConfigOptionsAsync(
+        Guid productId, SetProductPrintConfigOptionsDto input)
+    {
+        var query = await _productRepository.GetQueryableAsync();
+        var product = await query
+            .Include(p => p.Variants)
+            .FirstOrDefaultAsync(p => p.Id == productId)
+            ?? throw new EntityNotFoundException(typeof(Product), productId);
+
+        var validSizes = product.Variants.Select(v => v.Size).ToHashSet(StringComparer.Ordinal);
+
+        // Batched load of referenced PrintAreas / PrintSizes for existence + active checks.
+        var areaIds = input.Options.Select(o => o.PrintAreaId).Distinct().ToList();
+        var sizeIds = input.Options.Select(o => o.PrintSizeId).Distinct().ToList();
+        var areas = (await _printAreaRepository.GetListAsync(a => areaIds.Contains(a.Id))).ToDictionary(a => a.Id);
+        var sizes = (await _printSizeRepository.GetListAsync(s => sizeIds.Contains(s.Id))).ToDictionary(s => s.Id);
+
+        // ── Per-row validation ──────────────────────────────────────────────────
+        var globalPairs = new List<(PrintConfig.PrintArea Area, PrintConfig.PrintSize Size)>();
+        foreach (var opt in input.Options)
+        {
+            if (opt.Size != null && !validSizes.Contains(opt.Size))
+                throw new UserFriendlyException(
+                    $"Size override '{opt.Size}' does not match any variant size of this product.");
+
+            if (!areas.TryGetValue(opt.PrintAreaId, out var area))
+                throw new UserFriendlyException($"Print area does not exist (id: {opt.PrintAreaId}).");
+            if (!area.IsActive)
+                throw new UserFriendlyException($"Print area '{area.Name}' is inactive.");
+
+            if (!sizes.TryGetValue(opt.PrintSizeId, out var size))
+                throw new UserFriendlyException($"Print size does not exist (id: {opt.PrintSizeId}).");
+            if (!size.IsActive)
+                throw new UserFriendlyException($"Print size '{size.Name}' is inactive.");
+
+            globalPairs.Add((area, size));
+        }
+
+        // Each (PrintArea, PrintSize) must be valid in the active global PrintAreaSizeOption matrix.
+        await _printConfigValidator.ValidatePrintCombinationsAsync(globalPairs);
+
+        // No duplicate (Size, PrintAreaId, PrintSizeId) rows in the payload.
+        var seen = new HashSet<string>();
+        foreach (var opt in input.Options)
+        {
+            var key = $"{opt.Size ?? "\0"}|{opt.PrintAreaId}|{opt.PrintSizeId}";
+            if (!seen.Add(key))
+                throw new UserFriendlyException(
+                    "Duplicate (size, print area, print size) options are not allowed.");
+        }
+
+        // ── Replace the full set for this product ─────────────────────────────────
+        // Delete flushed before inserts so a re-used natural key cannot collide with the unique index
+        // inside the same transaction.
+        var existing = await _printConfigOptionRepository.GetListAsync(o => o.ProductId == productId);
+        if (existing.Count > 0)
+            await _printConfigOptionRepository.DeleteManyAsync(existing, autoSave: true);
+
+        foreach (var opt in input.Options)
+        {
+            await _printConfigOptionRepository.InsertAsync(
+                new ProductPrintConfigOption(
+                    GuidGenerator.Create(),
+                    productId,
+                    opt.Size,
+                    opt.PrintAreaId,
+                    opt.PrintSizeId,
+                    opt.IsActive,
+                    opt.SortOrder),
+                autoSave: true);
+        }
+
+        return await LoadPrintConfigOptionDtosAsync(productId);
     }
 }

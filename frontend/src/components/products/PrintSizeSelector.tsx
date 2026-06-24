@@ -76,7 +76,7 @@ export function PrintSizeSelector({
                   Choose one print size
                 </p>
               </div>
-              <span className="text-sm tabular-nums text-black/55">+${area.basePrice.toFixed(2)}</span>
+              <span className="font-mono text-[10px] uppercase tracking-[0.54px] text-black/40">Placement</span>
             </div>
 
             {isLoading && (
@@ -123,7 +123,7 @@ export function PrintSizeSelector({
                           isSelected ? 'text-white/70' : 'text-black/45'
                         }`}
                       >
-                        +${printSize.basePrice.toFixed(2)}
+                        Print price
                       </span>
                     </button>
                   )

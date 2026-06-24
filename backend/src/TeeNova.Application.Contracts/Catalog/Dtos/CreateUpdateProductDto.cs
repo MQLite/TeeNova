@@ -1,3 +1,4 @@
+using System;
 using System.ComponentModel.DataAnnotations;
 
 namespace TeeNova.Catalog.Dtos;
@@ -20,6 +21,9 @@ public class CreateProductDto
     public string ProductType { get; set; } = default!;
 
     public bool IsActive { get; set; } = true;
+
+    /// <summary>Optional print-pricing group assignment (Jira 9203). Null = ungrouped.</summary>
+    public Guid? PrintPricingGroupId { get; set; }
 }
 
 public class UpdateProductDto
@@ -40,4 +44,7 @@ public class UpdateProductDto
     public string ProductType { get; set; } = default!;
 
     public bool IsActive { get; set; }
+
+    /// <summary>Optional print-pricing group assignment (Jira 9203). Null = ungrouped.</summary>
+    public Guid? PrintPricingGroupId { get; set; }
 }

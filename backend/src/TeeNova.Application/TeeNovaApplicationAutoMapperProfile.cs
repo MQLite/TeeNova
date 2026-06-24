@@ -15,7 +15,9 @@ public class TeeNovaApplicationAutoMapperProfile : Profile
     public TeeNovaApplicationAutoMapperProfile()
     {
         // Catalog
-        CreateMap<Product, ProductDto>();
+        CreateMap<Product, ProductDto>()
+            .ForMember(d => d.PrintPriceTiers, o => o.Ignore())     // group-scoped; populated in app service
+            .ForMember(d => d.PrintConfigOptions, o => o.Ignore()); // populated in app service
         CreateMap<Product, ProductListItemDto>()
             .ForMember(d => d.VariantCount, o => o.MapFrom(s => s.Variants.Count))
             .ForMember(d => d.ThumbnailUrl,
@@ -33,6 +35,9 @@ public class TeeNovaApplicationAutoMapperProfile : Profile
         CreateMap<ProductVariant, ProductVariantDto>();
         CreateMap<ProductImage, ProductImageDto>();
         CreateMap<ProductPriceTier, ProductPriceTierDto>();
+        CreateMap<PrintPricingGroup, PrintPricingGroupDto>();
+        CreateMap<ProductPrintPriceTier, ProductPrintPriceTierDto>();
+        CreateMap<ProductPrintConfigOption, ProductPrintConfigOptionDto>();
 
         // PrintConfig
         CreateMap<PrintArea, PrintAreaDto>();

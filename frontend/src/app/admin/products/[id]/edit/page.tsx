@@ -40,6 +40,7 @@ export default function EditProductPage() {
         basePrice: parseFloat(values.basePrice),
         productType: values.productType,
         isActive: values.isActive,
+        printPricingGroupId: values.printPricingGroupId || null,
       })
       router.push(backHref)
     } finally {
@@ -77,6 +78,7 @@ export default function EditProductPage() {
     basePrice: product.basePrice.toString(),
     productType: product.productType,
     isActive: product.isActive,
+    printPricingGroupId: product.printPricingGroupId ?? '',
   }
 
   return (
