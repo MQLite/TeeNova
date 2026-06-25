@@ -18,16 +18,33 @@ interface Props {
 
 /** Background zoom factor for the desktop hover magnifier. */
 const MAGNIFIER_ZOOM = 2.2
+/** Diameter (px) of the circular magnifier lens. */
+const LENS_SIZE = 150
+
+/** Resolved lens geometry, in pixels relative to the image frame. */
+interface LensState {
+  /** Cursor position relative to the frame (lens is centred here). */
+  left: number
+  top: number
+  /** background-position offset within the lens. */
+  bgX: number
+  bgY: number
+  /** background-size (the zoomed rendered-image dimensions). */
+  bgW: number
+  bgH: number
+}
 
 /**
- * Compact product image gallery (Jira 9301): bounded aspect-square frame, thumbnail strip, and a
- * desktop-only hover magnifier. The magnifier is a decorative, pointer-driven overlay — it never
- * changes layout, never intercepts thumbnail/button clicks, and is disabled on touch and when no
- * image is present. Image storage/upload/data model is unchanged; this is presentation only.
+ * Compact product image gallery (Jira 9301/9306): bounded aspect-square frame, thumbnail strip, and a
+ * desktop-only hover magnifier. The magnifier is a true *local* lens (Jira 9306) — a small circular
+ * overlay that follows the cursor and magnifies only the area beneath it; the underlying image stays
+ * visible normally. It never changes layout, never intercepts thumbnail/button clicks, and is disabled
+ * on touch and when no image is present. Image storage/upload/data model is unchanged; presentation only.
  */
 export function ProductImageGallery({ productName, activeImage, images, onSelectImage, className }: Props) {
   const frameRef = useRef<HTMLDivElement>(null)
-  const [lens, setLens] = useState<{ x: number; y: number } | null>(null)
+  const imgRef = useRef<HTMLImageElement>(null)
+  const [lens, setLens] = useState<LensState | null>(null)
   const [canMagnify, setCanMagnify] = useState(false)
 
   const activeUrl = activeImage ? resolveImageUrl(activeImage.url) : null
@@ -46,11 +63,57 @@ export function ProductImageGallery({ productName, activeImage, images, onSelect
   function handleMouseMove(event: React.MouseEvent<HTMLDivElement>) {
     if (!magnifierActive) return
     const frame = frameRef.current
-    if (!frame) return
+    const img = imgRef.current
+    if (!frame || !img) return
+
+    const natW = img.naturalWidth
+    const natH = img.naturalHeight
+    if (!natW || !natH) {
+      setLens(null)
+      return
+    }
+
     const rect = frame.getBoundingClientRect()
-    const x = ((event.clientX - rect.left) / rect.width) * 100
-    const y = ((event.clientY - rect.top) / rect.height) * 100
-    setLens({ x: Math.min(100, Math.max(0, x)), y: Math.min(100, Math.max(0, y)) })
+    // The <img> fills the frame (h-full w-full) but pads its content (p-5); object-contain then
+    // letterboxes the natural image inside that padded content box. Resolve the actual rendered
+    // image rect so the lens maps cursor → image coordinates correctly and ignores the padding.
+    const cs = window.getComputedStyle(img)
+    const padL = parseFloat(cs.paddingLeft) || 0
+    const padR = parseFloat(cs.paddingRight) || 0
+    const padT = parseFloat(cs.paddingTop) || 0
+    const padB = parseFloat(cs.paddingBottom) || 0
+
+    const contentW = rect.width - padL - padR
+    const contentH = rect.height - padT - padB
+    const scale = Math.min(contentW / natW, contentH / natH)
+    const renderedW = natW * scale
+    const renderedH = natH * scale
+    const renderedLeft = padL + (contentW - renderedW) / 2
+    const renderedTop = padT + (contentH - renderedH) / 2
+
+    const mx = event.clientX - rect.left
+    const my = event.clientY - rect.top
+    const cx = mx - renderedLeft
+    const cy = my - renderedTop
+
+    // Hide the lens over letterbox/padding (outside the actual rendered image).
+    if (cx < 0 || cx > renderedW || cy < 0 || cy > renderedH) {
+      setLens(null)
+      return
+    }
+
+    // Magnify only the local area: scale the rendered image and offset it so the point under the
+    // cursor lands at the lens centre.
+    const bgW = renderedW * MAGNIFIER_ZOOM
+    const bgH = renderedH * MAGNIFIER_ZOOM
+    setLens({
+      left: mx,
+      top: my,
+      bgX: LENS_SIZE / 2 - cx * MAGNIFIER_ZOOM,
+      bgY: LENS_SIZE / 2 - cy * MAGNIFIER_ZOOM,
+      bgW,
+      bgH,
+    })
   }
 
   return (
@@ -65,6 +128,7 @@ export function ProductImageGallery({ productName, activeImage, images, onSelect
           <>
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img
+              ref={imgRef}
               src={activeUrl}
               alt={productName}
               className="h-full w-full object-contain p-5"
@@ -72,12 +136,18 @@ export function ProductImageGallery({ productName, activeImage, images, onSelect
             {magnifierActive && lens && (
               <div
                 aria-hidden
-                className="pointer-events-none absolute inset-0"
+                className="pointer-events-none absolute z-10 rounded-full border border-black/10 shadow-lg"
                 style={{
+                  width: LENS_SIZE,
+                  height: LENS_SIZE,
+                  left: lens.left,
+                  top: lens.top,
+                  transform: 'translate(-50%, -50%)',
+                  backgroundColor: '#fff',
                   backgroundImage: `url(${activeUrl})`,
                   backgroundRepeat: 'no-repeat',
-                  backgroundSize: `${MAGNIFIER_ZOOM * 100}%`,
-                  backgroundPosition: `${lens.x}% ${lens.y}%`,
+                  backgroundSize: `${lens.bgW}px ${lens.bgH}px`,
+                  backgroundPosition: `${lens.bgX}px ${lens.bgY}px`,
                 }}
               />
             )}

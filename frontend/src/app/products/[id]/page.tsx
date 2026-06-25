@@ -778,7 +778,9 @@ export default function ProductDetailPage() {
 
       <div className="section-container py-10">
         <div className="grid grid-cols-1 gap-8 lg:grid-cols-2">
-          <div className="lg:sticky lg:top-24 lg:self-start">
+          {/* Image column scrolls with the page (Jira 9307) — no desktop sticky, so the long
+              right-hand options/config tables get full vertical space. */}
+          <div className="lg:self-start">
             {uniqueColors.length > 0 && (
               <div className="mb-3 flex flex-wrap gap-2">
                 {uniqueColors.map((color) => (

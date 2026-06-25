@@ -3,7 +3,6 @@
 import { useState } from 'react'
 import { formatMoneyNZD, formatTierLabel, groupDefaultPrintLadders, hasSizeOverridePrintTiers } from '@/lib/pricing'
 import type { ProductPrintPriceTier } from '@/types'
-import type { PrintPriceLadder } from '@/lib/pricing'
 
 interface Props {
   /** The product's group print tiers (already active-only from the public DTO). */
@@ -50,44 +49,68 @@ export function PrintPriceTierTable({
   const orderedLadders = compact ? [defaultLadder, ...otherLadders] : ladders
   const shownLadders = compact && !expanded ? [defaultLadder] : orderedLadders
 
-  const renderLadder = (ladder: PrintPriceLadder) => (
-    <div key={ladder.printSizeId} className="overflow-hidden rounded-2xl border border-black/[0.08]">
-      <div className="border-b border-black/[0.06] bg-black/[0.02] px-4 py-2">
-        <span className="font-mono text-[11px] uppercase tracking-[0.54px] text-black/55">
-          {printSizeNames[ladder.printSizeId] ?? 'Print size'} · print price
-        </span>
-      </div>
-      <table className="w-full text-sm">
-        <tbody className="divide-y divide-black/[0.06]">
-          {ladder.rows.map((row) => {
-            const active = appliedMinQuantity != null && row.minQuantity === appliedMinQuantity
-            return (
-              <tr key={row.id} className={active ? 'bg-black/[0.04]' : undefined}>
-                <td className="px-4 py-2.5">
-                  <span className="font-mono text-[11px] uppercase tracking-[0.54px] text-black/55">
-                    {formatTierLabel(row.minQuantity)}
-                  </span>
-                  {active && (
-                    <span className="ml-2 rounded-full bg-black px-2 py-0.5 text-[9px] uppercase tracking-[0.54px] text-white">
-                      Applied
-                    </span>
-                  )}
-                </td>
-                <td className="px-4 py-2.5 text-right tabular-nums text-black" style={{ fontWeight: 480 }}>
-                  {formatMoneyNZD(row.unitPrintPrice)}
-                  <span className="text-black/45"> print</span>
-                </td>
-              </tr>
-            )
-          })}
-        </tbody>
-      </table>
-    </div>
-  )
+  // Transposed matrix (Jira): quantity breaks run across the columns, print sizes down the rows.
+  // Breaks are the union across the shown ladders, sorted ascending.
+  const breaks = Array.from(
+    new Set(shownLadders.flatMap((ladder) => ladder.rows.map((row) => row.minQuantity))),
+  ).sort((a, b) => a - b)
 
   return (
     <div className="space-y-3">
-      {shownLadders.map(renderLadder)}
+      <div className="overflow-x-auto rounded-2xl border border-black/[0.08]">
+        <table className="w-full text-sm">
+          <thead>
+            <tr className="border-b border-black/[0.06] bg-black/[0.02]">
+              <th className="px-4 py-2 text-left font-mono text-[11px] font-normal uppercase tracking-[0.54px] text-black/55">
+                Print size
+              </th>
+              {breaks.map((minQuantity) => {
+                const active = appliedMinQuantity != null && minQuantity === appliedMinQuantity
+                return (
+                  <th
+                    key={minQuantity}
+                    className={`px-4 py-2 text-right font-mono text-[11px] font-normal uppercase tracking-[0.54px] ${
+                      active ? 'text-black' : 'text-black/55'
+                    }`}
+                  >
+                    {formatTierLabel(minQuantity)}
+                    {active && (
+                      <span className="ml-1.5 rounded-full bg-black px-1.5 py-0.5 text-[9px] uppercase tracking-[0.54px] text-white">
+                        Applied
+                      </span>
+                    )}
+                  </th>
+                )
+              })}
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-black/[0.06]">
+            {shownLadders.map((ladder) => {
+              const priceByBreak = new Map(ladder.rows.map((row) => [row.minQuantity, row.unitPrintPrice]))
+              return (
+                <tr key={ladder.printSizeId}>
+                  <th className="px-4 py-2.5 text-left font-mono text-[11px] font-normal uppercase tracking-[0.54px] text-black/55">
+                    {printSizeNames[ladder.printSizeId] ?? 'Print size'}
+                  </th>
+                  {breaks.map((minQuantity) => {
+                    const active = appliedMinQuantity != null && minQuantity === appliedMinQuantity
+                    const price = priceByBreak.get(minQuantity)
+                    return (
+                      <td
+                        key={minQuantity}
+                        className={`px-4 py-2.5 text-right tabular-nums text-black ${active ? 'bg-black/[0.04]' : ''}`}
+                        style={{ fontWeight: 480 }}
+                      >
+                        {price != null ? formatMoneyNZD(price) : <span className="text-black/30">—</span>}
+                      </td>
+                    )
+                  })}
+                </tr>
+              )
+            })}
+          </tbody>
+        </table>
+      </div>
 
       {compact && (
         <button
