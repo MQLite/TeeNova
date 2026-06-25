@@ -3,250 +3,273 @@
 import { useEffect, useMemo, useState } from 'react'
 import { makeCatalogApi } from '@/api/catalog'
 import { makePrintConfigApi } from '@/api/print-config'
-import { adminApiClient } from '@/lib/admin-client'
+import { adminApiClient, redirectToLogin } from '@/lib/admin-client'
+import { ApiError } from '@/lib/api-client'
 import type { PrintSize, ProductPrintPriceTier } from '@/types'
 
 const catalogApi = makeCatalogApi(adminApiClient)
 const printConfigApi = makePrintConfigApi(adminApiClient)
 
+const GROUP_DEFAULT = '__group__'
+const PRICE_PATTERN = /^\d+(\.\d{1,2})?$/
+
 interface Props {
-  /** The product's assigned print pricing group, or null when ungrouped. */
   printPricingGroupId: string | null
-  /** Distinct garment sizes from the product's variants, for size-override scopes. */
   variantSizes: string[]
   embedded?: boolean
 }
 
-// Sentinel for the group-default (size = null) scope.
-const GROUP_DEFAULT = '__group__'
-
-interface TierRow {
+interface ScopeRow {
   key: string
-  scope: string // GROUP_DEFAULT or a garment size string
-  printSizeId: string
-  minQuantity: string
-  unitPrintPrice: string
-  isActive: boolean
+  label: string
+  size: string | null
 }
 
-interface RowError {
-  printSizeId?: string
-  minQuantity?: string
-  unitPrintPrice?: string
+type PriceMatrix = Record<string, Record<string, string>>
+
+function cellKey(scope: string, printSizeId: string): string {
+  return `${scope}|${printSizeId}`
 }
 
-const FIELD_BASE = [
-  'w-full rounded-xl border border-black/[0.10] bg-white px-3 py-2 text-sm text-black',
-  'placeholder:text-black/30',
-  'focus:border-black/30 focus:outline-none focus:ring-2 focus:ring-black/[0.06]',
-  'disabled:opacity-50',
-].join(' ')
-
-const LABEL = 'mb-1.5 block font-mono text-[10px] uppercase tracking-[0.54px] text-black/55'
-const UNIT_PRICE_PATTERN = /^\d+(\.\d{1,2})?$/
-
-function newKey(): string {
-  return typeof crypto !== 'undefined' && 'randomUUID' in crypto
-    ? crypto.randomUUID()
-    : `ptier-${Math.random().toString(36).slice(2)}`
+function normalizeBreaks(values: string[]): string[] {
+  const unique = Array.from(
+    new Set(
+      values
+        .map((v) => v.trim())
+        .filter((v) => /^\d+$/.test(v) && parseInt(v, 10) >= 1)
+        .map((v) => String(parseInt(v, 10))),
+    ),
+  )
+  return unique.sort((a, b) => parseInt(a, 10) - parseInt(b, 10))
 }
 
-function tiersToRows(tiers: ProductPrintPriceTier[]): TierRow[] {
-  return [...tiers]
-    .sort(
-      (a, b) =>
-        (a.size ?? '').localeCompare(b.size ?? '') ||
-        a.printSizeId.localeCompare(b.printSizeId) ||
-        a.minQuantity - b.minQuantity,
-    )
-    .map((t) => ({
-      key: newKey(),
-      scope: t.size ?? GROUP_DEFAULT,
-      printSizeId: t.printSizeId,
-      minQuantity: String(t.minQuantity),
-      unitPrintPrice: t.unitPrintPrice.toFixed(2),
-      isActive: t.isActive,
-    }))
+function matrixFromTiers(tiers: ProductPrintPriceTier[]): { breaks: string[]; matrix: PriceMatrix } {
+  const breaks = normalizeBreaks(['1', ...tiers.map((tier) => String(tier.minQuantity))])
+  const matrix: PriceMatrix = {}
+
+  tiers.forEach((tier) => {
+    const key = cellKey(tier.size ?? GROUP_DEFAULT, tier.printSizeId)
+    matrix[key] = matrix[key] ?? {}
+    matrix[key][String(tier.minQuantity)] = tier.isActive ? tier.unitPrintPrice.toFixed(2) : ''
+  })
+
+  return { breaks, matrix }
 }
 
 export function PrintPricesSection({ printPricingGroupId, variantSizes, embedded = false }: Props) {
   const [printSizes, setPrintSizes] = useState<PrintSize[]>([])
-  const [rows, setRows] = useState<TierRow[]>([])
+  const [breaks, setBreaks] = useState<string[]>(['1'])
+  const [matrix, setMatrix] = useState<PriceMatrix>({})
+  const [newBreak, setNewBreak] = useState('')
   const [loading, setLoading] = useState(true)
   const [loadError, setLoadError] = useState<string | null>(null)
   const [saving, setSaving] = useState(false)
   const [saveError, setSaveError] = useState<string | null>(null)
   const [saveSuccess, setSaveSuccess] = useState(false)
 
+  const scopeRows = useMemo<ScopeRow[]>(
+    () => [
+      { key: GROUP_DEFAULT, label: 'Group default', size: null },
+      ...variantSizes.map((size) => ({ key: size, label: `Size: ${size}`, size })),
+    ],
+    [variantSizes],
+  )
+
   useEffect(() => {
-    if (!printPricingGroupId) {
-      setLoading(false)
-      return
-    }
     let cancelled = false
-    setLoading(true)
+
+    setSaveError(null)
+    setSaveSuccess(false)
     setLoadError(null)
+
+    if (!printPricingGroupId) {
+      setPrintSizes([])
+      setBreaks(['1'])
+      setMatrix({})
+      setLoading(false)
+      return () => { cancelled = true }
+    }
+
+    setLoading(true)
     Promise.all([
       catalogApi.getPrintPriceTiers(printPricingGroupId),
       printConfigApi.getSizes(),
     ])
       .then(([tiers, sizes]) => {
         if (cancelled) return
-        setPrintSizes(sizes)
-        setRows(tiersToRows(tiers))
+        const next = matrixFromTiers(tiers)
+        setPrintSizes([...sizes].sort((a, b) => a.sortOrder - b.sortOrder || a.name.localeCompare(b.name)))
+        setBreaks(next.breaks)
+        setMatrix(next.matrix)
       })
-      .catch((e) => {
-        if (!cancelled) setLoadError(e instanceof Error ? e.message : 'Could not load print prices.')
+      .catch((err: unknown) => {
+        if (err instanceof ApiError && err.status === 401) {
+          redirectToLogin('session-expired')
+          return
+        }
+        if (!cancelled) setLoadError(err instanceof Error ? err.message : 'Could not load print prices.')
       })
-      .finally(() => { if (!cancelled) setLoading(false) })
+      .finally(() => {
+        if (!cancelled) setLoading(false)
+      })
+
     return () => { cancelled = true }
   }, [printPricingGroupId])
 
-  const scopeOptions = useMemo(
-    () => [
-      { value: GROUP_DEFAULT, label: 'Group default' },
-      ...variantSizes.map((s) => ({ value: s, label: `Size: ${s}` })),
-    ],
-    [variantSizes],
-  )
-
-  function scopeLabel(scope: string): string {
-    return scopeOptions.find((o) => o.value === scope)?.label ?? `Size: ${scope}`
-  }
-
-  function printSizeLabel(id: string): string {
-    return printSizes.find((s) => s.id === id)?.name ?? 'print size'
-  }
-
-  // ── Validation (mirrors backend rules) ───────────────────────────────────────
-  const { rowErrors, scopeErrors, warnings, hasErrors } = useMemo(() => {
-    const rowErrors: Record<string, RowError> = {}
-    const scopeErrors: string[] = []
+  const validation = useMemo(() => {
+    const cellErrors = new Set<string>()
+    const rowErrors: string[] = []
     const warnings: string[] = []
+    const normalizedBreaks = normalizeBreaks(breaks)
 
-    for (const row of rows) {
-      const err: RowError = {}
-      if (!row.printSizeId) err.printSizeId = 'Required.'
-
-      const minTrim = row.minQuantity.trim()
-      if (minTrim === '') err.minQuantity = 'Required.'
-      else if (!/^\d+$/.test(minTrim)) err.minQuantity = 'Whole number.'
-      else if (parseInt(minTrim, 10) < 1) err.minQuantity = 'Must be ≥ 1.'
-
-      const priceTrim = row.unitPrintPrice.trim()
-      if (priceTrim === '') err.unitPrintPrice = 'Required.'
-      else if (!UNIT_PRICE_PATTERN.test(priceTrim)) err.unitPrintPrice = 'Max 2 decimals.'
-      else if (parseFloat(priceTrim) <= 0) err.unitPrintPrice = 'Must be > 0.'
-
-      if (err.printSizeId || err.minQuantity || err.unitPrintPrice) rowErrors[row.key] = err
+    if (normalizedBreaks.length !== breaks.length) {
+      rowErrors.push('Quantity breaks must be unique whole numbers greater than or equal to 1.')
     }
 
-    // Per scope = (scope, printSizeId): no duplicate MinQuantity; a MinQuantity = 1 row required.
-    const byScope = new Map<string, TierRow[]>()
-    for (const row of rows) {
-      if (!row.printSizeId) continue
-      const k = `${row.scope}|${row.printSizeId}`
-      if (!byScope.has(k)) byScope.set(k, [])
-      byScope.get(k)!.push(row)
-    }
+    scopeRows.forEach((scope) => {
+      printSizes.forEach((printSize) => {
+        const key = cellKey(scope.key, printSize.id)
+        const row = matrix[key] ?? {}
+        const filled = normalizedBreaks
+          .map((min) => ({ min, price: row[min]?.trim() ?? '' }))
+          .filter((item) => item.price !== '')
 
-    for (const [k, scopeRows] of byScope) {
-      const [scope, printSizeId] = k.split('|')
-      const label = `${scopeLabel(scope)} · ${printSizeLabel(printSizeId)}`
-      const validMins = scopeRows
-        .filter((r) => /^\d+$/.test(r.minQuantity.trim()))
-        .map((r) => parseInt(r.minQuantity, 10))
+        filled.forEach((item) => {
+          if (!PRICE_PATTERN.test(item.price) || parseFloat(item.price) <= 0) {
+            cellErrors.add(`${key}|${item.min}`)
+          }
+        })
 
-      const seen = new Set<number>()
-      for (const m of validMins) {
-        if (seen.has(m)) { scopeErrors.push(`${label}: duplicate minimum quantity ${m}.`); break }
-        seen.add(m)
-      }
-
-      if (validMins.length > 0 && !validMins.includes(1))
-        scopeErrors.push(`${label}: add a tier starting at quantity 1.`)
-
-      // Soft, non-blocking: price should normally fall as quantity rises.
-      const priced = scopeRows
-        .filter((r) => /^\d+$/.test(r.minQuantity.trim()) && UNIT_PRICE_PATTERN.test(r.unitPrintPrice.trim()))
-        .map((r) => ({ min: parseInt(r.minQuantity, 10), price: parseFloat(r.unitPrintPrice) }))
-        .sort((a, b) => a.min - b.min)
-      for (let i = 1; i < priced.length; i++) {
-        if (priced[i].price >= priced[i - 1].price) {
-          warnings.push(`${label}: price at ${priced[i].min}+ is not lower than the smaller break.`)
-          break
+        if (filled.length > 0 && !filled.some((item) => item.min === '1')) {
+          rowErrors.push(`${scope.label} / ${printSize.name}: add a price at quantity 1.`)
         }
-      }
+
+        const priced = filled
+          .filter((item) => PRICE_PATTERN.test(item.price) && parseFloat(item.price) > 0)
+          .map((item) => ({ min: parseInt(item.min, 10), price: parseFloat(item.price) }))
+          .sort((a, b) => a.min - b.min)
+
+        for (let i = 1; i < priced.length; i++) {
+          if (priced[i].price >= priced[i - 1].price) {
+            warnings.push(`${scope.label} / ${printSize.name}: price at ${priced[i].min}+ is not lower than the previous break.`)
+            break
+          }
+        }
+      })
+    })
+
+    return {
+      breaks: normalizedBreaks,
+      cellErrors,
+      rowErrors,
+      warnings,
+      hasErrors: cellErrors.size > 0 || rowErrors.length > 0,
+    }
+  }, [breaks, matrix, printSizes, scopeRows])
+
+  function updatePrice(scopeKey: string, printSizeId: string, minQuantity: string, value: string) {
+    setSaveSuccess(false)
+    setSaveError(null)
+    const key = cellKey(scopeKey, printSizeId)
+    setMatrix((prev) => ({
+      ...prev,
+      [key]: {
+        ...(prev[key] ?? {}),
+        [minQuantity]: value,
+      },
+    }))
+  }
+
+  function addQuantityBreak() {
+    const value = newBreak.trim()
+    setSaveSuccess(false)
+    setSaveError(null)
+    if (!/^\d+$/.test(value) || parseInt(value, 10) < 1) {
+      setSaveError('Quantity break must be a whole number greater than or equal to 1.')
+      return
     }
 
-    const hasErrors = Object.keys(rowErrors).length > 0 || scopeErrors.length > 0
-    return { rowErrors, scopeErrors, warnings, hasErrors }
-  }, [rows, scopeOptions, printSizes]) // eslint-disable-line react-hooks/exhaustive-deps
-
-  // ── Row mutations ────────────────────────────────────────────────────────────
-  function addRow() {
-    setSaveSuccess(false)
-    setRows((prev) => [
-      ...prev,
-      { key: newKey(), scope: GROUP_DEFAULT, printSizeId: '', minQuantity: '', unitPrintPrice: '', isActive: true },
-    ])
+    setBreaks((prev) => normalizeBreaks([...prev, value]))
+    setNewBreak('')
   }
 
-  function updateRow(key: string, updates: Partial<Omit<TierRow, 'key'>>) {
+  function removeQuantityBreak(minQuantity: string) {
+    if (minQuantity === '1') {
+      setSaveError('Quantity 1 is required for any configured price ladder.')
+      return
+    }
+
     setSaveSuccess(false)
-    setRows((prev) => prev.map((r) => (r.key === key ? { ...r, ...updates } : r)))
+    setSaveError(null)
+    setBreaks((prev) => prev.filter((value) => value !== minQuantity))
+    setMatrix((prev) => {
+      const next: PriceMatrix = {}
+      Object.entries(prev).forEach(([key, row]) => {
+        const { [minQuantity]: _removed, ...rest } = row
+        next[key] = rest
+      })
+      return next
+    })
   }
 
-  function removeRow(key: string) {
-    setSaveSuccess(false)
-    setRows((prev) => prev.filter((r) => r.key !== key))
-  }
-
-  // ── Save (single writer) ─────────────────────────────────────────────────────
   async function handleSave() {
     if (!printPricingGroupId) return
     setSaveError(null)
     setSaveSuccess(false)
-    if (hasErrors) {
+
+    if (validation.hasErrors) {
       setSaveError('Fix the highlighted issues before saving.')
       return
     }
 
-    const tiers = rows.map((r, index) => ({
-      size: r.scope === GROUP_DEFAULT ? null : r.scope,
-      printSizeId: r.printSizeId,
-      minQuantity: parseInt(r.minQuantity, 10),
-      unitPrintPrice: parseFloat(r.unitPrintPrice),
-      isActive: r.isActive,
-      sortOrder: index,
-    }))
+    const tiers = scopeRows.flatMap((scope, scopeIndex) =>
+      printSizes.flatMap((printSize, sizeIndex) => {
+        const key = cellKey(scope.key, printSize.id)
+        const row = matrix[key] ?? {}
+        return validation.breaks.flatMap((minQuantity, breakIndex) => {
+          const price = row[minQuantity]?.trim() ?? ''
+          if (!price) return []
+          return [{
+            size: scope.size,
+            printSizeId: printSize.id,
+            minQuantity: parseInt(minQuantity, 10),
+            unitPrintPrice: parseFloat(price),
+            isActive: true,
+            sortOrder: scopeIndex * printSizes.length * validation.breaks.length + sizeIndex * validation.breaks.length + breakIndex,
+          }]
+        })
+      }),
+    )
 
     setSaving(true)
     try {
       const updated = await catalogApi.setPrintPriceTiers(printPricingGroupId, { tiers })
-      setRows(tiersToRows(updated))
+      const next = matrixFromTiers(updated)
+      setBreaks(next.breaks)
+      setMatrix(next.matrix)
       setSaveSuccess(true)
-    } catch (err) {
+    } catch (err: unknown) {
+      if (err instanceof ApiError && err.status === 401) {
+        redirectToLogin('session-expired')
+        return
+      }
       setSaveError(err instanceof Error ? err.message : 'Could not save print prices. Please try again.')
     } finally {
       setSaving(false)
     }
   }
 
-  // ── Render ───────────────────────────────────────────────────────────────────
   return (
     <section className={embedded ? 'space-y-4' : 'rounded-[28px] border border-black/[0.08] bg-white p-5 shadow-card'}>
       <div className="mb-4">
         <p className="font-mono text-[11px] uppercase tracking-[0.54px] text-black/45">Print Prices</p>
-        <h3 className="mt-1 text-base text-black" style={{ fontWeight: 540, letterSpacing: '-0.26px' }}>
-          Print Prices
+        <h3 className="mt-1 text-base text-black" style={{ fontWeight: 540 }}>
+          Tier print price matrix
         </h3>
         <div className="mt-3 space-y-1.5 rounded-2xl border border-black/[0.06] bg-black/[0.02] px-4 py-3 text-sm leading-6 text-black/60">
-          <p>This sets <strong className="text-black/75">print price only</strong>. The garment/base price is unchanged.</p>
-          <p>Print prices are configured separately from print options.</p>
-          <p>Products in the same print pricing group combine quantities for tier breaks.</p>
-          <p>Different print sizes share the same group quantity threshold, but each print size uses its own price ladder.</p>
-          <p className="text-black/45">PrintArea does not affect price.</p>
+          <p>This sets print price only. The garment/base price is unchanged.</p>
+          <p>Rows are product scopes and print sizes; columns are quantity breaks shared by the pricing group.</p>
+          <p>Blank cells are ignored. Any row with prices must include a price at quantity 1.</p>
         </div>
       </div>
 
@@ -255,175 +278,164 @@ export function PrintPricesSection({ printPricingGroupId, variantSizes, embedded
           Assign this product to a print pricing group before configuring print prices.
         </div>
       ) : loading ? (
-        <div className="rounded-2xl border border-black/[0.06] px-4 py-6 text-center text-sm text-black/45">Loading…</div>
+        <div className="rounded-2xl border border-black/[0.06] px-4 py-6 text-center text-sm text-black/45">Loading...</div>
       ) : loadError ? (
         <div className="rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{loadError}</div>
+      ) : printSizes.length === 0 ? (
+        <div className="rounded-2xl border border-dashed border-black/[0.12] px-4 py-6 text-center text-sm text-black/55">
+          Configure print sizes before setting tier print prices.
+        </div>
       ) : (
         <>
-          {rows.length === 0 ? (
-            <div className="rounded-2xl border border-dashed border-black/[0.12] px-4 py-6 text-center text-sm text-black/55">
-              No print prices configured. Printing uses each print size&apos;s base price until tiers are added.
+          <div className="flex flex-col gap-3 rounded-2xl border border-black/[0.06] bg-black/[0.02] px-4 py-3 sm:flex-row sm:items-end">
+            <div className="w-full max-w-xs">
+              <label className="mb-1.5 block font-mono text-[10px] uppercase tracking-[0.54px] text-black/55">
+                Add quantity break
+              </label>
+              <input
+                type="number"
+                min={1}
+                step={1}
+                value={newBreak}
+                disabled={saving}
+                onChange={(event) => setNewBreak(event.target.value)}
+                onKeyDown={(event) => {
+                  if (event.key === 'Enter') {
+                    event.preventDefault()
+                    addQuantityBreak()
+                  }
+                }}
+                placeholder="e.g. 25"
+                className="w-full rounded-xl border border-black/[0.10] bg-white px-3 py-2 text-sm text-black placeholder:text-black/30 focus:border-black/30 focus:outline-none focus:ring-2 focus:ring-black/[0.06]"
+              />
             </div>
-          ) : (
-            <div className="space-y-2">
-              <div className="hidden grid-cols-[1.1fr_1.1fr_0.8fr_1fr_auto_auto] gap-3 px-1 sm:grid">
-                <span className={LABEL + ' mb-0'}>Scope</span>
-                <span className={LABEL + ' mb-0'}>Print size</span>
-                <span className={LABEL + ' mb-0'}>Min qty</span>
-                <span className={LABEL + ' mb-0'}>Unit print price</span>
-                <span className={LABEL + ' mb-0'}>Active</span>
-                <span className="w-8" />
-              </div>
-
-              {rows.map((row) => {
-                const err = rowErrors[row.key]
-                return (
-                  <div
-                    key={row.key}
-                    className={[
-                      'grid grid-cols-1 gap-3 rounded-2xl border p-3 sm:grid-cols-[1.1fr_1.1fr_0.8fr_1fr_auto_auto] sm:items-start sm:border-0 sm:bg-transparent sm:p-1',
-                      row.isActive ? 'border-black/[0.06] bg-black/[0.01]' : 'border-black/[0.06] bg-black/[0.02] opacity-60',
-                    ].join(' ')}
-                  >
-                    {/* Scope */}
-                    <div>
-                      <span className={LABEL + ' sm:hidden'}>Scope</span>
-                      <select
-                        value={row.scope}
-                        disabled={saving}
-                        onChange={(e) => updateRow(row.key, { scope: e.target.value })}
-                        className={FIELD_BASE}
-                      >
-                        {scopeOptions.map((o) => (
-                          <option key={o.value} value={o.value}>{o.label}</option>
-                        ))}
-                      </select>
-                    </div>
-
-                    {/* Print size */}
-                    <div>
-                      <span className={LABEL + ' sm:hidden'}>Print size</span>
-                      <select
-                        value={row.printSizeId}
-                        disabled={saving}
-                        onChange={(e) => updateRow(row.key, { printSizeId: e.target.value })}
-                        className={FIELD_BASE + (err?.printSizeId ? ' border-red-300' : '')}
-                      >
-                        <option value="">Select…</option>
-                        {printSizes.map((s) => (
-                          <option key={s.id} value={s.id}>{s.name}</option>
-                        ))}
-                      </select>
-                      {err?.printSizeId && <p className="mt-1 text-xs text-red-600">{err.printSizeId}</p>}
-                    </div>
-
-                    {/* Min qty */}
-                    <div>
-                      <span className={LABEL + ' sm:hidden'}>Min qty</span>
-                      <input
-                        type="number" min={1} step={1}
-                        value={row.minQuantity}
-                        disabled={saving}
-                        placeholder="1"
-                        onChange={(e) => updateRow(row.key, { minQuantity: e.target.value })}
-                        className={FIELD_BASE + (err?.minQuantity ? ' border-red-300' : '')}
-                      />
-                      {err?.minQuantity && <p className="mt-1 text-xs text-red-600">{err.minQuantity}</p>}
-                    </div>
-
-                    {/* Unit print price */}
-                    <div>
-                      <span className={LABEL + ' sm:hidden'}>Unit print price</span>
-                      <div className="relative">
-                        <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-sm text-black/40">$</span>
-                        <input
-                          type="number" min={0} step="0.01"
-                          value={row.unitPrintPrice}
-                          disabled={saving}
-                          placeholder="0.00"
-                          onChange={(e) => updateRow(row.key, { unitPrintPrice: e.target.value })}
-                          className={FIELD_BASE + ' pl-7' + (err?.unitPrintPrice ? ' border-red-300' : '')}
-                        />
-                      </div>
-                      {err?.unitPrintPrice && <p className="mt-1 text-xs text-red-600">{err.unitPrintPrice}</p>}
-                    </div>
-
-                    {/* Active */}
-                    <div className="flex items-center sm:justify-center sm:pt-2">
-                      <span className={LABEL + ' sm:hidden'}>Active</span>
-                      <input
-                        type="checkbox"
-                        checked={row.isActive}
-                        disabled={saving}
-                        onChange={(e) => updateRow(row.key, { isActive: e.target.checked })}
-                        className="h-4 w-4 rounded border-black/20"
-                        aria-label="Tier active"
-                      />
-                    </div>
-
-                    {/* Delete */}
-                    <div className="flex justify-end sm:pt-0.5">
-                      <button
-                        type="button"
-                        onClick={() => removeRow(row.key)}
-                        disabled={saving}
-                        aria-label="Remove tier"
-                        className="inline-flex h-9 w-9 items-center justify-center rounded-xl border border-black/[0.08] text-black/45 transition-colors hover:border-red-200 hover:bg-red-50 hover:text-red-600 disabled:opacity-40"
-                      >
-                        <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                          <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
-                        </svg>
-                      </button>
-                    </div>
-                  </div>
-                )
-              })}
-            </div>
-          )}
-
-          <div className="mt-4">
             <button
               type="button"
-              onClick={addRow}
+              onClick={addQuantityBreak}
               disabled={saving}
-              className="inline-flex items-center gap-2 rounded-full border border-black/[0.12] bg-white px-4 py-2 text-sm text-black/70 transition-colors hover:border-black/30 hover:text-black disabled:opacity-40"
-              style={{ letterSpacing: '-0.14px', fontWeight: 480 }}
+              className="inline-flex shrink-0 items-center justify-center rounded-full border border-black/[0.12] bg-white px-4 py-2 text-sm text-black/70 transition-colors hover:border-black/30 hover:text-black disabled:opacity-40"
+              style={{ fontWeight: 480 }}
             >
-              + Add tier
+              Add Break
             </button>
           </div>
 
-          {scopeErrors.length > 0 && (
-            <ul className="mt-4 space-y-1 rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
-              {scopeErrors.map((e, i) => <li key={i}>{e}</li>)}
+          <div className="overflow-x-auto rounded-2xl border border-black/[0.08]">
+            <table className="min-w-full border-collapse text-sm">
+              <thead>
+                <tr className="bg-black/[0.02]">
+                  <th className="sticky left-0 z-20 w-56 min-w-56 border-r border-black/[0.06] bg-black/[0.02] px-3 py-2 text-left font-mono text-[10px] uppercase tracking-[0.54px] text-black/45">
+                    Scope / Print Size
+                  </th>
+                  {validation.breaks.map((minQuantity) => (
+                    <th key={minQuantity} className="min-w-[130px] px-3 py-2 text-left align-bottom">
+                      <span className="block text-xs text-black" style={{ fontWeight: 540 }}>
+                        Qty {minQuantity}+
+                      </span>
+                      <span className="mt-0.5 block font-mono text-[10px] uppercase tracking-[0.54px] text-black/35">
+                        Unit print price
+                      </span>
+                      {minQuantity !== '1' && (
+                        <button
+                          type="button"
+                          onClick={() => removeQuantityBreak(minQuantity)}
+                          disabled={saving}
+                          className="mt-1 text-[11px] text-red-600 transition-opacity hover:opacity-70 disabled:opacity-40"
+                        >
+                          Remove
+                        </button>
+                      )}
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {scopeRows.map((scope) => (
+                  printSizes.map((printSize, printSizeIndex) => {
+                    const key = cellKey(scope.key, printSize.id)
+                    return (
+                      <tr key={key} className="border-t border-black/[0.06]">
+                        <td className="sticky left-0 z-10 border-r border-black/[0.06] bg-white px-3 py-3">
+                          {printSizeIndex === 0 && (
+                            <span className="block text-sm text-black" style={{ fontWeight: 540 }}>
+                              {scope.label}
+                            </span>
+                          )}
+                          <span className="block text-xs leading-5 text-black/55">
+                            {printSize.name}
+                          </span>
+                        </td>
+                        {validation.breaks.map((minQuantity) => {
+                          const errorKey = `${key}|${minQuantity}`
+                          const hasError = validation.cellErrors.has(errorKey)
+                          return (
+                            <td key={minQuantity} className="px-3 py-2">
+                              <div className="relative">
+                                <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-sm text-black/40">$</span>
+                                <input
+                                  type="number"
+                                  min={0}
+                                  step="0.01"
+                                  value={matrix[key]?.[minQuantity] ?? ''}
+                                  disabled={saving}
+                                  onChange={(event) => updatePrice(scope.key, printSize.id, minQuantity, event.target.value)}
+                                  aria-label={`${scope.label} ${printSize.name} quantity ${minQuantity} price`}
+                                  className={[
+                                    'w-full rounded-xl border bg-white py-2 pl-7 pr-3 text-sm text-black placeholder:text-black/30 focus:outline-none focus:ring-2',
+                                    hasError
+                                      ? 'border-red-300 focus:border-red-300 focus:ring-red-100'
+                                      : 'border-black/[0.10] focus:border-black/30 focus:ring-black/[0.06]',
+                                  ].join(' ')}
+                                  placeholder="0.00"
+                                />
+                              </div>
+                            </td>
+                          )
+                        })}
+                      </tr>
+                    )
+                  })
+                ))}
+              </tbody>
+            </table>
+          </div>
+
+          {validation.rowErrors.length > 0 && (
+            <ul className="space-y-1 rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+              {validation.rowErrors.map((error, index) => <li key={index}>{error}</li>)}
             </ul>
           )}
-          {warnings.length > 0 && (
-            <ul className="mt-3 space-y-1 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
-              {warnings.map((w, i) => <li key={i}>{w}</li>)}
+          {validation.cellErrors.size > 0 && (
+            <p className="rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+              Prices must be greater than 0 with up to 2 decimals.
+            </p>
+          )}
+          {validation.warnings.length > 0 && (
+            <ul className="space-y-1 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+              {validation.warnings.map((warning, index) => <li key={index}>{warning}</li>)}
             </ul>
           )}
           {saveError && (
-            <p className="mt-3 rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{saveError}</p>
+            <p className="rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{saveError}</p>
           )}
           {saveSuccess && !saveError && (
-            <p className="mt-3 rounded-2xl border border-green-200 bg-green-50 px-4 py-3 text-sm text-green-800">
-              {rows.length === 0 ? 'Print prices cleared — printing uses each print size base price.' : 'Print prices saved.'}
+            <p className="rounded-2xl border border-green-200 bg-green-50 px-4 py-3 text-sm text-green-800">
+              Print price matrix saved.
             </p>
           )}
 
-          <div className="mt-4 flex items-center gap-3 border-t border-black/[0.06] pt-4">
+          <div className="flex items-center gap-3 border-t border-black/[0.06] pt-4">
             <button
               type="button"
               onClick={handleSave}
-              disabled={saving || hasErrors}
+              disabled={saving || validation.hasErrors}
               className="inline-flex items-center gap-2 rounded-full bg-black px-5 py-2.5 text-sm text-white transition-opacity hover:opacity-85 disabled:opacity-40"
-              style={{ letterSpacing: '-0.14px', fontWeight: 480 }}
+              style={{ fontWeight: 480 }}
             >
-              {saving ? 'Saving…' : 'Save Print Prices'}
+              {saving ? 'Saving...' : 'Save Print Price Matrix'}
             </button>
-            <p className="text-xs text-black/40" style={{ letterSpacing: '-0.14px' }}>
-              Saved per pricing group, separately from the product, variants, and inventory.
+            <p className="text-xs text-black/40">
+              Saved per pricing group, separately from product fields, variants, inventory, and print options.
             </p>
           </div>
         </>

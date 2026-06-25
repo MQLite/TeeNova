@@ -28,6 +28,8 @@ export function ProductPrintPricingGroupAssignment({ product, onSaved }: Props) 
   const isDirty = selectedGroupId !== (product.printPricingGroupId ?? '')
 
   async function handleSave() {
+    if (!isDirty || saving) return
+
     setSaving(true)
     setSaveError(null)
     setSaveSuccess(false)
@@ -42,6 +44,7 @@ export function ProductPrintPricingGroupAssignment({ product, onSaved }: Props) 
         printPricingGroupId: selectedGroupId || null,
       })
       onSaved(updated)
+      setSelectedGroupId(updated.printPricingGroupId ?? '')
       setSaveSuccess(true)
       setTimeout(() => setSaveSuccess(false), 2500)
     } catch (err: unknown) {

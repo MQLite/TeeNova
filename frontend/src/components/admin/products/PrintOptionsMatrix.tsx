@@ -165,6 +165,44 @@ export function PrintOptionsMatrix({ productId, variantSizes }: Props) {
     })
   }
 
+  function isRowChecked(row: MatrixRow): boolean {
+    return columns.length > 0 && columns.every((col) => checkedKeys.has(cellKey(row.key, col.key)))
+  }
+
+  function isColumnChecked(col: MatrixColumn): boolean {
+    return rows.length > 0 && rows.every((row) => checkedKeys.has(cellKey(row.key, col.key)))
+  }
+
+  function toggleRow(row: MatrixRow) {
+    const shouldCheck = !isRowChecked(row)
+    setSaveSuccess(false)
+    setSaveError(null)
+    setCheckedKeys((prev) => {
+      const next = new Set(prev)
+      columns.forEach((col) => {
+        const key = cellKey(row.key, col.key)
+        if (shouldCheck) next.add(key)
+        else next.delete(key)
+      })
+      return next
+    })
+  }
+
+  function toggleColumn(col: MatrixColumn) {
+    const shouldCheck = !isColumnChecked(col)
+    setSaveSuccess(false)
+    setSaveError(null)
+    setCheckedKeys((prev) => {
+      const next = new Set(prev)
+      rows.forEach((row) => {
+        const key = cellKey(row.key, col.key)
+        if (shouldCheck) next.add(key)
+        else next.delete(key)
+      })
+      return next
+    })
+  }
+
   async function handleSave() {
     setSaving(true)
     setSaveError(null)
@@ -252,6 +290,17 @@ export function PrintOptionsMatrix({ productId, variantSizes }: Props) {
                       <span className="mt-0.5 block font-mono text-[10px] uppercase tracking-[0.54px] text-black/35">
                         {col.printAreaCode} / {col.printSizeCode}
                       </span>
+                      <label className="mt-2 inline-flex items-center gap-1.5 text-[11px] text-black/45">
+                        <input
+                          type="checkbox"
+                          checked={isColumnChecked(col)}
+                          disabled={saving}
+                          onChange={() => toggleColumn(col)}
+                          aria-label={`Toggle all rows for ${col.printAreaName} - ${col.printSizeName}`}
+                          className="h-3.5 w-3.5 cursor-pointer accent-black disabled:cursor-not-allowed disabled:opacity-40"
+                        />
+                        Column
+                      </label>
                     </th>
                   ))}
                 </tr>
@@ -266,6 +315,17 @@ export function PrintOptionsMatrix({ productId, variantSizes }: Props) {
                       <span className="mt-0.5 block text-xs leading-5 text-black/45" style={{ letterSpacing: '-0.14px' }}>
                         {row.description}
                       </span>
+                      <label className="mt-2 inline-flex items-center gap-1.5 text-[11px] text-black/45">
+                        <input
+                          type="checkbox"
+                          checked={isRowChecked(row)}
+                          disabled={saving}
+                          onChange={() => toggleRow(row)}
+                          aria-label={`Toggle all print options for ${row.label}`}
+                          className="h-3.5 w-3.5 cursor-pointer accent-black disabled:cursor-not-allowed disabled:opacity-40"
+                        />
+                        Row
+                      </label>
                     </td>
                     {columns.map((col) => {
                       const key = cellKey(row.key, col.key)
