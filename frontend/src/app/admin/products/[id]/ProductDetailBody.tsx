@@ -1,7 +1,6 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import Link from 'next/link'
 import { ProductStatusToggle } from '@/components/admin/products/ProductStatusToggle'
 import { VariantSection } from '@/components/admin/products/VariantSection'
 import { ColorImageManager } from '@/components/admin/products/ColorImageManager'
@@ -152,29 +151,6 @@ export function ProductDetailBody({ product }: Props) {
         initialVariants={currentProduct.variants}
         onColorsChange={setVariantColors}
       />
-
-      <section className="rounded-[28px] border border-black/[0.08] bg-white p-5 shadow-card">
-        <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-          <div>
-            <p className="font-mono text-[11px] uppercase tracking-[0.54px] text-black/45">
-              Product Setup
-            </p>
-            <h2 className="mt-1 text-lg text-black" style={{ fontWeight: 540 }}>
-              Print Config
-            </h2>
-            <p className="mt-2 text-sm leading-6 text-black/55">
-              Manage print pricing groups, print-only prices, and customer-selectable print options on a dedicated page.
-            </p>
-          </div>
-          <Link
-            href={`/admin/products/${currentProduct.id}/print-config`}
-            className="inline-flex shrink-0 items-center justify-center rounded-full bg-black px-4 py-2 text-sm text-white transition-opacity hover:opacity-85"
-            style={{ fontWeight: 480 }}
-          >
-            Open Print Config
-          </Link>
-        </div>
-      </section>
     </>
   )
 }

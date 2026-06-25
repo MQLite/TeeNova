@@ -75,7 +75,7 @@ export function PrintConfigPanel({ product, variantSizes, onProductUpdated }: Pr
                   </p>
                 </div>
                 <Link
-                  href={`/admin/products/${product.id}/print-options`}
+                  href={`/admin/print-config/products/${product.id}/print-options`}
                   className="inline-flex shrink-0 items-center justify-center rounded-full bg-black px-4 py-2 text-sm text-white transition-opacity hover:opacity-85"
                   style={{ fontWeight: 480 }}
                 >

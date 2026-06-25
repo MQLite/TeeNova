@@ -8,6 +8,7 @@ import { PrintAreaFormModal } from '@/components/admin/print-config/PrintAreaFor
 import { PrintSizeTable } from '@/components/admin/print-config/PrintSizeTable'
 import { PrintSizeFormModal } from '@/components/admin/print-config/PrintSizeFormModal'
 import { AllowedSizeManager } from '@/components/admin/print-config/AllowedSizeManager'
+import { ConfigureByProduct } from '@/components/admin/print-config/ConfigureByProduct'
 import { makePrintConfigApi } from '@/api/print-config'
 import { adminApiClient, redirectToLogin } from '@/lib/admin-client'
 import { ApiError } from '@/lib/api-client'
@@ -15,13 +16,14 @@ import type { PrintArea, PrintSize } from '@/types'
 
 const printConfigApi = makePrintConfigApi(adminApiClient)
 
-type Tab = 'areas' | 'sizes' | 'allowed'
+type Tab = 'areas' | 'sizes' | 'allowed' | 'products'
 type StatusFilter = 'all' | 'active' | 'inactive'
 
 const TABS: { label: string; value: Tab }[] = [
   { label: 'Print Areas', value: 'areas' },
   { label: 'Print Sizes', value: 'sizes' },
   { label: 'Allowed Sizes', value: 'allowed' },
+  { label: 'Configure by Product', value: 'products' },
 ]
 
 const STATUS_TABS: { label: string; value: StatusFilter }[] = [
@@ -301,6 +303,10 @@ export default function PrintConfigPage() {
         ) : (
           <AllowedSizeManager areas={areas} sizes={sizes} />
         )
+      )}
+
+      {activeTab === 'products' && (
+        <ConfigureByProduct />
       )}
 
       {/* ── Modals ───────────────────────────────────────────────────────────── */}
