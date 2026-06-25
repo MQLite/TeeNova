@@ -1,8 +1,8 @@
 'use client'
 
+import Link from 'next/link'
 import { ProductPrintPricingGroupAssignment } from './ProductPrintPricingGroupAssignment'
 import { PrintPricesSection } from './PrintPricesSection'
-import { PrintOptionsMatrix } from './PrintOptionsMatrix'
 import type { Product } from '@/types'
 
 interface Props {
@@ -51,10 +51,39 @@ export function PrintConfigPanel({ product, variantSizes, onProductUpdated }: Pr
         </Subsection>
 
         <Subsection>
-          <PrintOptionsMatrix
-            productId={product.id}
-            variantSizes={variantSizes}
-          />
+          <div className="space-y-3">
+            <div>
+              <p className="font-mono text-[11px] uppercase tracking-[0.54px] text-black/45">
+                Print Options Matrix
+              </p>
+              <h3 className="mt-1 text-base text-black" style={{ fontWeight: 540 }}>
+                Customer-selectable print options
+              </h3>
+              <p className="mt-1 text-sm leading-6 text-black/55">
+                Print options control what customers can select. Product default applies unless a garment size has selected override options.
+              </p>
+            </div>
+
+            <div className="rounded-2xl border border-black/[0.06] bg-black/[0.02] px-4 py-4">
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                <div>
+                  <p className="text-sm text-black" style={{ fontWeight: 480 }}>
+                    Matrix editor moved to its own page
+                  </p>
+                  <p className="mt-1 text-xs leading-5 text-black/45">
+                    The product detail page stays light; open the matrix when you need to edit scoped print options.
+                  </p>
+                </div>
+                <Link
+                  href={`/admin/products/${product.id}/print-options`}
+                  className="inline-flex shrink-0 items-center justify-center rounded-full bg-black px-4 py-2 text-sm text-white transition-opacity hover:opacity-85"
+                  style={{ fontWeight: 480 }}
+                >
+                  Open Matrix
+                </Link>
+              </div>
+            </div>
+          </div>
         </Subsection>
       </div>
     </section>
