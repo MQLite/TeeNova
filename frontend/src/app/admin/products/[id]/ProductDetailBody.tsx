@@ -1,10 +1,9 @@
 'use client'
 
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { ProductStatusToggle } from '@/components/admin/products/ProductStatusToggle'
 import { VariantSection } from '@/components/admin/products/VariantSection'
-import { PrintPricesSection } from '@/components/admin/products/PrintPricesSection'
-import { PrintOptionsSection } from '@/components/admin/products/PrintOptionsSection'
+import { PrintConfigPanel } from '@/components/admin/products/PrintConfigPanel'
 import { ColorImageManager } from '@/components/admin/products/ColorImageManager'
 import type { Product } from '@/types'
 
@@ -34,22 +33,28 @@ interface Props {
 }
 
 export function ProductDetailBody({ product }: Props) {
+  const [currentProduct, setCurrentProduct] = useState(product)
   const [variantColors, setVariantColors] = useState<string[]>(() =>
     dedupeColors(product.variants.map((v) => v.color)),
   )
 
-  const adjustments = product.variants.map((v) => v.priceAdjustment)
+  useEffect(() => {
+    setCurrentProduct(product)
+    setVariantColors(dedupeColors(product.variants.map((v) => v.color)))
+  }, [product])
+
+  const adjustments = currentProduct.variants.map((v) => v.priceAdjustment)
 
   // Distinct garment sizes (preserving order) for size-override scopes in the print panels.
-  const variantSizes = Array.from(new Set(product.variants.map((v) => v.size).filter(Boolean)))
+  const variantSizes = Array.from(new Set(currentProduct.variants.map((v) => v.size).filter(Boolean)))
 
   return (
     <>
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-[1.15fr_0.85fr]">
         <div className="space-y-6">
           <ColorImageManager
-            productId={product.id}
-            initialImages={product.images}
+            productId={currentProduct.id}
+            initialImages={currentProduct.images}
             variantColors={variantColors}
           />
 
@@ -64,7 +69,7 @@ export function ProductDetailBody({ product }: Props) {
               Product overview
             </h2>
             <div className="mt-4 rounded-2xl border border-black/[0.06] bg-black/[0.02] px-4 py-4 text-sm leading-6 text-black/70">
-              {product.description?.trim() ||
+              {currentProduct.description?.trim() ||
                 'No description has been provided for this product yet.'}
             </div>
           </section>
@@ -81,7 +86,7 @@ export function ProductDetailBody({ product }: Props) {
                   className="text-3xl text-black"
                   style={{ fontWeight: 540, letterSpacing: '-0.96px' }}
                 >
-                  ${product.basePrice.toFixed(2)}
+                  ${currentProduct.basePrice.toFixed(2)}
                 </p>
                 <p
                   className="mt-1 text-sm text-black/55"
@@ -98,7 +103,7 @@ export function ProductDetailBody({ product }: Props) {
                   className="mt-1 text-sm text-black"
                   style={{ fontWeight: 480, letterSpacing: '-0.14px' }}
                 >
-                  {getPriceRange(product.basePrice, adjustments)}
+                  {getPriceRange(currentProduct.basePrice, adjustments)}
                 </p>
               </div>
             </div>
@@ -117,7 +122,7 @@ export function ProductDetailBody({ product }: Props) {
                   className="mt-1 break-all text-sm text-black"
                   style={{ fontWeight: 480, letterSpacing: '-0.14px' }}
                 >
-                  {product.id}
+                  {currentProduct.id}
                 </p>
               </div>
               <div className="rounded-2xl border border-black/[0.06] bg-black/[0.02] px-4 py-3">
@@ -128,7 +133,7 @@ export function ProductDetailBody({ product }: Props) {
                   className="mt-1 text-sm text-black"
                   style={{ fontWeight: 480, letterSpacing: '-0.14px' }}
                 >
-                  {new Date(product.creationTime).toLocaleString('en-NZ', {
+                  {new Date(currentProduct.creationTime).toLocaleString('en-NZ', {
                     dateStyle: 'medium',
                     timeStyle: 'short',
                   })}
@@ -138,7 +143,7 @@ export function ProductDetailBody({ product }: Props) {
                 <p className="font-mono text-[10px] uppercase tracking-[0.54px] text-black/45">
                   Status
                 </p>
-                <ProductStatusToggle productId={product.id} isActive={product.isActive} />
+                <ProductStatusToggle productId={currentProduct.id} isActive={currentProduct.isActive} />
               </div>
             </div>
           </section>
@@ -146,19 +151,15 @@ export function ProductDetailBody({ product }: Props) {
       </div>
 
       <VariantSection
-        productId={product.id}
-        initialVariants={product.variants}
+        productId={currentProduct.id}
+        initialVariants={currentProduct.variants}
         onColorsChange={setVariantColors}
       />
 
-      <PrintPricesSection
-        printPricingGroupId={product.printPricingGroupId}
+      <PrintConfigPanel
+        product={currentProduct}
         variantSizes={variantSizes}
-      />
-
-      <PrintOptionsSection
-        productId={product.id}
-        variantSizes={variantSizes}
+        onProductUpdated={setCurrentProduct}
       />
     </>
   )

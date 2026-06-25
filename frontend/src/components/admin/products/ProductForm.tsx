@@ -19,6 +19,7 @@ interface ProductFormProps {
   onSubmit: (values: ProductFormValues) => Promise<void>
   onCancel: () => void
   saving: boolean
+  showPrintPricingGroup?: boolean
 }
 
 // Known product types offered as preset options in the select.
@@ -57,7 +58,13 @@ function SectionLabel({ children }: { children: React.ReactNode }) {
   )
 }
 
-export function ProductForm({ initialValues, onSubmit, onCancel, saving }: ProductFormProps) {
+export function ProductForm({
+  initialValues,
+  onSubmit,
+  onCancel,
+  saving,
+  showPrintPricingGroup = true,
+}: ProductFormProps) {
   // Resolve prop defaults once — used both as form seed and dirty baseline
   const resolved: ProductFormValues = {
     name:        initialValues?.name        ?? '',
@@ -274,12 +281,13 @@ export function ProductForm({ initialValues, onSubmit, onCancel, saving }: Produ
           </button>
         </div>
 
-        {/* Print pricing group assignment (Jira 9203) */}
-        <PrintPricingGroupField
-          value={values.printPricingGroupId}
-          onChange={(v) => set('printPricingGroupId', v)}
-          disabled={saving}
-        />
+        {showPrintPricingGroup && (
+          <PrintPricingGroupField
+            value={values.printPricingGroupId}
+            onChange={(v) => set('printPricingGroupId', v)}
+            disabled={saving}
+          />
+        )}
       </div>
 
       {/* Error banner */}

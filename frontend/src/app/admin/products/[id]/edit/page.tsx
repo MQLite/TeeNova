@@ -109,6 +109,7 @@ export default function EditProductPage() {
         <ProductForm
           initialValues={initialValues}
           saving={saving}
+          showPrintPricingGroup={false}
           onSubmit={handleSubmit}
           onCancel={() => router.push(backHref)}
         />

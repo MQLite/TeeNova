@@ -14,6 +14,7 @@ interface Props {
   printPricingGroupId: string | null
   /** Distinct garment sizes from the product's variants, for size-override scopes. */
   variantSizes: string[]
+  embedded?: boolean
 }
 
 // Sentinel for the group-default (size = null) scope.
@@ -68,7 +69,7 @@ function tiersToRows(tiers: ProductPrintPriceTier[]): TierRow[] {
     }))
 }
 
-export function PrintPricesSection({ printPricingGroupId, variantSizes }: Props) {
+export function PrintPricesSection({ printPricingGroupId, variantSizes, embedded = false }: Props) {
   const [printSizes, setPrintSizes] = useState<PrintSize[]>([])
   const [rows, setRows] = useState<TierRow[]>([])
   const [loading, setLoading] = useState(true)
@@ -234,14 +235,15 @@ export function PrintPricesSection({ printPricingGroupId, variantSizes }: Props)
 
   // ── Render ───────────────────────────────────────────────────────────────────
   return (
-    <section className="rounded-[28px] border border-black/[0.08] bg-white p-5 shadow-card">
+    <section className={embedded ? 'space-y-4' : 'rounded-[28px] border border-black/[0.08] bg-white p-5 shadow-card'}>
       <div className="mb-4">
-        <p className="font-mono text-[11px] uppercase tracking-[0.54px] text-black/45">Print Pricing</p>
-        <h2 className="mt-1 text-lg text-black" style={{ fontWeight: 540, letterSpacing: '-0.26px' }}>
+        <p className="font-mono text-[11px] uppercase tracking-[0.54px] text-black/45">Print Prices</p>
+        <h3 className="mt-1 text-base text-black" style={{ fontWeight: 540, letterSpacing: '-0.26px' }}>
           Print Prices
-        </h2>
+        </h3>
         <div className="mt-3 space-y-1.5 rounded-2xl border border-black/[0.06] bg-black/[0.02] px-4 py-3 text-sm leading-6 text-black/60">
           <p>This sets <strong className="text-black/75">print price only</strong>. The garment/base price is unchanged.</p>
+          <p>Print prices are configured separately from print options.</p>
           <p>Products in the same print pricing group combine quantities for tier breaks.</p>
           <p>Different print sizes share the same group quantity threshold, but each print size uses its own price ladder.</p>
           <p className="text-black/45">PrintArea does not affect price.</p>
