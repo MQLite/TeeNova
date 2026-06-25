@@ -1,7 +1,7 @@
 // Client-side admin API client.
 // All requests go through /api/proxy/* (same-origin Next.js route handler) which
 // reads the HttpOnly admin_token cookie server-side and forwards the Bearer token.
-// Never call this from a server component — use makeAdminApiClient() from auth.ts instead.
+// Never call this from a server component; use makeAdminApiClient() from auth.ts instead.
 
 import { ApiError } from './api-client'
 
@@ -72,7 +72,7 @@ export const adminApiClient = {
   async uploadFile<T>(path: string, file: File): Promise<T> {
     const formData = new FormData()
     formData.append('file', file)
-    // No Content-Type header — browser sets it with multipart boundary
+    // No Content-Type header; browser sets it with multipart boundary.
     const res = await fetch(`${PROXY_BASE}${path}`, {
       method: 'POST',
       body: formData,

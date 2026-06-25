@@ -1,4 +1,4 @@
-// BACKEND_URL is server-only (no NEXT_PUBLIC_ prefix — never sent to the browser).
+// BACKEND_URL is server-only (no NEXT_PUBLIC_ prefix; never sent to the browser).
 // On the server it resolves to the direct backend address (e.g. http://localhost:5100).
 // In the browser process.env.BACKEND_URL is always undefined, so client-side code
 // falls back to NEXT_PUBLIC_API_BASE_URL (the public domain).
@@ -91,7 +91,7 @@ export function makeApiClient(
       const res = await fetch(`${baseUrl}${path}`, {
         method: 'POST',
         body: formData,
-        // Do NOT set Content-Type — browser sets it with boundary
+        // Do NOT set Content-Type; browser sets it with boundary.
         headers: { ...defaultHeaders },
       })
       return handleResponse<T>(res)

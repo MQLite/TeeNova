@@ -5,8 +5,12 @@ import { Badge } from '@/components/ui/Badge'
 import { Button } from '@/components/ui/Button'
 import { EmptyState } from '@/components/admin/EmptyState'
 import { SkeletonBlock } from '@/components/admin/LoadingSkeleton'
-import { printConfigApi } from '@/api/print-config'
+import { makePrintConfigApi } from '@/api/print-config'
+import { adminApiClient, redirectToLogin } from '@/lib/admin-client'
+import { ApiError } from '@/lib/api-client'
 import type { PrintArea, PrintSize, PrintAreaSizeOption } from '@/types'
+
+const printConfigApi = makePrintConfigApi(adminApiClient)
 
 interface Props {
   areas: PrintArea[]
@@ -52,8 +56,12 @@ export function AllowedSizeManager({ areas, sizes }: Props) {
 
       setLocalChecked(checkedMap)
       setLocalOrder(orderMap)
-    }).catch(() => {
-      // silently leave blank — user can retry by clicking area again
+    }).catch((err: unknown) => {
+      if (err instanceof ApiError && err.status === 401) {
+        redirectToLogin('session-expired')
+        return
+      }
+      // Silently leave blank; the user can retry by clicking the area again.
     }).finally(() => {
       if (!cancelled) setLoadingOptions(false)
     })
@@ -99,6 +107,10 @@ export function AllowedSizeManager({ areas, sizes }: Props) {
       setSaveStatus('saved')
       setTimeout(() => setSaveStatus('idle'), 2500)
     } catch (err: unknown) {
+      if (err instanceof ApiError && err.status === 401) {
+        redirectToLogin('session-expired')
+        return
+      }
       const msg = err instanceof Error ? err.message : 'Failed to save.'
       setSaveError(msg)
       setSaveStatus('error')
@@ -111,7 +123,7 @@ export function AllowedSizeManager({ areas, sizes }: Props) {
 
   return (
     <div className="flex flex-col gap-4 lg:flex-row lg:gap-6">
-      {/* Left panel — area list */}
+      {/* Left panel: area list */}
       <div className="w-full lg:w-64 shrink-0">
         <p className="mb-2 font-mono text-[10px] uppercase tracking-[0.54px] text-black/45">
           Print Areas
@@ -156,7 +168,7 @@ export function AllowedSizeManager({ areas, sizes }: Props) {
         </div>
       </div>
 
-      {/* Right panel — size options */}
+      {/* Right panel: size options */}
       <div className="flex-1 min-w-0">
         {!selectedAreaId ? (
           <EmptyState

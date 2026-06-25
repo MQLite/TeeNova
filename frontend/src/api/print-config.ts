@@ -10,7 +10,7 @@ import type {
 
 export function makePrintConfigApi(client: ApiClient) {
   return {
-    // ── Storefront (active-only, unchanged) ──────────────────────────────────────
+    // Storefront (active-only, unchanged)
 
     getAreas(): Promise<PrintArea[]> {
       return client.get('/api/print-config/areas', { isActive: true })
@@ -20,7 +20,7 @@ export function makePrintConfigApi(client: ApiClient) {
       return client.get('/api/print-config/sizes', { isActive: true })
     },
 
-    // ── Admin — PrintArea ─────────────────────────────────────────────────────────
+    // Admin: PrintArea
 
     getAdminAreas(isActive?: boolean): Promise<PrintArea[]> {
       return client.get('/api/print-config/areas', { isActive })
@@ -42,7 +42,7 @@ export function makePrintConfigApi(client: ApiClient) {
       return client.delete(`/api/print-config/areas/${id}`)
     },
 
-    // ── Admin — PrintSize ─────────────────────────────────────────────────────────
+    // Admin: PrintSize
 
     getAdminSizes(isActive?: boolean): Promise<PrintSize[]> {
       return client.get('/api/print-config/sizes', { isActive })
@@ -64,7 +64,7 @@ export function makePrintConfigApi(client: ApiClient) {
       return client.delete(`/api/print-config/sizes/${id}`)
     },
 
-    // ── PrintAreaSizeOption ───────────────────────────────────────────────────────
+    // PrintAreaSizeOption
 
     getAreaSizes(areaId: string, includeInactive?: boolean): Promise<PrintAreaSizeOption[]> {
       return client.get(`/api/print-config/areas/${areaId}/sizes`, { includeInactive })
