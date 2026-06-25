@@ -40,14 +40,16 @@ export function PrintPriceTierTable({
   const [expanded, setExpanded] = useState(initiallyExpanded)
   if (ladders.length === 0) return null
 
-  // Compact mode only adds value when there is more than one ladder to hide.
-  const compact = collapsible && ladders.length > 1
+  // "Show less" mode keeps at most this many print-size rows visible.
+  const COLLAPSED_MAX_ROWS = 5
+  // Compact mode only adds value when there are more rows than the collapsed cap to hide.
+  const compact = collapsible && ladders.length > COLLAPSED_MAX_ROWS
   const defaultLadder =
     (defaultPrintSizeId ? ladders.find((l) => l.printSizeId === defaultPrintSizeId) : undefined) ?? ladders[0]
   const otherLadders = ladders.filter((l) => l.printSizeId !== defaultLadder.printSizeId)
 
   const orderedLadders = compact ? [defaultLadder, ...otherLadders] : ladders
-  const shownLadders = compact && !expanded ? [defaultLadder] : orderedLadders
+  const shownLadders = compact && !expanded ? orderedLadders.slice(0, COLLAPSED_MAX_ROWS) : orderedLadders
 
   // Transposed matrix (Jira): quantity breaks run across the columns, print sizes down the rows.
   // Breaks are the union across the shown ladders, sorted ascending.

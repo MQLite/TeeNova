@@ -52,16 +52,18 @@ export function ProductCard({ product }: ProductCardProps) {
           {product.variantCount} variants
         </p>
         <div className="mt-2 flex items-end justify-between">
+          {/* Mirror the product-detail hero card (Jira 9303): lead with the combined garment + print
+              "from" price, then break out the garment-only price on a secondary line. */}
           <div>
             <span className="font-mono text-[10px] uppercase tracking-[0.54px] text-black/55">
-              {showPrinted ? 'Printed from' : 'From'}
+              {showPrinted ? 'Garment + print · from' : 'Garment price'}
             </span>
             <p className="text-base text-black" style={{ fontWeight: 540, letterSpacing: '-0.26px' }}>
-              {showPrinted ? `${formatMoneyNZD(product.fromPrice!)} ea` : formatMoneyNZD(product.basePrice)}
+              {showPrinted ? `${formatMoneyNZD(product.fromPrice!)} ea` : `${formatMoneyNZD(product.basePrice)} ea`}
             </p>
             {showPrinted && (
-              <p className="mt-0.5 text-[11px] text-black/45" style={{ letterSpacing: '-0.14px' }}>
-                Garment + print · varies by size & quantity
+              <p className="mt-0.5 font-mono text-[11px] uppercase tracking-[0.54px] text-black/45">
+                Garment from {formatMoneyNZD(product.basePrice)} ea
               </p>
             )}
           </div>

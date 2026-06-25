@@ -861,7 +861,12 @@ export default function ProductDetailPage() {
                 />
               </div>
             )}
+          </div>
+        </div>
 
+        {/* Configuration sections span the full page width below the gallery (Jira 9307) — the
+            image column no longer pins, so the print area / sizes / wide quantity matrix fill the page. */}
+        <div className="mt-8 flex flex-col gap-5">
             <div className="card p-6">
               {printSelectionBlocked ? (
                 <div className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
@@ -1062,7 +1067,6 @@ export default function ProductDetailPage() {
             </div>
 
             <ProductDetailsSection description={product.description} />
-          </div>
         </div>
       </div>
     </div>
