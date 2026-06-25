@@ -3,8 +3,12 @@
 import { useEffect, useState } from 'react'
 import { Modal } from '@/components/ui/Modal'
 import { Button } from '@/components/ui/Button'
-import { printConfigApi } from '@/api/print-config'
+import { makePrintConfigApi } from '@/api/print-config'
+import { adminApiClient } from '@/lib/admin-client'
 import type { PrintArea, CreateUpdatePrintAreaInput } from '@/types'
+
+// Admin endpoints require auth — use the authenticated admin client, not the public one.
+const printConfigApi = makePrintConfigApi(adminApiClient)
 
 interface FormValues {
   name: string
@@ -101,6 +105,7 @@ export function PrintAreaFormModal({ open, onClose, editTarget, onSaved }: Props
       open={open}
       onClose={onClose}
       title={editTarget ? 'Edit Print Area' : 'Add Print Area'}
+      closeOnBackdropClick={false}
     >
       <form onSubmit={handleSubmit} className="space-y-4">
         {error && (

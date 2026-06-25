@@ -3,8 +3,12 @@
 import { useEffect, useState } from 'react'
 import { Modal } from '@/components/ui/Modal'
 import { Button } from '@/components/ui/Button'
-import { printConfigApi } from '@/api/print-config'
+import { makePrintConfigApi } from '@/api/print-config'
+import { adminApiClient } from '@/lib/admin-client'
 import type { PrintSize, CreateUpdatePrintSizeInput } from '@/types'
+
+// Admin endpoints require auth — use the authenticated admin client, not the public one.
+const printConfigApi = makePrintConfigApi(adminApiClient)
 
 interface FormValues {
   name: string
@@ -95,6 +99,7 @@ export function PrintSizeFormModal({ open, onClose, editTarget, onSaved }: Props
       open={open}
       onClose={onClose}
       title={editTarget ? 'Edit Print Size' : 'Add Print Size'}
+      closeOnBackdropClick={false}
     >
       <form onSubmit={handleSubmit} className="space-y-4">
         {error && (

@@ -8,9 +8,11 @@ interface ModalProps {
   onClose: () => void
   title: string
   children: React.ReactNode
+  /** When false, clicking the backdrop does not close the modal (prevents accidental data loss). Default true. */
+  closeOnBackdropClick?: boolean
 }
 
-export function Modal({ open, onClose, title, children }: ModalProps) {
+export function Modal({ open, onClose, title, children, closeOnBackdropClick = true }: ModalProps) {
   const handleKey = useCallback(
     (e: KeyboardEvent) => { if (e.key === 'Escape') onClose() },
     [onClose],
@@ -31,7 +33,7 @@ export function Modal({ open, onClose, title, children }: ModalProps) {
   return createPortal(
     <div
       className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/40 backdrop-blur-[2px] p-4 sm:items-center"
-      onClick={onClose}
+      onClick={closeOnBackdropClick ? onClose : undefined}
     >
       <div
         className="relative my-auto w-full max-w-lg rounded-[28px] border border-black/[0.08] bg-white shadow-2xl"
