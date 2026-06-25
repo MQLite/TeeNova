@@ -15,12 +15,9 @@ export function PrintConfigPageBody({ product }: Props) {
     setCurrentProduct(product)
   }, [product])
 
-  const variantSizes = Array.from(new Set(currentProduct.variants.map((v) => v.size).filter(Boolean)))
-
   return (
     <PrintConfigPanel
       product={currentProduct}
-      variantSizes={variantSizes}
       onProductUpdated={setCurrentProduct}
     />
   )

@@ -7,7 +7,6 @@ import type { Product } from '@/types'
 
 interface Props {
   product: Product
-  variantSizes: string[]
   onProductUpdated: (product: Product) => void
 }
 
@@ -19,7 +18,7 @@ function Subsection({ children }: { children: React.ReactNode }) {
   )
 }
 
-export function PrintConfigPanel({ product, variantSizes, onProductUpdated }: Props) {
+export function PrintConfigPanel({ product, onProductUpdated }: Props) {
   return (
     <section className="rounded-[28px] border border-black/[0.08] bg-white p-5 shadow-card">
       <div className="mb-5">
@@ -45,7 +44,6 @@ export function PrintConfigPanel({ product, variantSizes, onProductUpdated }: Pr
         <Subsection>
           <PrintPricesSection
             printPricingGroupId={product.printPricingGroupId}
-            variantSizes={variantSizes}
             embedded
           />
         </Subsection>

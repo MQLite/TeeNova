@@ -10,25 +10,17 @@ import type { PrintSize, ProductPrintPriceTier } from '@/types'
 const catalogApi = makeCatalogApi(adminApiClient)
 const printConfigApi = makePrintConfigApi(adminApiClient)
 
-const GROUP_DEFAULT = '__group__'
 const PRICE_PATTERN = /^\d+(\.\d{1,2})?$/
 
 interface Props {
   printPricingGroupId: string | null
-  variantSizes: string[]
   embedded?: boolean
-}
-
-interface ScopeRow {
-  key: string
-  label: string
-  size: string | null
 }
 
 type PriceMatrix = Record<string, Record<string, string>>
 
-function cellKey(scope: string, printSizeId: string): string {
-  return `${scope}|${printSizeId}`
+function cellKey(printSizeId: string): string {
+  return printSizeId
 }
 
 function normalizeBreaks(values: string[]): string[] {
@@ -44,11 +36,12 @@ function normalizeBreaks(values: string[]): string[] {
 }
 
 function matrixFromTiers(tiers: ProductPrintPriceTier[]): { breaks: string[]; matrix: PriceMatrix } {
-  const breaks = normalizeBreaks(['1', ...tiers.map((tier) => String(tier.minQuantity))])
+  const groupDefaultTiers = tiers.filter((tier) => tier.size == null)
+  const breaks = normalizeBreaks(['1', ...groupDefaultTiers.map((tier) => String(tier.minQuantity))])
   const matrix: PriceMatrix = {}
 
-  tiers.forEach((tier) => {
-    const key = cellKey(tier.size ?? GROUP_DEFAULT, tier.printSizeId)
+  groupDefaultTiers.forEach((tier) => {
+    const key = cellKey(tier.printSizeId)
     matrix[key] = matrix[key] ?? {}
     matrix[key][String(tier.minQuantity)] = tier.isActive ? tier.unitPrintPrice.toFixed(2) : ''
   })
@@ -56,7 +49,7 @@ function matrixFromTiers(tiers: ProductPrintPriceTier[]): { breaks: string[]; ma
   return { breaks, matrix }
 }
 
-export function PrintPricesSection({ printPricingGroupId, variantSizes, embedded = false }: Props) {
+export function PrintPricesSection({ printPricingGroupId, embedded = false }: Props) {
   const [printSizes, setPrintSizes] = useState<PrintSize[]>([])
   const [breaks, setBreaks] = useState<string[]>(['1'])
   const [matrix, setMatrix] = useState<PriceMatrix>({})
@@ -66,14 +59,6 @@ export function PrintPricesSection({ printPricingGroupId, variantSizes, embedded
   const [saving, setSaving] = useState(false)
   const [saveError, setSaveError] = useState<string | null>(null)
   const [saveSuccess, setSaveSuccess] = useState(false)
-
-  const scopeRows = useMemo<ScopeRow[]>(
-    () => [
-      { key: GROUP_DEFAULT, label: 'Group default', size: null },
-      ...variantSizes.map((size) => ({ key: size, label: `Size: ${size}`, size })),
-    ],
-    [variantSizes],
-  )
 
   useEffect(() => {
     let cancelled = false
@@ -126,36 +111,34 @@ export function PrintPricesSection({ printPricingGroupId, variantSizes, embedded
       rowErrors.push('Quantity breaks must be unique whole numbers greater than or equal to 1.')
     }
 
-    scopeRows.forEach((scope) => {
-      printSizes.forEach((printSize) => {
-        const key = cellKey(scope.key, printSize.id)
-        const row = matrix[key] ?? {}
-        const filled = normalizedBreaks
-          .map((min) => ({ min, price: row[min]?.trim() ?? '' }))
-          .filter((item) => item.price !== '')
+    printSizes.forEach((printSize) => {
+      const key = cellKey(printSize.id)
+      const row = matrix[key] ?? {}
+      const filled = normalizedBreaks
+        .map((min) => ({ min, price: row[min]?.trim() ?? '' }))
+        .filter((item) => item.price !== '')
 
-        filled.forEach((item) => {
-          if (!PRICE_PATTERN.test(item.price) || parseFloat(item.price) <= 0) {
-            cellErrors.add(`${key}|${item.min}`)
-          }
-        })
-
-        if (filled.length > 0 && !filled.some((item) => item.min === '1')) {
-          rowErrors.push(`${scope.label} / ${printSize.name}: add a price at quantity 1.`)
-        }
-
-        const priced = filled
-          .filter((item) => PRICE_PATTERN.test(item.price) && parseFloat(item.price) > 0)
-          .map((item) => ({ min: parseInt(item.min, 10), price: parseFloat(item.price) }))
-          .sort((a, b) => a.min - b.min)
-
-        for (let i = 1; i < priced.length; i++) {
-          if (priced[i].price >= priced[i - 1].price) {
-            warnings.push(`${scope.label} / ${printSize.name}: price at ${priced[i].min}+ is not lower than the previous break.`)
-            break
-          }
+      filled.forEach((item) => {
+        if (!PRICE_PATTERN.test(item.price) || parseFloat(item.price) <= 0) {
+          cellErrors.add(`${key}|${item.min}`)
         }
       })
+
+      if (filled.length > 0 && !filled.some((item) => item.min === '1')) {
+        rowErrors.push(`${printSize.name}: add a price at quantity 1.`)
+      }
+
+      const priced = filled
+        .filter((item) => PRICE_PATTERN.test(item.price) && parseFloat(item.price) > 0)
+        .map((item) => ({ min: parseInt(item.min, 10), price: parseFloat(item.price) }))
+        .sort((a, b) => a.min - b.min)
+
+      for (let i = 1; i < priced.length; i++) {
+        if (priced[i].price >= priced[i - 1].price) {
+          warnings.push(`${printSize.name}: price at ${priced[i].min}+ is not lower than the previous break.`)
+          break
+        }
+      }
     })
 
     return {
@@ -165,12 +148,12 @@ export function PrintPricesSection({ printPricingGroupId, variantSizes, embedded
       warnings,
       hasErrors: cellErrors.size > 0 || rowErrors.length > 0,
     }
-  }, [breaks, matrix, printSizes, scopeRows])
+  }, [breaks, matrix, printSizes])
 
-  function updatePrice(scopeKey: string, printSizeId: string, minQuantity: string, value: string) {
+  function updatePrice(printSizeId: string, minQuantity: string, value: string) {
     setSaveSuccess(false)
     setSaveError(null)
-    const key = cellKey(scopeKey, printSizeId)
+    const key = cellKey(printSizeId)
     setMatrix((prev) => ({
       ...prev,
       [key]: {
@@ -222,23 +205,22 @@ export function PrintPricesSection({ printPricingGroupId, variantSizes, embedded
       return
     }
 
-    const tiers = scopeRows.flatMap((scope, scopeIndex) =>
-      printSizes.flatMap((printSize, sizeIndex) => {
-        const key = cellKey(scope.key, printSize.id)
-        const row = matrix[key] ?? {}
-        return validation.breaks.flatMap((minQuantity, breakIndex) => {
-          const price = row[minQuantity]?.trim() ?? ''
-          if (!price) return []
-          return [{
-            size: scope.size,
-            printSizeId: printSize.id,
-            minQuantity: parseInt(minQuantity, 10),
-            unitPrintPrice: parseFloat(price),
-            isActive: true,
-            sortOrder: scopeIndex * printSizes.length * validation.breaks.length + sizeIndex * validation.breaks.length + breakIndex,
-          }]
-        })
-      }),
+    const tiers = printSizes.flatMap((printSize, sizeIndex) => {
+      const key = cellKey(printSize.id)
+      const row = matrix[key] ?? {}
+      return validation.breaks.flatMap((minQuantity, breakIndex) => {
+        const price = row[minQuantity]?.trim() ?? ''
+        if (!price) return []
+        return [{
+          size: null,
+          printSizeId: printSize.id,
+          minQuantity: parseInt(minQuantity, 10),
+          unitPrintPrice: parseFloat(price),
+          isActive: true,
+          sortOrder: sizeIndex * validation.breaks.length + breakIndex,
+        }]
+      })
+    },
     )
 
     setSaving(true)
@@ -268,7 +250,7 @@ export function PrintPricesSection({ printPricingGroupId, variantSizes, embedded
         </h3>
         <div className="mt-3 space-y-1.5 rounded-2xl border border-black/[0.06] bg-black/[0.02] px-4 py-3 text-sm leading-6 text-black/60">
           <p>This sets print price only. The garment/base price is unchanged.</p>
-          <p>Rows are product scopes and print sizes; columns are quantity breaks shared by the pricing group.</p>
+          <p>Rows are print sizes; columns are quantity breaks shared by the pricing group.</p>
           <p>Blank cells are ignored. Any row with prices must include a price at quantity 1.</p>
         </div>
       </div>
@@ -325,7 +307,7 @@ export function PrintPricesSection({ printPricingGroupId, variantSizes, embedded
               <thead>
                 <tr className="bg-black/[0.02]">
                   <th className="sticky left-0 z-20 w-56 min-w-56 border-r border-black/[0.06] bg-black/[0.02] px-3 py-2 text-left font-mono text-[10px] uppercase tracking-[0.54px] text-black/45">
-                    Scope / Print Size
+                    Print Size
                   </th>
                   {validation.breaks.map((minQuantity) => (
                     <th key={minQuantity} className="min-w-[130px] px-3 py-2 text-left align-bottom">
@@ -350,52 +332,48 @@ export function PrintPricesSection({ printPricingGroupId, variantSizes, embedded
                 </tr>
               </thead>
               <tbody>
-                {scopeRows.map((scope) => (
-                  printSizes.map((printSize, printSizeIndex) => {
-                    const key = cellKey(scope.key, printSize.id)
-                    return (
-                      <tr key={key} className="border-t border-black/[0.06]">
-                        <td className="sticky left-0 z-10 border-r border-black/[0.06] bg-white px-3 py-3">
-                          {printSizeIndex === 0 && (
-                            <span className="block text-sm text-black" style={{ fontWeight: 540 }}>
-                              {scope.label}
-                            </span>
-                          )}
-                          <span className="block text-xs leading-5 text-black/55">
-                            {printSize.name}
-                          </span>
-                        </td>
-                        {validation.breaks.map((minQuantity) => {
-                          const errorKey = `${key}|${minQuantity}`
-                          const hasError = validation.cellErrors.has(errorKey)
-                          return (
-                            <td key={minQuantity} className="px-3 py-2">
-                              <div className="relative">
-                                <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-sm text-black/40">$</span>
-                                <input
-                                  type="number"
-                                  min={0}
-                                  step="0.01"
-                                  value={matrix[key]?.[minQuantity] ?? ''}
-                                  disabled={saving}
-                                  onChange={(event) => updatePrice(scope.key, printSize.id, minQuantity, event.target.value)}
-                                  aria-label={`${scope.label} ${printSize.name} quantity ${minQuantity} price`}
-                                  className={[
-                                    'w-full rounded-xl border bg-white py-2 pl-7 pr-3 text-sm text-black placeholder:text-black/30 focus:outline-none focus:ring-2',
-                                    hasError
-                                      ? 'border-red-300 focus:border-red-300 focus:ring-red-100'
-                                      : 'border-black/[0.10] focus:border-black/30 focus:ring-black/[0.06]',
-                                  ].join(' ')}
-                                  placeholder="0.00"
-                                />
-                              </div>
-                            </td>
-                          )
-                        })}
-                      </tr>
-                    )
-                  })
-                ))}
+                {printSizes.map((printSize) => {
+                  const key = cellKey(printSize.id)
+                  return (
+                    <tr key={key} className="border-t border-black/[0.06]">
+                      <td className="sticky left-0 z-10 border-r border-black/[0.06] bg-white px-3 py-3">
+                        <span className="block text-sm text-black" style={{ fontWeight: 540 }}>
+                          {printSize.name}
+                        </span>
+                        <span className="mt-0.5 block font-mono text-[10px] uppercase tracking-[0.54px] text-black/35">
+                          {printSize.code}
+                        </span>
+                      </td>
+                      {validation.breaks.map((minQuantity) => {
+                        const errorKey = `${key}|${minQuantity}`
+                        const hasError = validation.cellErrors.has(errorKey)
+                        return (
+                          <td key={minQuantity} className="px-3 py-2">
+                            <div className="relative">
+                              <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-sm text-black/40">$</span>
+                              <input
+                                type="number"
+                                min={0}
+                                step="0.01"
+                                value={matrix[key]?.[minQuantity] ?? ''}
+                                disabled={saving}
+                                onChange={(event) => updatePrice(printSize.id, minQuantity, event.target.value)}
+                                aria-label={`${printSize.name} quantity ${minQuantity} price`}
+                                className={[
+                                  'w-full rounded-xl border bg-white py-2 pl-7 pr-3 text-sm text-black placeholder:text-black/30 focus:outline-none focus:ring-2',
+                                  hasError
+                                    ? 'border-red-300 focus:border-red-300 focus:ring-red-100'
+                                    : 'border-black/[0.10] focus:border-black/30 focus:ring-black/[0.06]',
+                                ].join(' ')}
+                                placeholder="0.00"
+                              />
+                            </div>
+                          </td>
+                        )
+                      })}
+                    </tr>
+                  )
+                })}
               </tbody>
             </table>
           </div>
