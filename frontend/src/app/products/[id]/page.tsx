@@ -11,9 +11,12 @@ import { PricingBreakdownPanel } from '@/components/products/PricingBreakdownPan
 import { PrintAreaSelector } from '@/components/products/PrintAreaSelector'
 import { PrintSizeSelector } from '@/components/products/PrintSizeSelector'
 import { PrintPriceTierTable } from '@/components/products/PrintPriceTierTable'
+import { ProductImageGallery } from '@/components/products/ProductImageGallery'
+import { ProductDetailsSection } from '@/components/products/ProductDetailsSection'
+import { ProductHeroPrice } from '@/components/products/ProductHeroPrice'
 import { useCartStore } from '@/features/cart/cart-store'
 import { filterImagesForColor, resolveImageUrl } from '@/lib/image-utils'
-import { formatMoneyNZD, cheapestPrintTierPrice, groupDefaultPrintLadders } from '@/lib/pricing'
+import { formatMoneyNZD, cheapestPrintTierPrice, groupDefaultPrintLadders, findPrintSizeIdByName, resolveHeroPrintPrice } from '@/lib/pricing'
 import { resolveAllowedPrintOptions } from '@/lib/print-options'
 import type {
   CartItemPrint,
@@ -200,7 +203,17 @@ export default function ProductDetailPage() {
 
   // ── Print-only pricing (Jira 9206) ──────────────────────────────────────────
   const printTiers = useMemo(() => product?.printPriceTiers ?? [], [product])
-  const hasPrintTiers = useMemo(() => groupDefaultPrintLadders(printTiers).length > 0, [printTiers])
+  const printLadders = useMemo(() => groupDefaultPrintLadders(printTiers), [printTiers])
+  const hasPrintTiers = printLadders.length > 0
+
+  // Default ladder for the compact tier table (Jira 9304): prefer the A3 PrintSize when it has a
+  // ladder, otherwise fall back to the first available group-default ladder. Display-only; the live
+  // PricingBreakdownPanel remains authoritative for the actually-selected configuration.
+  const defaultPrintSizeId = useMemo(() => {
+    const a3 = findPrintSizeIdByName(printSizes, 'A3')
+    if (a3 && printLadders.some((l) => l.printSizeId === a3)) return a3
+    return printLadders[0]?.printSizeId
+  }, [printSizes, printLadders])
 
   // Fixed garment "from" = base price + cheapest variant adjustment (garment price never discounted).
   const garmentFromPrice = useMemo(() => {
@@ -215,6 +228,20 @@ export default function ProductDetailPage() {
     hasPrintTiers && garmentFromPrice !== null && cheapestPrint !== null
       ? garmentFromPrice + cheapestPrint
       : null
+
+  // Display-only hero "from/reference" price (Jira 9303): prefers the A3 ladder resolved at 10 pieces,
+  // with fallbacks to the first ladder, printed-from, then garment-only. Never the live selected price.
+  const heroPriceInfo = useMemo(
+    () =>
+      resolveHeroPrintPrice({
+        tiers: printTiers,
+        printSizes,
+        printSizeNames,
+        garmentFromPrice,
+        printedFromPrice,
+      }),
+    [printTiers, printSizes, printSizeNames, garmentFromPrice, printedFromPrice],
+  )
 
   // First tiered quote response that has arrived — used to highlight the applied print break.
   const appliedTierPricing = useMemo(() => {
@@ -774,44 +801,12 @@ export default function ProductDetailPage() {
               </div>
             )}
 
-            <div className="card overflow-hidden">
-              {activeImage ? (
-                // eslint-disable-next-line @next/next/no-img-element
-                <img
-                  src={resolveImageUrl(activeImage.url) ?? ''}
-                  alt={product.name}
-                  className="h-full w-full object-contain p-8"
-                  style={{ minHeight: 360 }}
-                />
-              ) : (
-                <div className="flex items-center justify-center bg-black/[0.02]" style={{ minHeight: 360 }}>
-                  <svg viewBox="0 0 200 220" className="h-36 w-36 text-black/[0.06]" fill="currentColor">
-                    <path d="M 59 36 L 30 48 L 14 85 L 41 94 L 44 85 L 44 185 L 156 185 L 156 85 L 159 94 L 186 85 L 170 48 L 141 36 C 134 54 118 61 100 61 C 82 61 66 54 59 36 Z" />
-                  </svg>
-                </div>
-              )}
-            </div>
-
-            {displayedImages.length > 1 && (
-              <div className="mt-3 grid grid-cols-4 gap-2">
-                {displayedImages.map((image) => {
-                  const isActive = image.id === activeImage?.id
-                  return (
-                    <button
-                      key={image.id}
-                      type="button"
-                      onClick={() => setSelectedImageId(image.id)}
-                      className={`relative overflow-hidden rounded-2xl border bg-white transition-all ${
-                        isActive ? 'border-black shadow-sm' : 'border-black/[0.08] hover:border-black/[0.20]'
-                      }`}
-                    >
-                      {/* eslint-disable-next-line @next/next/no-img-element */}
-                      <img src={resolveImageUrl(image.url) ?? ''} alt="" className="aspect-square h-full w-full object-contain p-2" />
-                    </button>
-                  )
-                })}
-              </div>
-            )}
+            <ProductImageGallery
+              productName={product.name}
+              activeImage={activeImage}
+              images={displayedImages}
+              onSelectImage={setSelectedImageId}
+            />
 
             <div className="mt-3 grid grid-cols-3 gap-2">
               {['Premium cotton', 'Vivid print', 'Fast ship'].map((tag) => (
@@ -830,39 +825,12 @@ export default function ProductDetailPage() {
               <h1 className="text-2xl text-black" style={{ fontWeight: 540, letterSpacing: '-0.96px' }}>
                 {product.name}
               </h1>
-              {product.description && (
-                <p className="mt-2 whitespace-pre-wrap text-sm leading-relaxed text-black/50" style={{ letterSpacing: '-0.14px', fontWeight: 400 }}>
-                  {product.description}
-                </p>
-              )}
-              <p className="mt-4 font-mono text-[11px] uppercase tracking-[0.54px] text-black/45">
-                Garment price (fixed)
-              </p>
-              <div className="mt-1 flex items-baseline gap-2">
-                <span className="text-3xl text-black" style={{ fontWeight: 400, letterSpacing: '-0.96px' }}>
-                  {garmentFromPrice !== null && garmentFromPrice !== product.basePrice
-                    ? `From ${formatMoneyNZD(garmentFromPrice)}`
-                    : formatMoneyNZD(product.basePrice)}
-                </span>
-                <span className="text-sm text-black/55" style={{ letterSpacing: '-0.14px' }}>
-                  {priceAdjustments.length > 0 ? 'ea · varies by size' : 'ea'}
-                </span>
-              </div>
-              <p className="mt-1 text-sm text-black/55" style={{ letterSpacing: '-0.14px' }}>
-                {hasPrintTiers
-                  ? 'Garment price stays fixed. Print price depends on print size and quantity.'
-                  : 'Garment price stays fixed. Print options are added to the garment price.'}
-              </p>
-              {printedFromPrice !== null && (
-                <p className="mt-1 font-mono text-[11px] uppercase tracking-[0.54px] text-black/45">
-                  Printed from {formatMoneyNZD(printedFromPrice)} ea · your total updates as you choose print options
-                </p>
-              )}
-              {priceAdjustments.length > 0 && (
-                <p className="mt-1 font-mono text-[11px] uppercase tracking-[0.54px] text-black/50">
-                  {priceAdjustments.map((item) => `${item.size}: +$${item.adjustment.toFixed(2)}`).join(' | ')}
-                </p>
-              )}
+              <ProductHeroPrice
+                heroInfo={heroPriceInfo}
+                garmentFromPrice={garmentFromPrice}
+                basePrice={product.basePrice}
+                priceAdjustments={priceAdjustments}
+              />
             </div>
 
             {hasPrintTiers && (
@@ -886,6 +854,8 @@ export default function ProductDetailPage() {
                   tiers={printTiers}
                   printSizeNames={printSizeNames}
                   appliedMinQuantity={appliedTierPricing?.appliedTierMinQuantity ?? null}
+                  defaultPrintSizeId={defaultPrintSizeId}
+                  collapsible
                 />
               </div>
             )}
@@ -1088,6 +1058,8 @@ export default function ProductDetailPage() {
                 </div>
               )}
             </div>
+
+            <ProductDetailsSection description={product.description} />
           </div>
         </div>
       </div>
