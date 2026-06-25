@@ -16,7 +16,7 @@ import { ProductDetailsSection } from '@/components/products/ProductDetailsSecti
 import { ProductHeroPrice } from '@/components/products/ProductHeroPrice'
 import { useCartStore } from '@/features/cart/cart-store'
 import { filterImagesForColor, resolveImageUrl } from '@/lib/image-utils'
-import { formatMoneyNZD, cheapestPrintTierPrice, groupDefaultPrintLadders, findPrintSizeIdByName, resolveHeroPrintPrice } from '@/lib/pricing'
+import { formatMoneyNZD, cheapestPrintTierPrice, groupDefaultPrintLadders, resolveHeroPrintPrice } from '@/lib/pricing'
 import { resolveAllowedPrintOptions } from '@/lib/print-options'
 import type {
   CartItemPrint,
@@ -206,13 +206,16 @@ export default function ProductDetailPage() {
   const printLadders = useMemo(() => groupDefaultPrintLadders(printTiers), [printTiers])
   const hasPrintTiers = printLadders.length > 0
 
-  // Default ladder for the compact tier table (Jira 9304): prefer the A3 PrintSize when it has a
-  // ladder, otherwise fall back to the first available group-default ladder. Display-only; the live
+  // Default ladder for the compact tier table (Jira 9304/9303): the first print size by
+  // PrintSize.SortOrder, matching the hero card's chosen size. Display-only; the live
   // PricingBreakdownPanel remains authoritative for the actually-selected configuration.
   const defaultPrintSizeId = useMemo(() => {
-    const a3 = findPrintSizeIdByName(printSizes, 'A3')
-    if (a3 && printLadders.some((l) => l.printSizeId === a3)) return a3
-    return printLadders[0]?.printSizeId
+    const sortOrderById = new Map(printSizes.map((s) => [s.id, s.sortOrder]))
+    return [...printLadders].sort(
+      (a, b) =>
+        (sortOrderById.get(a.printSizeId) ?? Number.MAX_SAFE_INTEGER) -
+        (sortOrderById.get(b.printSizeId) ?? Number.MAX_SAFE_INTEGER),
+    )[0]?.printSizeId
   }, [printSizes, printLadders])
 
   // Fixed garment "from" = base price + cheapest variant adjustment (garment price never discounted).

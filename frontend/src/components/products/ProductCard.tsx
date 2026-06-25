@@ -12,6 +12,20 @@ export function ProductCard({ product }: ProductCardProps) {
   // garment price. fromPrice (Jira 9203) = fixed garment price + cheapest achievable print price.
   const showPrinted = product.hasPriceTiers && product.fromPrice !== null
 
+  // Hero card (Jira 9303): when the backend resolves a reference print break, the card mirrors the
+  // product-detail hero card. The same copy rules as ProductHeroPrice keep them consistent.
+  const hero = product.hero
+  const quantityCopy = hero
+    ? hero.tierMinQuantity === 10
+      ? '(Minimum 10 pieces)'
+      : `Reference price for ${hero.quantity} ${hero.quantity === 1 ? 'piece' : 'pieces'}`
+    : ''
+  const garmentLabel = hero
+    ? hero.garmentFromPrice !== product.basePrice
+      ? `From ${formatMoneyNZD(hero.garmentFromPrice)}`
+      : formatMoneyNZD(product.basePrice)
+    : ''
+
   return (
     <Link
       href={`/products/${product.id}`}
@@ -40,38 +54,61 @@ export function ProductCard({ product }: ProductCardProps) {
         </div>
       </div>
 
-      {/* Info */}
-      <div className="flex flex-1 flex-col gap-1 border-t border-black/[0.08] px-4 py-3.5">
+      {/* Info — mirrors the product-detail hero card (Jira 9303). */}
+      <div className="flex flex-1 flex-col border-t border-black/[0.08] px-4 py-4">
         <h3
           className="text-sm text-black line-clamp-1"
           style={{ fontWeight: 480, letterSpacing: '-0.14px' }}
         >
           {product.name}
         </h3>
-        <p className="text-xs text-black/55" style={{ letterSpacing: '-0.14px' }}>
-          {product.variantCount} variants
-        </p>
-        <div className="mt-2 flex items-end justify-between">
-          {/* Mirror the product-detail hero card (Jira 9303): lead with the combined garment + print
-              "from" price, then break out the garment-only price on a secondary line. */}
-          <div>
-            <span className="font-mono text-[10px] uppercase tracking-[0.54px] text-black/55">
-              {showPrinted ? 'Garment + print · from' : 'Garment price'}
-            </span>
-            <p className="text-base text-black" style={{ fontWeight: 540, letterSpacing: '-0.26px' }}>
-              {showPrinted ? `${formatMoneyNZD(product.fromPrice!)} ea` : `${formatMoneyNZD(product.basePrice)} ea`}
+
+        {hero ? (
+          <div className="mt-3">
+            <p className="font-mono text-[10px] uppercase tracking-[0.54px] text-black/45">
+              Garment + print · from
             </p>
-            {showPrinted && (
-              <p className="mt-0.5 font-mono text-[11px] uppercase tracking-[0.54px] text-black/45">
-                Garment from {formatMoneyNZD(product.basePrice)} ea
+            <div className="mt-0.5 flex items-baseline gap-1.5">
+              <span className="text-3xl text-black" style={{ fontWeight: 400, letterSpacing: '-0.96px' }}>
+                {formatMoneyNZD(hero.price)}
+              </span>
+              <span className="text-xs text-black/55" style={{ letterSpacing: '-0.14px' }}>ea</span>
+            </div>
+            <p className="mt-0.5 text-xs text-black" style={{ letterSpacing: '-0.14px', fontWeight: 480 }}>
+              for {hero.printSizeName} printing + garment
+            </p>
+            <p className="mt-0.5 font-mono text-[10px] uppercase tracking-[0.54px] text-black/45">
+              {quantityCopy}
+            </p>
+            <p className="mt-2 font-mono text-[10px] uppercase tracking-[0.54px] text-black/45">
+              Garment {garmentLabel} ea{hero.sizeAdjustments.length > 0 ? ' · varies by size' : ''}
+            </p>
+            {hero.sizeAdjustments.length > 0 && (
+              <p className="mt-0.5 font-mono text-[10px] uppercase tracking-[0.54px] text-black/40">
+                {hero.sizeAdjustments.map((a) => `${a.size}: +$${a.adjustment.toFixed(2)}`).join(' | ')}
               </p>
             )}
           </div>
-          <span className="text-xs text-black/55 underline underline-offset-2 transition-opacity group-hover:opacity-50"
-                style={{ letterSpacing: '-0.14px' }}>
-            Customize →
-          </span>
-        </div>
+        ) : (
+          <div className="mt-3">
+            <p className="font-mono text-[10px] uppercase tracking-[0.54px] text-black/45">
+              {showPrinted ? 'Garment + print · from' : 'Garment price'}
+            </p>
+            <div className="mt-0.5 flex items-baseline gap-1.5">
+              <span className="text-3xl text-black" style={{ fontWeight: 400, letterSpacing: '-0.96px' }}>
+                {showPrinted ? formatMoneyNZD(product.fromPrice!) : formatMoneyNZD(product.basePrice)}
+              </span>
+              <span className="text-xs text-black/55" style={{ letterSpacing: '-0.14px' }}>ea</span>
+            </div>
+          </div>
+        )}
+
+        <span
+          className="mt-auto pt-3 text-xs text-black/55 underline underline-offset-2 transition-opacity group-hover:opacity-50"
+          style={{ letterSpacing: '-0.14px' }}
+        >
+          Customize →
+        </span>
       </div>
     </Link>
   )

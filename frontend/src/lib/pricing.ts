@@ -116,12 +116,11 @@ export interface HeroPriceInfo {
  * authoritative selected-configuration price.
  *
  * Fallback order:
- *  A. preferred print size (e.g. A3) group-default ladder → garmentFrom + print price resolved at
- *     `referenceQuantity`.
- *  B. otherwise the first available group-default ladder, labelled with its real PrintSize name.
- *  C. otherwise `printedFromPrice` ("Printed from $X").
- *  D. otherwise `garmentFromPrice` ("From $X", garment only).
- *  E. no data → mode 'unavailable', price null.
+ *  A. the first print size the product can print, by PrintSize.SortOrder (Jira 9303), group-default
+ *     ladder → garmentFrom + print price resolved at `referenceQuantity`. Mirrors the storefront card.
+ *  B. otherwise `printedFromPrice` ("Printed from $X").
+ *  C. otherwise `garmentFromPrice` ("From $X", garment only).
+ *  D. no data → mode 'unavailable', price null.
  */
 export function resolveHeroPrintPrice(params: {
   tiers: ProductPrintPriceTier[]
@@ -129,7 +128,6 @@ export function resolveHeroPrintPrice(params: {
   printSizeNames: Record<string, string>
   garmentFromPrice: number | null
   printedFromPrice: number | null
-  preferredPrintSizeName?: string
   referenceQuantity?: number
 }): HeroPriceInfo {
   const {
@@ -138,7 +136,6 @@ export function resolveHeroPrintPrice(params: {
     printSizeNames,
     garmentFromPrice,
     printedFromPrice,
-    preferredPrintSizeName = 'A3',
     referenceQuantity = 10,
   } = params
 
@@ -164,21 +161,20 @@ export function resolveHeroPrintPrice(params: {
     }
   }
 
-  // A. preferred print size (A3).
-  const preferredId = findPrintSizeIdByName(printSizes, preferredPrintSizeName)
-  if (preferredId) {
-    const ladder = ladders.find((l) => l.printSizeId === preferredId)
-    const info = ladder ? fromLadder(ladder, 'preferred') : null
+  // A. First print size the product can print, by PrintSize.SortOrder (Jira 9303). Mirrors the
+  //    storefront card hero; falls through the ordered ladders until one resolves a price.
+  const sortOrderById = new Map(printSizes.map((s) => [s.id, s.sortOrder]))
+  const orderedLadders = [...ladders].sort(
+    (a, b) =>
+      (sortOrderById.get(a.printSizeId) ?? Number.MAX_SAFE_INTEGER) -
+      (sortOrderById.get(b.printSizeId) ?? Number.MAX_SAFE_INTEGER),
+  )
+  for (const ladder of orderedLadders) {
+    const info = fromLadder(ladder, 'preferred')
     if (info) return info
   }
 
-  // B. first available group-default ladder.
-  if (ladders.length > 0) {
-    const info = fromLadder(ladders[0], 'fallback-print-size')
-    if (info) return info
-  }
-
-  // C. printed-from (tiers exist but no group-default ladder / no garment-from).
+  // B. printed-from (tiers exist but no group-default ladder / no garment-from).
   if (printedFromPrice !== null) {
     return { price: printedFromPrice, quantity: 1, label: 'Garment + print', mode: 'printed-from' }
   }

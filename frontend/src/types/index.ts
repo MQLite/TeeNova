@@ -13,6 +13,24 @@ export interface ProductListItem {
   fromPrice: number | null
   /** True when the product's group has active print price tiers (Jira 9203). */
   hasPriceTiers: boolean
+  /** Hero "from/reference" pricing so cards mirror the product-detail hero card (Jira 9303). Null when no printable tier. */
+  hero: ProductHeroPrice | null
+}
+
+/** Display-only hero pricing for a product card — mirrors the product-detail hero card (Jira 9303). */
+export interface ProductHeroPrice {
+  /** Garment "from" price + the chosen print size's price at the reference quantity. */
+  price: number
+  /** Name of the chosen print size (first printable by sort order), e.g. "A3". */
+  printSizeName: string
+  /** Quantity the price is referenced at (reference quantity, or the tier break when higher). */
+  quantity: number
+  /** The resolved tier's actual MinQuantity — drives the "(Minimum N pieces)" vs reference copy. */
+  tierMinQuantity: number
+  /** Fixed garment "from" price (base + cheapest variant adjustment). */
+  garmentFromPrice: number
+  /** Per-size garment price adjustments. */
+  sizeAdjustments: { size: string; adjustment: number }[]
 }
 
 /** Informational inventory state for a variant (Jira 9002/9003). Decoupled from sellability. */
