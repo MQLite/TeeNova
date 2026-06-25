@@ -35,7 +35,7 @@ public class PrintPricingEntityTypeConfiguration :
     {
         builder.ToTable("ProductPrintPriceTiers");
 
-        // Garment-size override discriminator — matches ProductVariant.Size exactly; null = group default.
+        // Garment-size override discriminator: matches ProductVariant.Size exactly; null = group default.
         builder.Property(t => t.Size)
             .HasMaxLength(CatalogConsts.MaxSizeLength);
 
@@ -68,7 +68,7 @@ public class PrintPricingEntityTypeConfiguration :
     {
         builder.ToTable("ProductPrintConfigOptions");
 
-        // Garment-size override discriminator — matches ProductVariant.Size; null = product default.
+        // Garment-size override discriminator: matches ProductVariant.Size; null = product default.
         builder.Property(o => o.Size)
             .HasMaxLength(CatalogConsts.MaxSizeLength);
 

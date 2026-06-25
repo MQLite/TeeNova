@@ -96,8 +96,13 @@ public class CatalogAppService : ApplicationService, ICatalogAppService
         var cheapestTierByGroup = new Dictionary<Guid, decimal>();
         if (groupIds.Count > 0)
         {
+            var activeGroupIds = (await _printPricingGroupRepository.GetListAsync(
+                    g => groupIds.Contains(g.Id) && g.IsActive))
+                .Select(g => g.Id)
+                .ToList();
+
             var activeTiers = await _printPriceTierRepository.GetListAsync(
-                t => groupIds.Contains(t.PrintPricingGroupId) && t.IsActive);
+                t => activeGroupIds.Contains(t.PrintPricingGroupId) && t.IsActive);
 
             cheapestTierByGroup = activeTiers
                 .GroupBy(t => t.PrintPricingGroupId)
@@ -145,9 +150,9 @@ public class CatalogAppService : ApplicationService, ICatalogAppService
             .ToList();
 
         // Print-only tiers (Jira 9203) resolved from the product's group, ordered for readability.
-        // GetAsync (GET /products/{id}) is public/anonymous, so expose ACTIVE rows only — inactive
+        // GetAsync (GET /products/{id}) is public/anonymous, so expose ACTIVE rows only; inactive
         // admin rows must not leak to the storefront. Admin panels read the dedicated endpoints.
-        dto.PrintPriceTiers = (await LoadGroupPrintTierDtosAsync(product.PrintPricingGroupId))
+        dto.PrintPriceTiers = (await LoadGroupPrintTierDtosAsync(product.PrintPricingGroupId, requireActiveGroup: true))
             .Where(t => t.IsActive)
             .ToList();
 
@@ -175,10 +180,19 @@ public class CatalogAppService : ApplicationService, ICatalogAppService
     }
 
     /// <summary>Loads a group's print price tiers as DTOs, ordered for readable display. Empty when ungrouped.</summary>
-    private async Task<List<ProductPrintPriceTierDto>> LoadGroupPrintTierDtosAsync(Guid? groupId)
+    private async Task<List<ProductPrintPriceTierDto>> LoadGroupPrintTierDtosAsync(
+        Guid? groupId,
+        bool requireActiveGroup = false)
     {
         if (groupId == null)
             return new List<ProductPrintPriceTierDto>();
+
+        if (requireActiveGroup)
+        {
+            var group = await _printPricingGroupRepository.FindAsync(groupId.Value);
+            if (group is not { IsActive: true })
+                return new List<ProductPrintPriceTierDto>();
+        }
 
         var tiers = await _printPriceTierRepository.GetListAsync(t => t.PrintPricingGroupId == groupId.Value);
 
@@ -191,7 +205,7 @@ public class CatalogAppService : ApplicationService, ICatalogAppService
             .ToList();
     }
 
-    // ── Admin: Products ───────────────────────────────────────────────────────
+    // Admin: Products
 
     public async Task<ProductDto> CreateAsync(CreateProductDto input)
     {
@@ -234,7 +248,7 @@ public class CatalogAppService : ApplicationService, ICatalogAppService
     public Task DeleteAsync(Guid id)
         => throw new NotImplementedException("CatalogAppService.DeleteAsync is not yet implemented.");
 
-    // ── Admin: Images ─────────────────────────────────────────────────────────
+    // Admin: Images
 
     private static readonly string[] AllowedImageContentTypes =
         { "image/jpeg", "image/png", "image/webp" };
@@ -345,7 +359,7 @@ public class CatalogAppService : ApplicationService, ICatalogAppService
         }
     }
 
-    // ── Admin: Variants ───────────────────────────────────────────────────────
+    // Admin: Variants
 
     public async Task<ProductVariantDto> CreateVariantAsync(Guid productId, CreateProductVariantDto input)
     {
@@ -363,7 +377,7 @@ public class CatalogAppService : ApplicationService, ICatalogAppService
             throw new UserFriendlyException(
                 $"A variant with size '{input.Size}' and color '{input.Color}' already exists for this product.");
 
-        // Inventory is intentionally not set here — new variants default to
+        // Inventory is intentionally not set here; new variants default to
         // NotRecorded / null stock and are managed via UpdateVariantInventoryAsync.
         var variant = new ProductVariant(GuidGenerator.Create(), productId, input.Sku, input.Color, input.Size)
         {
@@ -382,7 +396,7 @@ public class CatalogAppService : ApplicationService, ICatalogAppService
         if (variant.ProductId != productId)
             throw new EntityNotFoundException(typeof(ProductVariant), variantId);
 
-        // Prevent duplicate size/color — exclude the variant being updated
+        // Prevent duplicate size/color; exclude the variant being updated
         var duplicateExists = await _variantRepository.AnyAsync(
             v => v.ProductId == productId &&
                  v.Size  == input.Size  &&
@@ -393,7 +407,7 @@ public class CatalogAppService : ApplicationService, ICatalogAppService
             throw new UserFriendlyException(
                 $"A variant with size '{input.Size}' and color '{input.Color}' already exists for this product.");
 
-        // Inventory fields are deliberately left untouched — they are owned by
+        // Inventory fields are deliberately left untouched; they are owned by
         // UpdateVariantInventoryAsync so this flow can never clobber recorded inventory.
         variant.Sku             = input.Sku;
         variant.Color           = input.Color;
@@ -443,7 +457,7 @@ public class CatalogAppService : ApplicationService, ICatalogAppService
 
         variant.InventoryStatus = input.InventoryStatus;
 
-        // NotRecorded means "untracked" — quantity must always be cleared to null.
+        // NotRecorded means "untracked"; quantity must always be cleared to null.
         variant.StockQuantity = input.InventoryStatus == VariantInventoryStatus.NotRecorded
             ? null
             : input.StockQuantity;
@@ -485,7 +499,7 @@ public class CatalogAppService : ApplicationService, ICatalogAppService
         var variantsToDelete = await _variantRepository.GetListAsync(
             v => v.ProductId == productId && !submittedIds.Contains(v.Id));
 
-        // Process each item — all within the ABP unit of work (transaction)
+        // Process each item within the ABP unit of work (transaction).
         for (var index = 0; index < input.Variants.Count; index++)
         {
             var item = input.Variants[index];
@@ -513,7 +527,7 @@ public class CatalogAppService : ApplicationService, ICatalogAppService
                             $"A variant with size '{item.Size}' and color '{item.Color}' already exists for this product.");
                 }
 
-                // Inventory left untouched — owned by UpdateVariantInventoryAsync.
+                // Inventory left untouched; owned by UpdateVariantInventoryAsync.
                 variant.Sku             = item.Sku;
                 variant.Color           = item.Color;
                 variant.Size            = item.Size;
@@ -525,7 +539,7 @@ public class CatalogAppService : ApplicationService, ICatalogAppService
             }
             else
             {
-                // Create new variant — check no existing size/color for this product
+                // Create new variant; check no existing size/color for this product.
                 var duplicateExists = await _variantRepository.AnyAsync(
                     v => v.ProductId == productId &&
                          v.Size      == item.Size  &&
@@ -535,7 +549,7 @@ public class CatalogAppService : ApplicationService, ICatalogAppService
                     throw new UserFriendlyException(
                         $"A variant with size '{item.Size}' and color '{item.Color}' already exists for this product.");
 
-                // New variant — inventory defaults to NotRecorded / null stock.
+                // New variant: inventory defaults to NotRecorded / null stock.
                 var variant = new ProductVariant(
                     GuidGenerator.Create(), productId, item.Sku, item.Color, item.Size)
                 {
@@ -559,7 +573,7 @@ public class CatalogAppService : ApplicationService, ICatalogAppService
         return ObjectMapper.Map<List<ProductVariant>, List<ProductVariantDto>>(allVariants);
     }
 
-    // ── Admin: Price Tiers (Jira 9102) ──────────────────────────────────────────
+    // Admin: Price Tiers (Jira 9102)
 
     /// <summary>
     /// Replaces the full set of quantity-break price tiers for a product (dedicated single-writer
@@ -578,7 +592,7 @@ public class CatalogAppService : ApplicationService, ICatalogAppService
 
         var validVariantIds = product.Variants.Select(v => v.Id).ToHashSet();
 
-        // ── Per-row validation ──────────────────────────────────────────────────
+        // Per-row validation
         foreach (var tier in input.Tiers)
         {
             if (tier.MinQuantity < 1)
@@ -595,7 +609,7 @@ public class CatalogAppService : ApplicationService, ICatalogAppService
                     $"Tier references a variant that does not belong to this product (id: {tier.ProductVariantId.Value}).");
         }
 
-        // ── Per-scope validation (product-level set + each variant-override set) ──
+        // Per-scope validation (product-level set + each variant-override set)
         foreach (var scope in input.Tiers.GroupBy(t => t.ProductVariantId))
         {
             var minQuantities = scope.Select(t => t.MinQuantity).ToList();
@@ -604,13 +618,13 @@ public class CatalogAppService : ApplicationService, ICatalogAppService
                 throw new UserFriendlyException(
                     "Duplicate minimum quantities are not allowed within the same pricing scope.");
 
-            // A MinQuantity == 1 row is required so every quantity ≥ 1 resolves to a tier.
+            // A MinQuantity == 1 row is required so every quantity of at least 1 resolves to a tier.
             if (!minQuantities.Contains(1))
                 throw new UserFriendlyException(
                     "Each pricing scope must include a tier starting at minimum quantity 1.");
         }
 
-        // ── Replace the full set for this product (all scopes) ───────────────────
+        // Replace the full set for this product (all scopes)
         // Delete is flushed before the inserts so a re-used (scope, MinQuantity) does not collide
         // with the unique index within the same transaction. The ambient request unit of work
         // still wraps both phases atomically.
@@ -633,7 +647,7 @@ public class CatalogAppService : ApplicationService, ICatalogAppService
         return await GetAsync(productId);
     }
 
-    // ── Admin: Print Pricing Groups (Jira 9203) ──────────────────────────────────
+    // Admin: Print Pricing Groups (Jira 9203)
 
     public async Task<List<PrintPricingGroupDto>> GetPrintPricingGroupsAsync(bool? isActive = null)
     {
@@ -683,7 +697,7 @@ public class CatalogAppService : ApplicationService, ICatalogAppService
         return ObjectMapper.Map<PrintPricingGroup, PrintPricingGroupDto>(group);
     }
 
-    // ── Admin: Print Price Tiers (Jira 9203, group-scoped single-writer) ─────────
+    // Admin: Print Price Tiers (Jira 9203, group-scoped single-writer)
 
     public async Task<List<ProductPrintPriceTierDto>> GetPrintPriceTiersAsync(Guid groupId)
     {
@@ -720,7 +734,7 @@ public class CatalogAppService : ApplicationService, ICatalogAppService
         var printSizes = (await _printSizeRepository.GetListAsync(s => printSizeIds.Contains(s.Id)))
             .ToDictionary(s => s.Id);
 
-        // ── Per-row validation ──────────────────────────────────────────────────
+        // Per-row validation
         foreach (var tier in input.Tiers)
         {
             if (tier.MinQuantity < 1)
@@ -743,7 +757,7 @@ public class CatalogAppService : ApplicationService, ICatalogAppService
                     $"Size override '{tier.Size}' does not match any variant size of the products in this group.");
         }
 
-        // ── Per-scope validation: (Size, PrintSizeId) ─────────────────────────────
+        // Per-scope validation: (Size, PrintSizeId)
         foreach (var scope in input.Tiers.GroupBy(t => new { t.Size, t.PrintSizeId }))
         {
             var minQuantities = scope.Select(t => t.MinQuantity).ToList();
@@ -757,7 +771,7 @@ public class CatalogAppService : ApplicationService, ICatalogAppService
                     "Each size + print size scope must include a tier starting at minimum quantity 1.");
         }
 
-        // ── Replace the full set for this group ───────────────────────────────────
+        // Replace the full set for this group
         // Delete flushed before inserts so a re-used natural key cannot collide with the unique index
         // inside the same transaction (same approach as legacy price tiers).
         var existing = await _printPriceTierRepository.GetListAsync(t => t.PrintPricingGroupId == groupId);
@@ -792,7 +806,7 @@ public class CatalogAppService : ApplicationService, ICatalogAppService
             throw new UserFriendlyException("The selected print pricing group does not exist.");
     }
 
-    // ── Admin: Print Config Options (Jira 9204, product-scoped single-writer) ─────
+    // Admin: Print Config Options (Jira 9204, product-scoped single-writer)
 
     public async Task<List<ProductPrintConfigOptionDto>> GetPrintConfigOptionsAsync(Guid productId)
     {
@@ -806,7 +820,7 @@ public class CatalogAppService : ApplicationService, ICatalogAppService
     /// Replaces the full set of product/size scoped allowed print options (dedicated single-writer
     /// endpoint). Never touches Product/Variant/inventory fields, price tiers, group assignment, or
     /// the legacy ProductPriceTier rows. An empty list clears scoped options (the product reverts to
-    /// the global PrintAreaSizeOption matrix). Selectability only — no effect on price.
+    /// the global PrintAreaSizeOption matrix). Selectability only; no effect on price.
     /// </summary>
     public async Task<List<ProductPrintConfigOptionDto>> SetPrintConfigOptionsAsync(
         Guid productId, SetProductPrintConfigOptionsDto input)
@@ -825,7 +839,7 @@ public class CatalogAppService : ApplicationService, ICatalogAppService
         var areas = (await _printAreaRepository.GetListAsync(a => areaIds.Contains(a.Id))).ToDictionary(a => a.Id);
         var sizes = (await _printSizeRepository.GetListAsync(s => sizeIds.Contains(s.Id))).ToDictionary(s => s.Id);
 
-        // ── Per-row validation ──────────────────────────────────────────────────
+        // Per-row validation
         var globalPairs = new List<(PrintConfig.PrintArea Area, PrintConfig.PrintSize Size)>();
         foreach (var opt in input.Options)
         {
@@ -859,7 +873,7 @@ public class CatalogAppService : ApplicationService, ICatalogAppService
                     "Duplicate (size, print area, print size) options are not allowed.");
         }
 
-        // ── Replace the full set for this product ─────────────────────────────────
+        // Replace the full set for this product
         // Delete flushed before inserts so a re-used natural key cannot collide with the unique index
         // inside the same transaction.
         var existing = await _printConfigOptionRepository.GetListAsync(o => o.ProductId == productId);

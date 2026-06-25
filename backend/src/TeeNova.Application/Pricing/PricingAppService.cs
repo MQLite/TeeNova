@@ -20,6 +20,7 @@ namespace TeeNova.Pricing;
 public class PricingAppService : ApplicationService, IPricingAppService
 {
     private readonly IRepository<Catalog.Product, Guid>               _productRepository;
+    private readonly IRepository<Catalog.PrintPricingGroup, Guid>     _printPricingGroupRepository;
     private readonly IRepository<Catalog.ProductPrintPriceTier, Guid> _printPriceTierRepository;
     private readonly IRepository<PrintArea, Guid>                     _printAreaRepository;
     private readonly IRepository<PrintSize, Guid>                     _printSizeRepository;
@@ -28,6 +29,7 @@ public class PricingAppService : ApplicationService, IPricingAppService
 
     public PricingAppService(
         IRepository<Catalog.Product, Guid>               productRepository,
+        IRepository<Catalog.PrintPricingGroup, Guid>     printPricingGroupRepository,
         IRepository<Catalog.ProductPrintPriceTier, Guid> printPriceTierRepository,
         IRepository<PrintArea, Guid>                     printAreaRepository,
         IRepository<PrintSize, Guid>                     printSizeRepository,
@@ -35,6 +37,7 @@ public class PricingAppService : ApplicationService, IPricingAppService
         Catalog.ProductPrintConfigOptionResolver         printConfigOptionResolver)
     {
         _productRepository         = productRepository;
+        _printPricingGroupRepository = printPricingGroupRepository;
         _printPriceTierRepository  = printPriceTierRepository;
         _printAreaRepository       = printAreaRepository;
         _printSizeRepository       = printSizeRepository;
@@ -44,12 +47,12 @@ public class PricingAppService : ApplicationService, IPricingAppService
 
     public async Task<PriceCalculationResponseDto> CalculateAsync(PriceCalculationRequestDto input)
     {
-        // ── 1. Validate quantity ────────────────────────────────────────────────
+        // 1. Validate quantity
         if (input.Quantity <= 0)
             throw new BusinessException("TeeNova:Pricing:InvalidQuantity")
                 .WithData("Quantity", input.Quantity);
 
-        // ── 2. Load and validate Product ────────────────────────────────────────
+        // 2. Load and validate Product
         var productQuery = await _productRepository.GetQueryableAsync();
         var product = await productQuery
             .Include(p => p.Variants)
@@ -61,7 +64,7 @@ public class PricingAppService : ApplicationService, IPricingAppService
                 .WithData("ProductId", input.ProductId)
                 .WithData("ProductName", product.Name);
 
-        // ── 3. Validate Variant ─────────────────────────────────────────────────
+        // 3. Validate Variant
         var variant = product.Variants.FirstOrDefault(v => v.Id == input.VariantId)
             ?? throw new BusinessException("TeeNova:Pricing:VariantNotFound")
                 .WithData("VariantId", input.VariantId)
@@ -72,7 +75,7 @@ public class PricingAppService : ApplicationService, IPricingAppService
                 .WithData("VariantId", input.VariantId)
                 .WithData("VariantLabel", $"{variant.Color} / {variant.Size}");
 
-        // ── 4. Load and validate PrintArea / PrintSize entries ──────────────────
+        // 4. Load and validate PrintArea / PrintSize entries
         // First the global active-state + global matrix checks, then the product/size scoped
         // allowed-options narrowing (Jira 9204). Scoped check is a no-op for unconfigured products.
         var prints = await LoadAndValidatePrintsAsync(input.Prints);
@@ -82,7 +85,7 @@ public class PricingAppService : ApplicationService, IPricingAppService
             variant.Size,
             prints.Select(p => (p.AreaId, p.SizeId)).ToList());
 
-        // ── 5. Resolve print-only tiers (Jira 9203) ─────────────────────────────
+        // 5. Resolve print-only tiers (Jira 9203)
         // Tier breaks are evaluated against the PrintPricingGroup's TOTAL quantity. The single-line
         // quote cannot know other products' quantities in the same group, so it uses the caller's
         // TierQuantity (the product-level page total) as the group quantity; full cross-product group
@@ -97,7 +100,7 @@ public class PricingAppService : ApplicationService, IPricingAppService
                     groupTiers, variant.Size, entry.SizeId, groupQuantity, entry.SizePrice)))
             .ToList();
 
-        // ── 6. Calculate breakdown (garment fixed + Σ resolved print prices) ─────
+        // 6. Calculate breakdown (garment fixed + sum of resolved print prices)
         var result = PriceCalculator.Calculate(
             product.BasePrice,
             variant.PriceAdjustment,
@@ -119,17 +122,22 @@ public class PricingAppService : ApplicationService, IPricingAppService
 
     /// <summary>
     /// Loads the print price tiers for a product's effective <see cref="Catalog.PrintPricingGroup"/>.
-    /// Returns null when the product is ungrouped (no tiers → PrintSize.BasePrice fallback).
+    /// Returns null when the product is ungrouped or the group is inactive/missing
+    /// (no tiers -> PrintSize.BasePrice fallback).
     /// </summary>
     private async Task<List<Catalog.ProductPrintPriceTier>?> LoadGroupTiersAsync(Guid? groupId)
     {
         if (groupId == null)
             return null;
 
+        var group = await _printPricingGroupRepository.FindAsync(groupId.Value);
+        if (group is not { IsActive: true })
+            return null;
+
         return await _printPriceTierRepository.GetListAsync(t => t.PrintPricingGroupId == groupId.Value);
     }
 
-    // ── Private helpers ───────────────────────────────────────────────────────
+    // Private helpers
 
     private async Task<IReadOnlyList<PrintPricingEntry>> LoadAndValidatePrintsAsync(
         IEnumerable<PrintCalculationItemDto> printDtos)

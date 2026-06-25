@@ -24,6 +24,7 @@ public class OrderAppService : ApplicationService, IOrderAppService
 {
     private readonly IRepository<Order, Guid>                       _orderRepository;
     private readonly IRepository<Catalog.Product, Guid>             _productRepository;
+    private readonly IRepository<Catalog.PrintPricingGroup, Guid>   _printPricingGroupRepository;
     private readonly IRepository<Catalog.ProductPrintPriceTier, Guid> _printPriceTierRepository;
     private readonly IRepository<OrderTimelineEntry, Guid>   _timelineRepository;
     private readonly IRepository<PaymentTransaction, Guid>   _paymentTransactionRepository;
@@ -43,6 +44,7 @@ public class OrderAppService : ApplicationService, IOrderAppService
     public OrderAppService(
         IRepository<Order, Guid>                 orderRepository,
         IRepository<Catalog.Product, Guid>       productRepository,
+        IRepository<Catalog.PrintPricingGroup, Guid> printPricingGroupRepository,
         IRepository<Catalog.ProductPrintPriceTier, Guid> printPriceTierRepository,
         IRepository<OrderTimelineEntry, Guid>    timelineRepository,
         IRepository<PaymentTransaction, Guid>    paymentTransactionRepository,
@@ -61,6 +63,7 @@ public class OrderAppService : ApplicationService, IOrderAppService
     {
         _orderRepository                = orderRepository;
         _productRepository              = productRepository;
+        _printPricingGroupRepository    = printPricingGroupRepository;
         _printPriceTierRepository       = printPriceTierRepository;
         _timelineRepository             = timelineRepository;
         _paymentTransactionRepository   = paymentTransactionRepository;
@@ -98,7 +101,7 @@ public class OrderAppService : ApplicationService, IOrderAppService
         };
 
         // Snapshot the auto-deduction setting now (DB-backed, Jira 9005). Only orders created
-        // while the setting is ON are ever eligible for deduction — enabling it later never
+        // while the setting is ON are ever eligible for deduction; enabling it later never
         // affects old orders. This does NOT deduct stock and never blocks checkout.
         var inventoryDeductionEligible = (await _inventorySettings.GetAsync()).AutoDeductOnPressedEnabled;
 
@@ -133,9 +136,15 @@ public class OrderAppService : ApplicationService, IOrderAppService
             .Distinct()
             .ToList();
 
-        var tiersByGroup = groupIds.Count == 0
+        var activeGroupIds = groupIds.Count == 0
+            ? new List<Guid>()
+            : (await _printPricingGroupRepository.GetListAsync(g => groupIds.Contains(g.Id) && g.IsActive))
+                .Select(g => g.Id)
+                .ToList();
+
+        var tiersByGroup = activeGroupIds.Count == 0
             ? new Dictionary<Guid, List<Catalog.ProductPrintPriceTier>>()
-            : (await _printPriceTierRepository.GetListAsync(t => groupIds.Contains(t.PrintPricingGroupId)))
+            : (await _printPriceTierRepository.GetListAsync(t => activeGroupIds.Contains(t.PrintPricingGroupId)))
                 .GroupBy(t => t.PrintPricingGroupId)
                 .ToDictionary(g => g.Key, g => g.ToList());
 
@@ -149,7 +158,7 @@ public class OrderAppService : ApplicationService, IOrderAppService
             // Load prints first so their prices feed into the final unit price before
             // OrderItem is constructed (unit price is immutable after construction).
             // LoadOrderItemPrintsAsync enforces global active-state + matrix; then narrow by the
-            // product/size scoped allowed options (Jira 9204) — a no-op for unconfigured products.
+            // product/size scoped allowed options (Jira 9204); a no-op for unconfigured products.
             var loadedPrints = itemDto.Prints?.Count > 0
                 ? await LoadOrderItemPrintsAsync(itemDto.Prints)
                 : [];
@@ -161,7 +170,7 @@ public class OrderAppService : ApplicationService, IOrderAppService
 
             // Resolve each selected print against the effective group's tiers + group quantity,
             // then price through the shared PriceCalculator so the saved order price matches the
-            // storefront quote exactly (print-only formula: garment fixed + Σ resolved print prices).
+            // storefront quote exactly (print-only formula: garment fixed + sum of resolved print prices).
             var groupQuantity = groupQuantities[PrintPricingGroupKey(product)];
             var groupTiers = product.PrintPricingGroupId.HasValue
                 && tiersByGroup.TryGetValue(product.PrintPricingGroupId.Value, out var gt)
@@ -273,7 +282,7 @@ public class OrderAppService : ApplicationService, IOrderAppService
         // below-paid-amount, non-positive total) fail before any side effects are queued.
         order.AdjustPrice(input.NewTotalAmount, Clock.Now);
 
-        // Cancel any Pending online payment sessions — their frozen amounts are now stale.
+        // Cancel any Pending online payment sessions; their frozen amounts are now stale.
         var sessionQuery = await _onlinePaymentSessionRepository.GetQueryableAsync();
         var pendingSessions = await sessionQuery
             .Where(s => s.OrderId == id && s.Status == OnlinePaymentSessionStatus.Pending)
@@ -306,17 +315,17 @@ public class OrderAppService : ApplicationService, IOrderAppService
         // The timeline Description column is nvarchar(512), so embed only a short excerpt.
         var reasonExcerpt = input.Reason.Trim();
         if (reasonExcerpt.Length > 120)
-            reasonExcerpt = reasonExcerpt[..120] + "…";
+            reasonExcerpt = reasonExcerpt[..120] + "...";
 
         var sessionNote = pendingSessions.Count > 0
             ? $" {pendingSessions.Count} pending payment session(s) cancelled."
             : string.Empty;
 
         var timelineDesc = $"Order total {direction} by {diff:F2} NZD " +
-                           $"({oldTotalAmount:F2} → {input.NewTotalAmount:F2} NZD). " +
+                           $"({oldTotalAmount:F2} -> {input.NewTotalAmount:F2} NZD). " +
                            $"Reason: {reasonExcerpt}{sessionNote}";
 
-        // Defensive cap — Description column is nvarchar(512).
+        // Defensive cap: Description column is nvarchar(512).
         if (timelineDesc.Length > 512)
             timelineDesc = timelineDesc[..509] + "...";
 
@@ -514,7 +523,7 @@ public class OrderAppService : ApplicationService, IOrderAppService
             ?? throw new Volo.Abp.Domain.Entities.EntityNotFoundException(typeof(Order), id);
 
         // MarkReady throws unless the order is currently Printing, so this only ever runs on the
-        // genuine Printing → Ready transition — the first persisted production-complete signal.
+        // genuine Printing -> Ready transition: the first persisted production-complete signal.
         // (No persisted "Pressed" step exists; see implementation report.) This makes the trigger
         // one-way and, with per-item InventoryDeductedAt markers, idempotent.
         order.MarkReady();
@@ -711,7 +720,7 @@ public class OrderAppService : ApplicationService, IOrderAppService
         return ObjectMapper.Map<OnlinePaymentSession, OnlinePaymentSessionDto>(session);
     }
 
-    // ── Private helpers ───────────────────────────────────────────────────────
+    // Private helpers
 
     private static (PaymentPurpose purpose, decimal amount) CalculatePaymentPurposeAndAmount(
         Order order, PaymentPurpose? requestedPurpose)
@@ -742,7 +751,7 @@ public class OrderAppService : ApplicationService, IOrderAppService
 
             if (order.PaidAmount < depositRequired)
             {
-                // Deposit not yet fully met — collect outstanding deposit amount.
+                // Deposit not yet fully met: collect outstanding deposit amount.
                 if (requestedPurpose.HasValue && requestedPurpose.Value != PaymentPurpose.Deposit)
                     throw new Volo.Abp.BusinessException("TeeNova:Payment:OnlinePaymentInvalidPurpose")
                         .WithData("Reason", "Deposit not yet met; purpose must be Deposit")
@@ -754,7 +763,7 @@ public class OrderAppService : ApplicationService, IOrderAppService
             }
             else
             {
-                // Deposit met — only balance payment is valid.
+                // Deposit met: only balance payment is valid.
                 if (requestedPurpose.HasValue && requestedPurpose.Value == PaymentPurpose.Deposit)
                     throw new Volo.Abp.BusinessException("TeeNova:Payment:OnlinePaymentInvalidPurpose")
                         .WithData("Reason", "Deposit is already met; use Balance purpose")
@@ -770,7 +779,7 @@ public class OrderAppService : ApplicationService, IOrderAppService
             .WithData("Reason", "Delivery method is not set or not recognised");
     }
 
-    // ── Original private helpers ──────────────────────────────────────────────
+    // Original private helpers
 
     private static string GetDisplayStatus(OrderStatus status) => status switch
     {
@@ -887,7 +896,7 @@ public class OrderAppService : ApplicationService, IOrderAppService
     /// <summary>
     /// Writes OrderItemPrint records onto the item from already-loaded entities, snapshotting the
     /// resolved print-tier price (Jira 9203) actually charged for each print.
-    /// Synchronous — no DB access, entities were loaded by LoadOrderItemPrintsAsync.
+    /// Synchronous: no DB access, entities were loaded by LoadOrderItemPrintsAsync.
     /// </summary>
     private void AddPrintsToItem(
         OrderItem item,

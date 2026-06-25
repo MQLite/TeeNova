@@ -15,7 +15,7 @@ namespace TeeNova.Pricing;
 ///   1. Keep only active rows for that PrintSize.
 ///   2. Size override wins: if any rows have Size == garmentSize, use that subset; else the
 ///      group-default subset (Size == null).
-///   3. Within the chosen subset pick the highest MinQuantity ≤ group quantity (defensive fallback
+///   3. Within the chosen subset pick the highest MinQuantity less than or equal to group quantity (defensive fallback
 ///      to the lowest break if data lacks a MinQuantity == 1 row, keeping resolution total).
 ///   4. If no usable tier exists for that PrintSize, fall back to <c>PrintSize.BasePrice</c>.
 ///

@@ -98,7 +98,7 @@ export default function CartPage() {
                             {getPrintSummary(item).map((print) => (
                               <span key={`${print.printAreaId}:${print.printSizeId}`}
                                 className="inline-flex flex-col rounded-lg border border-black/[0.08] px-2 py-1 text-[10px] text-black/55">
-                                {print.printAreaName} · {print.printSizeName}
+                                {print.printAreaName} - {print.printSizeName}
                                 {print.uploadedAssetUrl && <span className="text-green-600">Design uploaded</span>}
                                 {print.designNote && <span className="normal-case tracking-normal text-black/45">{print.designNote}</span>}
                               </span>
@@ -122,7 +122,7 @@ export default function CartPage() {
                         <button
                           className="px-3 py-1.5 text-base text-black/50 transition-colors hover:text-black"
                           onClick={() => updateQuantity(item.cartItemKey, item.quantity - 1)}
-                        >−</button>
+                        >-</button>
                         <span className="min-w-[2rem] text-center text-sm text-black" style={{ fontWeight: 480 }}>
                           {item.quantity}
                         </span>
@@ -149,7 +149,7 @@ export default function CartPage() {
                             className="flex items-center justify-between"
                             style={{ letterSpacing: '-0.14px' }}
                           >
-                            <span>{print.printAreaName} · {print.printSizeName} <span className="text-black/40">print</span></span>
+                            <span>{print.printAreaName} - {print.printSizeName} <span className="text-black/40">print</span></span>
                             <span className="text-black/75">${print.resolvedUnitPrintPrice.toFixed(2)}</span>
                           </div>
                         ))}
@@ -212,7 +212,7 @@ export default function CartPage() {
               <Link href="/products"
                 className="flex items-center gap-1 text-sm text-black/50 hover:text-black transition-colors"
                 style={{ letterSpacing: '-0.14px' }}>
-                ← Back to products
+                Back to products
               </Link>
             </div>
           </div>
@@ -256,7 +256,7 @@ export default function CartPage() {
                 </Link>
                 <div className="mt-4 flex items-center justify-center gap-2 font-mono text-[11px] uppercase tracking-[0.54px] text-black/45">
                   <span>Secure checkout</span>
-                  <span>·</span>
+                  <span>-</span>
                   <span>NZ wide shipping</span>
                 </div>
               </div>

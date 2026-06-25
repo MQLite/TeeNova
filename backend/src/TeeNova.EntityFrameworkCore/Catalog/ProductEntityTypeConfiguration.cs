@@ -39,7 +39,7 @@ public class ProductEntityTypeConfiguration :
             .OnDelete(DeleteBehavior.Cascade);
 
         // Price tiers cascade with the product. The variant-override scope is a plain
-        // nullable column (no FK) on purpose — this keeps variant deletion safe (nothing to
+        // nullable column (no FK) on purpose; this keeps variant deletion safe (nothing to
         // violate) and avoids SQL Server multiple-cascade-path errors. Orphaned override rows
         // (variant later deleted) are harmless: they never match a live variant during resolution.
         builder.HasMany(p => p.PriceTiers)
@@ -47,7 +47,7 @@ public class ProductEntityTypeConfiguration :
             .HasForeignKey(t => t.ProductId)
             .OnDelete(DeleteBehavior.Cascade);
 
-        // Print-pricing group (Jira 9203). Plain nullable column with an index, no FK navigation —
+        // Print-pricing group (Jira 9203). Plain nullable column with an index, no FK navigation;
         // the pricing resolver validates the group/tiers at runtime, and avoiding the FK keeps
         // product/group deletion free of cascade-path concerns (same discipline as the price-tier
         // variant-override scope above).
@@ -68,14 +68,14 @@ public class ProductEntityTypeConfiguration :
         builder.Property(v => v.Size).IsRequired().HasMaxLength(CatalogConsts.MaxSizeLength);
         builder.Property(v => v.PriceAdjustment).HasColumnType("decimal(18,4)");
 
-        // Inventory (Jira 9002) — informational only.
+        // Inventory (Jira 9002): informational only.
         // Stored as int (default 0 = NotRecorded) so existing rows backfill cleanly.
         builder.Property(v => v.InventoryStatus)
             .HasConversion<int>()
             .IsRequired()
             .HasDefaultValue(VariantInventoryStatus.NotRecorded);
 
-        // StockQuantity is nullable (int?) — null means "not tracked".
+        // StockQuantity is nullable (int?): null means "not tracked".
         builder.Property(v => v.InventoryNote)
             .HasMaxLength(CatalogConsts.MaxInventoryNoteLength);
 
@@ -107,7 +107,7 @@ public class ProductEntityTypeConfiguration :
         builder.HasIndex(t => t.ProductId);
 
         // Enforces "no duplicate MinQuantity within the same scope" at the DB level for every
-        // scope — including product-level (ProductVariantId null). HasFilter(null) overrides EF's
+        // scope, including product-level (ProductVariantId null). HasFilter(null) overrides EF's
         // default "IS NOT NULL" filter so null-variant rows are covered too; differing MinQuantity
         // keeps distinct breaks valid, while identical (ProductId, scope, MinQuantity) is rejected.
         builder.HasIndex(t => new { t.ProductId, t.ProductVariantId, t.MinQuantity })

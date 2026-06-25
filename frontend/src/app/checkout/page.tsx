@@ -115,7 +115,7 @@ export default function CheckoutPage() {
         deliveryMethod,
       })
 
-      // Order created — prevent re-submission and cart-empty redirect before clearing.
+      // Order created: prevent re-submission and cart-empty redirect before clearing.
       setSubmitted(true)
       clearCart()
 
@@ -130,12 +130,12 @@ export default function CheckoutPage() {
         const session = await ordersApi.createOnlinePaymentSession(order.id, { provider: onlineProvider })
         setSubmitPhase('redirecting')
         window.location.href = session.providerCheckoutUrl
-        // Navigation initiated — do not reset submitPhase.
+        // Navigation initiated: do not reset submitPhase.
       } catch (sessionErr) {
         setSessionError(
           sessionErr instanceof Error
             ? sessionErr.message
-            : 'The online payment session could not be created. Your order has been placed — you can arrange payment manually with the shop.',
+            : 'The online payment session could not be created. Your order has been placed; you can arrange payment manually with the shop.',
         )
         setCreatedOrderId(order.id)
         setSubmitPhase('idle')
@@ -147,10 +147,10 @@ export default function CheckoutPage() {
   }
 
   function getSubmitLabel(): string {
-    if (submitPhase === 'creating-order')   return 'Creating order…'
-    if (submitPhase === 'creating-session') return 'Creating payment session…'
-    if (submitPhase === 'redirecting')      return 'Redirecting to payment…'
-    return paymentMethod === 'online' ? 'Place Order & Continue to Payment →' : 'Place Order →'
+    if (submitPhase === 'creating-order')   return 'Creating order...'
+    if (submitPhase === 'creating-session') return 'Creating payment session...'
+    if (submitPhase === 'redirecting')      return 'Redirecting to payment...'
+    return paymentMethod === 'online' ? 'Place Order & Continue to Payment' : 'Place Order'
   }
 
   if (items.length === 0 && !submitted) {
@@ -166,9 +166,9 @@ export default function CheckoutPage() {
         <div className="mx-auto max-w-6xl px-4 py-5 sm:px-6 lg:px-8">
           <nav className="mb-1 flex items-center gap-2 font-mono text-[11px] uppercase tracking-[0.54px] text-black/50">
             <Link href="/" className="hover:text-black transition-colors">Home</Link>
-            <span>›</span>
+            <span>/</span>
             <Link href="/cart" className="hover:text-black transition-colors">Cart</Link>
-            <span>›</span>
+            <span>/</span>
             <span className="text-black">Checkout</span>
           </nav>
           <h1 className="text-2xl text-black" style={{ fontWeight: 400, letterSpacing: '-0.96px' }}>Checkout</h1>
@@ -179,7 +179,7 @@ export default function CheckoutPage() {
         <form onSubmit={handleSubmit}>
           <div className="grid grid-cols-1 gap-8 lg:grid-cols-3">
 
-            {/* ── Left: Form ── */}
+            {/* Left: Form */}
             <div className="space-y-6 lg:col-span-2">
 
               {/* Step 1: Contact */}
@@ -255,7 +255,7 @@ export default function CheckoutPage() {
                 <div className="grid grid-cols-1 gap-4 p-6 sm:grid-cols-2">
                   <Field label="Full Name" name="fullName" value={form.fullName} onChange={handleChange} required placeholder="Jane Smith" className="sm:col-span-2" />
                   <Field label="Address Line 1" name="addressLine1" value={form.addressLine1} onChange={handleChange} required placeholder="123 Main Street" className="sm:col-span-2" />
-                  <Field label="Address Line 2 (optional)" name="addressLine2" value={form.addressLine2 ?? ''} onChange={handleChange} placeholder="Apt, suite, unit…" className="sm:col-span-2" />
+                  <Field label="Address Line 2 (optional)" name="addressLine2" value={form.addressLine2 ?? ''} onChange={handleChange} placeholder="Apt, suite, unit..." className="sm:col-span-2" />
                   <Field label="City" name="city" value={form.city} onChange={handleChange} required placeholder="Auckland" />
                   <Field label="Region / State (optional)" name="state" value={form.state} onChange={handleChange} placeholder="Auckland" />
                   <Field label="Postcode" name="postalCode" value={form.postalCode} onChange={handleChange} required placeholder="1010" />
@@ -331,7 +331,7 @@ export default function CheckoutPage() {
                     })}
                   </div>
 
-                  {/* Provider selector — shown only when Online is selected */}
+                  {/* Provider selector: shown only when Online is selected */}
                   {paymentMethod === 'online' && (
                     <div className="rounded-xl border border-black/[0.08] bg-black/[0.01] p-4">
                       <p className="mb-3 font-mono text-[11px] uppercase tracking-[0.54px] text-black/50">
@@ -395,14 +395,14 @@ export default function CheckoutPage() {
                       href={`/checkout/success?orderId=${createdOrderId}`}
                       className="inline-block underline"
                     >
-                      View your order and payment instructions →
+                      View your order and payment instructions
                     </Link>
                   )}
                 </div>
               )}
             </div>
 
-            {/* ── Right: Order Summary ── */}
+            {/* Right: Order Summary */}
             <div className="lg:col-span-1">
               <div className="sticky top-24 card overflow-hidden">
                 <div className="border-b border-black/[0.08] bg-black/[0.02] px-6 py-4">
@@ -431,14 +431,14 @@ export default function CheckoutPage() {
                           {item.productName}
                         </p>
                         <p className="text-xs text-black/55" style={{ letterSpacing: '-0.14px' }}>
-                          {item.variantLabel} · ×{item.quantity}
+                          {item.variantLabel} - x{item.quantity}
                         </p>
                         {getPrintSummary(item).length > 0 && (
                           <div className="mt-1 flex flex-wrap gap-1">
                             {getPrintSummary(item).map((print) => (
                               <span key={`${print.printAreaId}:${print.printSizeId}`}
                                 className="inline-flex flex-col rounded-lg border border-black/[0.08] px-2 py-1 text-[10px] text-black/50">
-                                {print.printAreaName} · {print.printSizeName}
+                                {print.printAreaName} - {print.printSizeName}
                                 {print.uploadedAssetUrl && <span className="text-green-600">Design uploaded</span>}
                                 {print.designNote && <span className="normal-case tracking-normal text-black/45">{print.designNote}</span>}
                               </span>
@@ -473,7 +473,7 @@ export default function CheckoutPage() {
                   </div>
                   {pricingLoading && (
                     <p className="font-mono text-[11px] uppercase tracking-[0.54px] text-black/40">
-                      Updating prices…
+                      Updating prices...
                     </p>
                   )}
                   {pricingError && (

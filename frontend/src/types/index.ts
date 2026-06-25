@@ -1,4 +1,4 @@
-// ─── Catalog ─────────────────────────────────────────────────────────────────
+// Catalog
 
 export interface ProductListItem {
   id: string
@@ -27,7 +27,7 @@ export interface ProductVariant {
   /** Null = not tracked. Always null when inventoryStatus is 'NotRecorded'. */
   stockQuantity: number | null
   isAvailable: boolean
-  // ── Inventory (informational only — never gates checkout/availability) ──
+  // Inventory (informational only; never gates checkout/availability)
   inventoryStatus: InventoryStatus
   lowStockThreshold: number | null
   inventoryNote: string | null
@@ -93,7 +93,7 @@ export interface SetProductPriceTiersPayload {
   tiers: CreateUpdateProductPriceTier[]
 }
 
-// ─── Print pricing groups + print-only tiers (Jira 9203) ────────────────────────
+// Print pricing groups + print-only tiers (Jira 9203)
 
 /**
  * Print-pricing aggregation group. Products in the same group combine quantities when resolving
@@ -117,7 +117,7 @@ export interface CreateUpdatePrintPricingGroup {
 
 /**
  * Print-only quantity-break tier (Jira 9203). UnitPrintPrice is the resolved price for printing one
- * PrintSize on one garment at/above MinQuantity — NOT an all-in unit price. Belongs to a group.
+ * PrintSize on one garment at/above MinQuantity; NOT an all-in unit price. Belongs to a group.
  * size null = group default; non-null = garment-size override matching ProductVariant.Size.
  */
 export interface ProductPrintPriceTier {
@@ -146,11 +146,11 @@ export interface SetProductPrintPriceTiersPayload {
   tiers: CreateUpdateProductPrintPriceTier[]
 }
 
-// ─── Product/size scoped allowed print options (Jira 9204) ──────────────────────
+// Product/size scoped allowed print options (Jira 9204)
 
 /**
- * A product/size scoped allowed print option (Jira 9204): which (PrintArea, PrintSize) a product —
- * optionally a specific garment size — permits a customer to select. Governs selectability only,
+ * A product/size scoped allowed print option (Jira 9204): which (PrintArea, PrintSize) a product,
+ * optionally a specific garment size, permits a customer to select. Governs selectability only,
  * never price. size null = product default; non-null = garment-size override.
  */
 export interface ProductPrintConfigOption {
@@ -197,7 +197,7 @@ export interface Product {
   printConfigOptions: ProductPrintConfigOption[]
 }
 
-// ─── Customization ────────────────────────────────────────────────────────────
+// Customization
 
 export interface PrintArea {
   id: string
@@ -270,7 +270,7 @@ export type PricingMode = 'Additive' | 'Tiered'
 export interface PrintAddOnPrice {
   printAreaId: string
   printAreaName: string
-  /** PrintArea base price — informational only; NOT charged under the print-only model (Jira 9203). */
+  /** PrintArea base price: informational only; NOT charged under the print-only model (Jira 9203). */
   printAreaPrice: number
   printSizeId: string
   printSizeName: string
@@ -300,7 +300,7 @@ export interface PriceCalculationResponse {
   quantity: number
   lineTotal: number
   currency: string
-  /** "Additive" (no print tier applied) or "Tiered" (≥1 print tier applied). */
+  /** "Additive" (no print tier applied) or "Tiered" (at least 1 print tier applied). */
   pricingMode: PricingMode
   /** Backward-compat: applied print-tier break of the first tiered print, or null. */
   appliedTierMinQuantity: number | null
@@ -313,7 +313,7 @@ export interface PriceCalculationResponse {
   includedStandardPrintAmount: number
 }
 
-// ─── Files ────────────────────────────────────────────────────────────────────
+// Files
 
 export interface UploadedAsset {
   assetId: string
@@ -322,7 +322,7 @@ export interface UploadedAsset {
   fileSizeBytes: number
 }
 
-// ─── Orders ───────────────────────────────────────────────────────────────────
+// Orders
 
 export type OrderStatus =
   | 'Pending'
@@ -482,7 +482,7 @@ export interface Order {
   lastPriceAdjustmentAmount?: number | null
 }
 
-// ─── Cart (client-side) ───────────────────────────────────────────────────────
+// Cart (client-side)
 
 export interface CartItemPrint {
   printAreaId: string
@@ -513,7 +513,7 @@ export interface CartItem {
   prints?: CartItemPrint[]
 }
 
-// ─── Dashboard ────────────────────────────────────────────────────────────────
+// Dashboard
 
 export interface DashboardRecentOrder {
   id: string
@@ -545,7 +545,7 @@ export interface DashboardStats {
   dailyOrderCounts: DashboardDailyCount[]
 }
 
-// ─── Admin Assets ─────────────────────────────────────────────────────────────
+// Admin Assets
 
 export interface AdminAsset {
   id: string
@@ -563,7 +563,7 @@ export interface AdminAsset {
   designNote: string | null
 }
 
-// ─── Online Payments ──────────────────────────────────────────────────────────
+// Online Payments
 
 export type PaymentProvider = 'Stripe' | 'Windcave' | 'Poli' | 'PayPal'
 
@@ -595,7 +595,7 @@ export interface OnlinePaymentSession {
   creationTime: string
 }
 
-// ─── Email Settings ───────────────────────────────────────────────────────────
+// Email Settings
 
 export interface EmailSettings {
   adminNotificationEmail: string | null
@@ -608,14 +608,14 @@ export interface EmailSettings {
   adminOrderBaseUrl: string | null
 }
 
-// ─── Inventory Settings ───────────────────────────────────────────────────────
+// Inventory Settings
 
 export interface InventorySettings {
   autoDeductOnPressedEnabled: boolean
   lastModificationTime: string | null
 }
 
-// ─── Admin Users ──────────────────────────────────────────────────────────────
+// Admin Users
 
 export interface AdminUser {
   id: string
@@ -641,7 +641,7 @@ export interface UpdateAdminUserInput {
   newPassword: string | null
 }
 
-// ─── API Pagination ───────────────────────────────────────────────────────────
+// API Pagination
 
 export interface PagedResult<T> {
   items: T[]
