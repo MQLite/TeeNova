@@ -62,11 +62,11 @@ public class OrderProductionPdfService : IOrderProductionPdfService, ITransientD
             container.Page(page =>
             {
                 page.Size(PageSizes.A4);
-                page.Margin(1.5f, Unit.Centimetre);
+                page.Margin(1.2f, Unit.Centimetre);
                 page.DefaultTextStyle(x => x.FontSize(10).FontColor("#1a1a1a"));
 
                 page.Header().Element(c => ComposeHeader(c, order, generatedAt));
-                page.Content().PaddingVertical(8).Element(c => ComposeContent(c, order));
+                page.Content().PaddingVertical(6).Element(c => ComposeContent(c, order));
                 page.Footer().Element(ComposeFooter);
             });
         });
@@ -108,7 +108,7 @@ public class OrderProductionPdfService : IOrderProductionPdfService, ITransientD
     {
         container.Column(col =>
         {
-            col.Spacing(16);
+            col.Spacing(10);
 
             col.Item().Element(c => ComposeCustomerAndDelivery(c, order));
             col.Item().Element(c => ComposeOrderSummary(c, order));
@@ -208,34 +208,47 @@ public class OrderProductionPdfService : IOrderProductionPdfService, ITransientD
                     }
                 });
 
-                // Per-item print details, listed below the table so each can wrap freely.
+                // Per-item print details, listed below the table so each can wrap freely. Prints that
+                // share the same uploaded design are combined onto one line — the design name shows once
+                // with every placement (area · size) it applies to, keeping the sheet compact.
                 foreach (var item in order.Items.Where(i => i.Prints.Count > 0))
                 {
-                    col.Item().PaddingTop(8).Column(block =>
+                    col.Item().PaddingTop(6).Column(block =>
                     {
                         block.Item().Text(t =>
                         {
-                            t.Span("Print details · ").SemiBold().FontSize(9);
+                            t.Span("Prints · ").SemiBold().FontSize(9);
                             t.Span($"{item.ProductName} ({item.VariantLabel})").FontSize(9).FontColor(Colors.Grey.Darken1);
                         });
 
-                        foreach (var print in item.Prints.OrderBy(p => p.SortOrder))
+                        var groups = item.Prints
+                            .OrderBy(p => p.SortOrder)
+                            .GroupBy(p => p.UploadedAssetUrl ?? string.Empty);
+
+                        foreach (var group in groups)
                         {
+                            var placements = string.Join(", ",
+                                group.Select(p => $"{p.PrintAreaName} · {p.PrintSizeName}"));
+                            var designLabel = DesignFileLabel(group.Key.Length == 0 ? null : group.Key);
+
                             block.Item().PaddingTop(3).PaddingLeft(8).BorderLeft(2).BorderColor(Colors.Grey.Lighten1)
                                 .PaddingLeft(6).Column(pc =>
                                 {
                                     pc.Item().Text(t =>
                                     {
-                                        t.Span($"{print.PrintAreaName} ({print.PrintAreaCode})").SemiBold().FontSize(9);
-                                        t.Span("  ·  ").FontSize(9).FontColor(Colors.Grey.Medium);
-                                        t.Span($"{print.PrintSizeName} ({print.PrintSizeCode})").FontSize(9);
+                                        t.Span(designLabel).SemiBold().FontSize(9);
+                                        t.Span("  →  ").FontSize(9).FontColor(Colors.Grey.Medium);
+                                        t.Span(placements).FontSize(9);
                                     });
-                                    pc.Item().Text($"Design: {DesignFileLabel(print.UploadedAssetUrl)}")
-                                        .FontSize(9).FontColor(Colors.Grey.Darken1);
-                                    if (!string.IsNullOrWhiteSpace(print.DesignNote))
-                                        pc.Item().Text($"Design note: {print.DesignNote}").FontSize(9);
-                                    if (!string.IsNullOrWhiteSpace(print.Notes))
-                                        pc.Item().Text($"Print note: {print.Notes}").FontSize(9);
+                                    foreach (var print in group)
+                                    {
+                                        if (!string.IsNullOrWhiteSpace(print.DesignNote))
+                                            pc.Item().Text($"{print.PrintAreaName} design note: {print.DesignNote}")
+                                                .FontSize(8).FontColor(Colors.Grey.Darken1);
+                                        if (!string.IsNullOrWhiteSpace(print.Notes))
+                                            pc.Item().Text($"{print.PrintAreaName} print note: {print.Notes}")
+                                                .FontSize(8).FontColor(Colors.Grey.Darken1);
+                                    }
                                 });
                         }
                     });
@@ -283,16 +296,25 @@ public class OrderProductionPdfService : IOrderProductionPdfService, ITransientD
         Section(container, "Production Checklist", inner =>
         {
             inner.Border(1).BorderColor(Colors.Grey.Lighten1).Background(Colors.Grey.Lighten5)
-                .Padding(12).Column(col =>
+                .Padding(8).Column(col =>
             {
-                col.Spacing(8);
-                foreach (var step in steps)
+                col.Spacing(6);
+                // Lay the steps three-across to keep the checklist to two rows.
+                foreach (var rowSteps in steps.Chunk(3))
                 {
                     col.Item().Row(row =>
                     {
-                        row.ConstantItem(18).AlignMiddle().Height(13).Width(13)
-                            .Border(1).BorderColor(Colors.Grey.Darken2);
-                        row.RelativeItem().PaddingLeft(8).AlignMiddle().Text(step).FontSize(10);
+                        foreach (var step in rowSteps)
+                        {
+                            row.RelativeItem().Row(cell =>
+                            {
+                                cell.ConstantItem(16).AlignMiddle().Height(11).Width(11)
+                                    .Border(1).BorderColor(Colors.Grey.Darken2);
+                                cell.RelativeItem().PaddingLeft(6).AlignMiddle().Text(step).FontSize(9);
+                            });
+                        }
+                        // Pad the final partial row so cells keep equal width.
+                        for (var i = rowSteps.Length; i < 3; i++) row.RelativeItem();
                     });
                 }
             });
@@ -327,16 +349,16 @@ public class OrderProductionPdfService : IOrderProductionPdfService, ITransientD
         container.Column(col =>
         {
             col.Item().Text(title).FontSize(11).Bold();
-            col.Item().PaddingTop(2).PaddingBottom(6).LineHorizontal(0.5f).LineColor(Colors.Grey.Lighten2);
+            col.Item().PaddingTop(2).PaddingBottom(4).LineHorizontal(0.5f).LineColor(Colors.Grey.Lighten2);
             col.Item().Element(body);
         });
     }
 
     private static void LabelValue(ColumnDescriptor col, string label, string value)
     {
-        col.Item().PaddingBottom(3).Row(row =>
+        col.Item().PaddingBottom(2).Row(row =>
         {
-            row.ConstantItem(110).Text(label).FontSize(9).FontColor(Colors.Grey.Darken1);
+            row.ConstantItem(100).Text(label).FontSize(9).FontColor(Colors.Grey.Darken1);
             row.RelativeItem().Text(value).FontSize(9);
         });
     }
