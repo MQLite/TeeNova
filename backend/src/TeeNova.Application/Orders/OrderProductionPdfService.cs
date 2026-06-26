@@ -210,8 +210,10 @@ public class OrderProductionPdfService : IOrderProductionPdfService, ITransientD
 
                 // Print production list, grouped by the print instruction itself — design file, position
                 // (print area) and print size. Every garment that takes that exact print is listed under it,
-                // with sizes combined per product + colour (e.g. "Daisy Yellow / S, M, L, XL"). Per-size
-                // quantities stay in the Items table above.
+                // with sizes combined per product + colour (e.g. "Daisy Yellow / S, M, L, XL"). The design is
+                // keyed by its core file name (DesignDisplayName strips the per-upload prefix) so the same
+                // artwork re-uploaded for each placement still collapses. Per-size quantities stay in the
+                // Items table above.
                 var printRows = order.Items
                     .Where(i => i.Prints.Count > 0)
                     .SelectMany(item =>
@@ -221,7 +223,7 @@ public class OrderProductionPdfService : IOrderProductionPdfService, ITransientD
                             item.ProductName,
                             Color: color,
                             Size: size,
-                            DesignUrl: p.UploadedAssetUrl ?? string.Empty,
+                            Design: DesignDisplayName(p.UploadedAssetUrl),
                             Area: p.PrintAreaName,
                             PrintSize: p.PrintSizeName,
                             Notes: new[]
@@ -235,17 +237,16 @@ public class OrderProductionPdfService : IOrderProductionPdfService, ITransientD
                 if (printRows.Count > 0)
                     col.Item().PaddingTop(8).Text("Print production").SemiBold().FontSize(10);
 
-                foreach (var group in printRows.GroupBy(r => (r.DesignUrl, r.Area, r.PrintSize)))
+                foreach (var group in printRows.GroupBy(r => (r.Design, r.Area, r.PrintSize)))
                 {
                     var first = group.First();
-                    var designLabel = DesignFileLabel(string.IsNullOrEmpty(first.DesignUrl) ? null : first.DesignUrl);
 
                     col.Item().PaddingTop(4).PaddingLeft(8).BorderLeft(2).BorderColor(Colors.Grey.Lighten1)
                         .PaddingLeft(6).Column(pc =>
                         {
                             pc.Item().Text(t =>
                             {
-                                t.Span(designLabel).SemiBold().FontSize(9);
+                                t.Span(first.Design).SemiBold().FontSize(9);
                                 t.Span("  ·  ").FontSize(9).FontColor(Colors.Grey.Medium);
                                 t.Span($"{first.Area} · {first.PrintSize}").FontSize(9);
                             });
@@ -479,6 +480,18 @@ public class OrderProductionPdfService : IOrderProductionPdfService, ITransientD
     /// names ("customer%20logo.png" → "customer logo.png"), and defensively strips any
     /// Windows-style path so "C:\uploads\…\file.png" can never surface as a local path.
     /// </summary>
+    /// <summary>
+    /// The core design file name used to identify the artwork across uploads. The storage layer prefixes
+    /// every saved file with "{prefix}_{yyyyMMdd}_{6 chars}_" (see LocalFileStorageService), so the same
+    /// artwork re-uploaded for each placement yields a different stored name. Stripping that generated
+    /// prefix recovers the shared original name, letting the production list group identical designs.
+    /// </summary>
+    private static readonly System.Text.RegularExpressions.Regex GeneratedFilePrefix =
+        new(@"^[A-Za-z]+_\d{8}_[0-9A-Za-z]{6}_", System.Text.RegularExpressions.RegexOptions.Compiled);
+
+    private static string DesignDisplayName(string? url)
+        => GeneratedFilePrefix.Replace(DesignFileLabel(url), string.Empty);
+
     private static string DesignFileLabel(string? url)
     {
         if (string.IsNullOrWhiteSpace(url))
