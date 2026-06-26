@@ -184,8 +184,8 @@ public class OrderProductionPdfService : IOrderProductionPdfService, ITransientD
                         columns.RelativeColumn(3);    // product
                         columns.RelativeColumn(2);    // variant
                         columns.ConstantColumn(35);   // qty
-                        columns.RelativeColumn(1.4f);  // unit price
-                        columns.RelativeColumn(1.4f);  // line total
+                        columns.RelativeColumn(1.6f);  // clothes finded (check)
+                        columns.RelativeColumn(1.4f);  // finished (check)
                     });
 
                     table.Header(header =>
@@ -193,8 +193,8 @@ public class OrderProductionPdfService : IOrderProductionPdfService, ITransientD
                         HeaderCell(header.Cell(), "Product");
                         HeaderCell(header.Cell(), "Variant");
                         HeaderCell(header.Cell(), "Qty", right: true);
-                        HeaderCell(header.Cell(), "Unit", right: true);
-                        HeaderCell(header.Cell(), "Line total", right: true);
+                        HeaderCell(header.Cell(), "Clothes Finded", center: true);
+                        HeaderCell(header.Cell(), "Finished", center: true);
                     });
 
                     foreach (var item in order.Items)
@@ -202,8 +202,8 @@ public class OrderProductionPdfService : IOrderProductionPdfService, ITransientD
                         BodyCell(table.Cell()).Text(item.ProductName);
                         BodyCell(table.Cell()).Text(item.VariantLabel);
                         BodyCell(table.Cell()).AlignRight().Text(item.Quantity.ToString(CultureInfo.InvariantCulture));
-                        BodyCell(table.Cell()).AlignRight().Text(FormatMoney(item.UnitPrice));
-                        BodyCell(table.Cell()).AlignRight().Text(FormatMoney(item.LineTotal));
+                        CheckBoxCell(table.Cell());
+                        CheckBoxCell(table.Cell());
                     }
                 });
 
@@ -343,17 +343,23 @@ public class OrderProductionPdfService : IOrderProductionPdfService, ITransientD
         });
     }
 
-    private static void HeaderCell(IContainer container, string text, bool right = false)
+    private static void HeaderCell(IContainer container, string text, bool right = false, bool center = false)
     {
         var cell = container.BorderBottom(1).BorderColor(Colors.Grey.Medium)
             .PaddingVertical(4).PaddingHorizontal(2);
         if (right) cell = cell.AlignRight();
+        else if (center) cell = cell.AlignCenter();
         cell.Text(text).SemiBold().FontSize(9);
     }
 
     private static IContainer BodyCell(IContainer container)
         => container.BorderBottom(0.5f).BorderColor(Colors.Grey.Lighten2).PaddingVertical(4).PaddingHorizontal(2)
             .DefaultTextStyle(s => s.FontSize(9));
+
+    /// <summary>An empty bordered square in a table cell for staff to tick off on the printed sheet.</summary>
+    private static void CheckBoxCell(IContainer container)
+        => BodyCell(container).AlignCenter().AlignMiddle()
+            .Height(12).Width(12).Border(1).BorderColor(Colors.Grey.Darken1);
 
     // ── Formatting helpers ──────────────────────────────────────────────────────
 
