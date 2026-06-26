@@ -17,7 +17,7 @@ import { ProductHeroPrice } from '@/components/products/ProductHeroPrice'
 import { useCartStore } from '@/features/cart/cart-store'
 import { filterImagesForColor, resolveImageUrl } from '@/lib/image-utils'
 import { formatMoneyNZD, cheapestPrintTierPrice, groupDefaultPrintLadders, resolveHeroPrintPrice } from '@/lib/pricing'
-import { resolveAllowedPrintOptions } from '@/lib/print-options'
+import { printableSizeIdsFromOptions, resolveAllowedPrintOptions } from '@/lib/print-options'
 import type {
   CartItemPrint,
   PriceCalculationResponse,
@@ -121,6 +121,11 @@ export default function ProductDetailPage() {
     [printSizes],
   )
 
+  const printSizeSortOrder = useMemo(
+    () => Object.fromEntries(printSizes.map((s) => [s.id, s.sortOrder])),
+    [printSizes],
+  )
+
   // ── Product/size scoped allowed print options (Jira 9206) ────────────────────
   // Distinct garment sizes the customer has entered quantities for (drives option scoping).
   const selectedSizes = useMemo(
@@ -203,7 +208,24 @@ export default function ProductDetailPage() {
 
   // ── Print-only pricing (Jira 9206) ──────────────────────────────────────────
   const printTiers = useMemo(() => product?.printPriceTiers ?? [], [product])
-  const printLadders = useMemo(() => groupDefaultPrintLadders(printTiers), [printTiers])
+
+  // Display-only widgets (hero card + print-price matrix) must not advertise print sizes this product
+  // can never select. The pricing group may price more sizes (e.g. A3) than the product allows via its
+  // scoped config options (Jira 9204) — drop those before deriving any display tiers. null = global
+  // mode (no scoped rows), so no narrowing. The live quote path stays driven by the actual selection.
+  const printableSizeIds = useMemo(
+    () => printableSizeIdsFromOptions(activeScopedOptions),
+    [activeScopedOptions],
+  )
+  const displayPrintTiers = useMemo(
+    () =>
+      printableSizeIds == null
+        ? printTiers
+        : printTiers.filter((t) => printableSizeIds.has(t.printSizeId)),
+    [printTiers, printableSizeIds],
+  )
+
+  const printLadders = useMemo(() => groupDefaultPrintLadders(displayPrintTiers), [displayPrintTiers])
   const hasPrintTiers = printLadders.length > 0
 
   // Default ladder for the compact tier table (Jira 9304/9303): the first print size by
@@ -226,7 +248,7 @@ export default function ProductDetailPage() {
   }, [product])
 
   // Cheapest achievable printed-from = fixed garment + cheapest active print tier price.
-  const cheapestPrint = useMemo(() => cheapestPrintTierPrice(printTiers), [printTiers])
+  const cheapestPrint = useMemo(() => cheapestPrintTierPrice(displayPrintTiers), [displayPrintTiers])
   const printedFromPrice =
     hasPrintTiers && garmentFromPrice !== null && cheapestPrint !== null
       ? garmentFromPrice + cheapestPrint
@@ -237,13 +259,13 @@ export default function ProductDetailPage() {
   const heroPriceInfo = useMemo(
     () =>
       resolveHeroPrintPrice({
-        tiers: printTiers,
+        tiers: displayPrintTiers,
         printSizes,
         printSizeNames,
         garmentFromPrice,
         printedFromPrice,
       }),
-    [printTiers, printSizes, printSizeNames, garmentFromPrice, printedFromPrice],
+    [displayPrintTiers, printSizes, printSizeNames, garmentFromPrice, printedFromPrice],
   )
 
   // First tiered quote response that has arrived — used to highlight the applied print break.
@@ -856,8 +878,9 @@ export default function ProductDetailPage() {
                   )}
                 </div>
                 <PrintPriceTierTable
-                  tiers={printTiers}
+                  tiers={displayPrintTiers}
                   printSizeNames={printSizeNames}
+                  printSizeSortOrder={printSizeSortOrder}
                   appliedMinQuantity={appliedTierPricing?.appliedTierMinQuantity ?? null}
                   defaultPrintSizeId={defaultPrintSizeId}
                   collapsible

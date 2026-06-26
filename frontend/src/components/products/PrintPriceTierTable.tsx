@@ -9,6 +9,8 @@ interface Props {
   tiers: ProductPrintPriceTier[]
   /** printSizeId → display name. */
   printSizeNames: Record<string, string>
+  /** printSizeId → print-config sort order, used to order the rows (lowest first). */
+  printSizeSortOrder?: Record<string, number>
   /** The applied break from the live quote, to highlight the active row (optional). */
   appliedMinQuantity?: number | null
   /** Compact mode: which PrintSize ladder to show by default (falls back to the first ladder). */
@@ -31,12 +33,21 @@ interface Props {
 export function PrintPriceTierTable({
   tiers,
   printSizeNames,
+  printSizeSortOrder,
   appliedMinQuantity,
   defaultPrintSizeId,
   collapsible = false,
   initiallyExpanded = false,
 }: Props) {
-  const ladders = groupDefaultPrintLadders(tiers)
+  // Order the rows by the print-config sort order (lowest first) so the matrix matches admin config.
+  const grouped = groupDefaultPrintLadders(tiers)
+  const ladders = printSizeSortOrder
+    ? [...grouped].sort(
+        (a, b) =>
+          (printSizeSortOrder[a.printSizeId] ?? Number.MAX_SAFE_INTEGER) -
+          (printSizeSortOrder[b.printSizeId] ?? Number.MAX_SAFE_INTEGER),
+      )
+    : grouped
   const [expanded, setExpanded] = useState(initiallyExpanded)
   if (ladders.length === 0) return null
 

@@ -35,6 +35,20 @@ function toAreaMap(pairs: Set<string>): Map<string, Set<string>> {
 }
 
 /**
+ * The set of print-size ids this product can ever print, derived from its active scoped config
+ * options (product-default rows + every garment-size override). Display-only widgets (hero card,
+ * print-price matrix) use this to drop print sizes the product can never select — e.g. a kids tee
+ * whose pricing group still lists A3 (Jira 9204). Returns null when there are no active scoped rows
+ * (global mode → no constraint, so callers should not narrow).
+ */
+export function printableSizeIdsFromOptions(
+  activeOptions: ProductPrintConfigOption[],
+): Set<string> | null {
+  if (activeOptions.length === 0) return null
+  return new Set(activeOptions.map((o) => o.printSizeId))
+}
+
+/**
  * Resolve the allowed print options for the given active scoped rows + selected garment sizes.
  *
  *  - No active scoped rows at all → 'global'.
