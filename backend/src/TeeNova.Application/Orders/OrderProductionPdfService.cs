@@ -114,7 +114,6 @@ public class OrderProductionPdfService : IOrderProductionPdfService, ITransientD
             col.Item().Element(c => ComposeOrderSummary(c, order));
             col.Item().Element(c => ComposeItems(c, order));
             col.Item().Element(c => ComposeNotes(c, order));
-            col.Item().Element(ComposeChecklist);
         });
     }
 
@@ -298,42 +297,6 @@ public class OrderProductionPdfService : IOrderProductionPdfService, ITransientD
                         b.Item().Text("Admin / special instructions").SemiBold().FontSize(9).FontColor(Colors.Grey.Darken1);
                         b.Item().Text(order.AdminNotes!).FontSize(9);
                     });
-            });
-        });
-    }
-
-    private void ComposeChecklist(IContainer container)
-    {
-        string[] steps =
-        {
-            "Artwork checked", "Printed", "Pressed",
-            "Quality checked", "Packed", "Ready for pickup / shipping",
-        };
-
-        Section(container, "Production Checklist", inner =>
-        {
-            inner.Border(1).BorderColor(Colors.Grey.Lighten1).Background(Colors.Grey.Lighten5)
-                .Padding(8).Column(col =>
-            {
-                col.Spacing(6);
-                // Lay the steps three-across to keep the checklist to two rows.
-                foreach (var rowSteps in steps.Chunk(3))
-                {
-                    col.Item().Row(row =>
-                    {
-                        foreach (var step in rowSteps)
-                        {
-                            row.RelativeItem().Row(cell =>
-                            {
-                                cell.ConstantItem(16).AlignMiddle().Height(11).Width(11)
-                                    .Border(1).BorderColor(Colors.Grey.Darken2);
-                                cell.RelativeItem().PaddingLeft(6).AlignMiddle().Text(step).FontSize(9);
-                            });
-                        }
-                        // Pad the final partial row so cells keep equal width.
-                        for (var i = rowSteps.Length; i < 3; i++) row.RelativeItem();
-                    });
-                }
             });
         });
     }
