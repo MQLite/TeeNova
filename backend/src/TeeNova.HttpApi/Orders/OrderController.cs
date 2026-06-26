@@ -37,6 +37,11 @@ public class OrderController : TeeNovaControllerBase
     public async Task<PagedResultDto<OrderDto>> GetListAsync([FromQuery] GetOrdersInput input)
         => await _orderAppService.GetListAsync(input);
 
+    // Hard-delete. Inherits the controller-level [Authorize]; never exposed anonymously.
+    [HttpDelete("{id:guid}")]
+    public async Task DeleteAsync(Guid id)
+        => await _orderAppService.DeleteAsync(id);
+
     // Admin production sheet. Intentionally NOT [AllowAnonymous]: it inherits the
     // controller-level [Authorize] so it is unreachable from the anonymous customer
     // order-tracking path that GetAsync above is exposed on.

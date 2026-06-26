@@ -49,6 +49,10 @@ export function makeOrdersApi(client: ApiClient) {
       })
     },
 
+    delete(id: string): Promise<void> {
+      return client.delete(`/api/orders/${id}`)
+    },
+
     updateStatus(id: string, newStatus: OrderStatus, reason?: string): Promise<Order> {
       return client.put(`/api/orders/${id}/status`, { newStatus, reason })
     },

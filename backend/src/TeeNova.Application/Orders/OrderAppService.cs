@@ -334,6 +334,25 @@ public class OrderAppService : ApplicationService, IOrderAppService
         return await GetAsync(id);
     }
 
+    /// <summary>
+    /// Permanently deletes an order and everything that references it. The Order aggregate owns its
+    /// Items -> Prints (cascaded), but timeline entries, payment transactions, price adjustments and
+    /// online payment sessions are independent aggregates keyed by OrderId and are removed explicitly
+    /// to avoid orphaned rows. This is a hard delete — financial/audit history for the order is lost.
+    /// </summary>
+    public async Task DeleteAsync(Guid id)
+    {
+        // Resolve first so a missing order surfaces a clean 404 rather than silently no-op'ing.
+        var order = await _orderRepository.GetAsync(id);
+
+        await _timelineRepository.DeleteAsync(e => e.OrderId == id, autoSave: false);
+        await _paymentTransactionRepository.DeleteAsync(t => t.OrderId == id, autoSave: false);
+        await _priceAdjustmentRepository.DeleteAsync(a => a.OrderId == id, autoSave: false);
+        await _onlinePaymentSessionRepository.DeleteAsync(s => s.OrderId == id, autoSave: false);
+
+        await _orderRepository.DeleteAsync(order, autoSave: true);
+    }
+
     public async Task<PagedResultDto<OrderDto>> GetListAsync(GetOrdersInput input)
     {
         var query = await _orderRepository.GetQueryableAsync();

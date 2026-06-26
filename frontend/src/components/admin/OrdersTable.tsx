@@ -1,9 +1,15 @@
 'use client'
 
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import Link from 'next/link'
+import { useRouter } from 'next/navigation'
+import { makeOrdersApi } from '@/api/orders'
+import { adminApiClient, redirectToLogin } from '@/lib/admin-client'
+import { ApiError } from '@/lib/api-client'
 import { OrderStatusBadge, STATUS_CONFIG } from '@/components/admin/OrderStatusBadge'
 import type { Order, OrderStatus } from '@/types'
+
+const ordersApi = makeOrdersApi(adminApiClient)
 
 const STATUS_TAB_ORDER: OrderStatus[] = [
   'Pending',
@@ -28,10 +34,22 @@ interface Props {
 }
 
 export function OrdersTable({ orders }: Props) {
+  const router = useRouter()
   const [activeTab, setActiveTab] = useState<OrderStatus | 'All'>('All')
   const [search, setSearch] = useState('')
+  // Local copy so deleted rows disappear instantly; re-seeded when the server passes fresh data.
+  const [rows, setRows] = useState<Order[]>(orders)
+  const [selected, setSelected] = useState<Set<string>>(new Set())
+  const [deleting, setDeleting] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const selectAllRef = useRef<HTMLInputElement>(null)
 
-  const filtered = orders.filter((o) => {
+  useEffect(() => {
+    setRows(orders)
+    setSelected(new Set())
+  }, [orders])
+
+  const filtered = rows.filter((o) => {
     const matchesTab = activeTab === 'All' || o.status === activeTab
     const q = search.toLowerCase()
     const matchesSearch =
@@ -43,7 +61,67 @@ export function OrdersTable({ orders }: Props) {
   })
 
   const countForTab = (tab: OrderStatus | 'All') =>
-    tab === 'All' ? orders.length : orders.filter((o) => o.status === tab).length
+    tab === 'All' ? rows.length : rows.filter((o) => o.status === tab).length
+
+  const filteredIds = filtered.map((o) => o.id)
+  const allVisibleSelected = filteredIds.length > 0 && filteredIds.every((id) => selected.has(id))
+  const someVisibleSelected = filteredIds.some((id) => selected.has(id))
+
+  // Tri-state "select all" checkbox: indeterminate when only some visible rows are selected.
+  useEffect(() => {
+    if (selectAllRef.current) selectAllRef.current.indeterminate = someVisibleSelected && !allVisibleSelected
+  }, [someVisibleSelected, allVisibleSelected])
+
+  function toggleAllVisible() {
+    setSelected((prev) => {
+      const next = new Set(prev)
+      if (allVisibleSelected) filteredIds.forEach((id) => next.delete(id))
+      else filteredIds.forEach((id) => next.add(id))
+      return next
+    })
+  }
+
+  function toggleOne(id: string) {
+    setSelected((prev) => {
+      const next = new Set(prev)
+      if (next.has(id)) next.delete(id)
+      else next.add(id)
+      return next
+    })
+  }
+
+  async function handleBulkDelete() {
+    const ids = [...selected]
+    if (ids.length === 0) return
+    const confirmed = window.confirm(
+      `Permanently delete ${ids.length} order${ids.length !== 1 ? 's' : ''}? This removes each order ` +
+      `and all of its timeline, payment and price-adjustment history. This cannot be undone.`,
+    )
+    if (!confirmed) return
+
+    setDeleting(true)
+    setError(null)
+    try {
+      const results = await Promise.allSettled(ids.map((id) => ordersApi.delete(id)))
+
+      if (results.some((r) => r.status === 'rejected' && r.reason instanceof ApiError && r.reason.status === 401)) {
+        redirectToLogin('session-expired')
+        return
+      }
+
+      const succeededIds = ids.filter((_, i) => results[i].status === 'fulfilled')
+      setRows((prev) => prev.filter((o) => !succeededIds.includes(o.id)))
+      setSelected(new Set())
+
+      const failedCount = results.length - succeededIds.length
+      if (failedCount > 0) {
+        setError(`${failedCount} order${failedCount !== 1 ? 's' : ''} could not be deleted.`)
+      }
+      router.refresh()
+    } finally {
+      setDeleting(false)
+    }
+  }
 
   return (
     <div>
@@ -103,6 +181,39 @@ export function OrdersTable({ orders }: Props) {
         </div>
       </div>
 
+      {/* Bulk action bar */}
+      {selected.size > 0 && (
+        <div className="mb-3 flex flex-wrap items-center justify-between gap-3 rounded-lg border border-black/[0.08] bg-black/[0.02] px-4 py-2.5">
+          <span className="text-sm text-black" style={{ letterSpacing: '-0.14px' }}>
+            {selected.size} selected
+          </span>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => setSelected(new Set())}
+              disabled={deleting}
+              className="rounded-[50px] border border-black/[0.08] px-3 py-1.5 text-xs text-black/50 transition-colors hover:border-black/20 hover:text-black disabled:opacity-40"
+              style={{ letterSpacing: '-0.14px' }}
+            >
+              Clear selection
+            </button>
+            <button
+              onClick={handleBulkDelete}
+              disabled={deleting}
+              className="rounded-[50px] bg-red-600 px-3 py-1.5 text-xs text-white transition-opacity hover:opacity-85 disabled:opacity-40"
+              style={{ letterSpacing: '-0.14px' }}
+            >
+              {deleting ? 'Deleting…' : `Delete ${selected.size} selected`}
+            </button>
+          </div>
+        </div>
+      )}
+
+      {error && (
+        <div className="mb-3 rounded-lg border border-red-200 bg-red-50 px-4 py-2.5 text-sm text-red-700" style={{ letterSpacing: '-0.14px' }}>
+          {error}
+        </div>
+      )}
+
       {/* Table */}
       {filtered.length === 0 ? (
         <div className="rounded-lg border border-dashed border-black/[0.12] py-12 text-center font-mono text-[11px] uppercase tracking-[0.54px] text-black/45">
@@ -113,6 +224,16 @@ export function OrdersTable({ orders }: Props) {
           <table className="min-w-full divide-y divide-black/[0.06] text-sm">
             <thead>
               <tr className="bg-black/[0.02]">
+                <th className="w-10 px-4 py-3 text-left">
+                  <input
+                    ref={selectAllRef}
+                    type="checkbox"
+                    checked={allVisibleSelected}
+                    onChange={toggleAllVisible}
+                    aria-label="Select all orders"
+                    className="h-4 w-4 cursor-pointer accent-black"
+                  />
+                </th>
                 {['Order', 'Customer', 'Status', 'Items', 'Total', 'Date', ''].map((h) => (
                   <th key={h} className="px-4 py-3 text-left font-mono text-[10px] uppercase tracking-[0.54px] text-black/45 font-normal">
                     {h}
@@ -122,7 +243,22 @@ export function OrdersTable({ orders }: Props) {
             </thead>
             <tbody className="divide-y divide-black/[0.04]">
               {filtered.map((order) => (
-                <tr key={order.id} className="group transition-colors hover:bg-black/[0.02]">
+                <tr
+                  key={order.id}
+                  className={[
+                    'group transition-colors',
+                    selected.has(order.id) ? 'bg-black/[0.03]' : 'hover:bg-black/[0.02]',
+                  ].join(' ')}
+                >
+                  <td className="px-4 py-3">
+                    <input
+                      type="checkbox"
+                      checked={selected.has(order.id)}
+                      onChange={() => toggleOne(order.id)}
+                      aria-label={`Select order ${order.orderNumber}`}
+                      className="h-4 w-4 cursor-pointer accent-black"
+                    />
+                  </td>
                   <td className="px-4 py-3">
                     <span className="font-mono text-xs text-black" style={{ fontWeight: 540 }}>
                       {order.orderNumber}

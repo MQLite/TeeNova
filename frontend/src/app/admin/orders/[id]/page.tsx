@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from 'react'
 import Link from 'next/link'
-import { useParams } from 'next/navigation'
+import { useParams, useRouter } from 'next/navigation'
 import { makeOrdersApi } from '@/api/orders'
 import { makeFilesApi } from '@/api/files'
 import { adminApiClient, redirectToLogin } from '@/lib/admin-client'
@@ -227,9 +227,11 @@ function DetailSkeleton() {
 
 export default function AdminOrderDetailPage() {
   const { id } = useParams<{ id: string }>()
+  const router = useRouter()
   const [order, setOrder] = useState<Order | null>(null)
   const [loading, setLoading] = useState(true)
   const [updating, setUpdating] = useState(false)
+  const [deleting, setDeleting] = useState(false)
   const [recordingNotification, setRecordingNotification] = useState(false)
   const [recordPaymentOpen, setRecordPaymentOpen] = useState(false)
   const [adjustPriceOpen, setAdjustPriceOpen] = useState(false)
@@ -436,6 +438,27 @@ export default function AdminOrderDetailPage() {
     }
   }
 
+  async function handleDelete() {
+    if (!order) return
+    const confirmed = window.confirm(
+      `Permanently delete order ${order.orderNumber}? This removes the order and all of its ` +
+      `timeline, payment and price-adjustment history. This cannot be undone.`,
+    )
+    if (!confirmed) return
+    setDeleting(true)
+    try {
+      await ordersApi.delete(order.id)
+      router.push('/admin/orders')
+    } catch (err) {
+      if (err instanceof ApiError && err.status === 401) {
+        redirectToLogin('session-expired')
+        return
+      }
+      showToast('Could not delete this order', 'error')
+      setDeleting(false)
+    }
+  }
+
   function showToast(msg: string, tone: 'success' | 'error' = 'success') {
     setToastTone(tone)
     setToast(msg)
@@ -513,6 +536,14 @@ export default function AdminOrderDetailPage() {
           orderNumber={order.orderNumber}
           onError={(msg) => showToast(msg, 'error')}
         />
+        <Button
+          variant="ghost"
+          onClick={handleDelete}
+          disabled={deleting}
+          className="text-red-600 hover:bg-red-50 hover:text-red-700"
+        >
+          {deleting ? 'Deleting…' : 'Delete'}
+        </Button>
       </div>
 
       {/* Activation panel 鈥?shown only while in early stages */}
