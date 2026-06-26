@@ -208,50 +208,71 @@ public class OrderProductionPdfService : IOrderProductionPdfService, ITransientD
                     }
                 });
 
-                // Per-item print details, listed below the table so each can wrap freely. Prints that
-                // share the same uploaded design are combined onto one line — the design name shows once
-                // with every placement (area · size) it applies to, keeping the sheet compact.
-                foreach (var item in order.Items.Where(i => i.Prints.Count > 0))
-                {
-                    col.Item().PaddingTop(6).Column(block =>
+                // Print production list. One line per distinct product + colour + design + placement set;
+                // the garment sizes that share it are combined (e.g. "Daisy Yellow / S, M, L, XL"). Prints
+                // on one variant that share a design are first collapsed onto a single placement line, then
+                // grouped across variants so the same instruction over multiple sizes is a single row.
+                // Per-size quantities stay in the Items table above.
+                var printRows = order.Items
+                    .Where(i => i.Prints.Count > 0)
+                    .SelectMany(item =>
                     {
-                        block.Item().Text(t =>
+                        var (color, size) = SplitVariantLabel(item.VariantLabel);
+                        return item.Prints
+                            .GroupBy(p => p.UploadedAssetUrl ?? string.Empty)
+                            .Select(dg =>
+                            {
+                                var ordered = dg.OrderBy(p => p.SortOrder).ToList();
+                                var placements = ordered.Select(p => $"{p.PrintAreaName} · {p.PrintSizeName}").ToList();
+                                var notes = ordered
+                                    .SelectMany(p => new[]
+                                    {
+                                        string.IsNullOrWhiteSpace(p.DesignNote) ? null : $"{p.PrintAreaName} design note: {p.DesignNote}",
+                                        string.IsNullOrWhiteSpace(p.Notes) ? null : $"{p.PrintAreaName} print note: {p.Notes}",
+                                    })
+                                    .Where(n => n is not null).Select(n => n!).ToList();
+                                return (
+                                    item.ProductName,
+                                    Color: color,
+                                    Size: size,
+                                    DesignUrl: dg.Key,
+                                    Placements: placements,
+                                    PlacementSig: string.Join("|", placements),
+                                    Notes: notes);
+                            });
+                    })
+                    .ToList();
+
+                if (printRows.Count > 0)
+                    col.Item().PaddingTop(8).Text("Print production").SemiBold().FontSize(10);
+
+                foreach (var group in printRows.GroupBy(r => (r.ProductName, r.Color, r.DesignUrl, r.PlacementSig)))
+                {
+                    var first = group.First();
+                    var designLabel = DesignFileLabel(string.IsNullOrEmpty(first.DesignUrl) ? null : first.DesignUrl);
+                    var placementsText = string.Join(", ", first.Placements);
+                    var sizes = group.Select(r => r.Size).Where(s => s.Length > 0).Distinct().ToList();
+                    var variantText = sizes.Count > 0
+                        ? $"{first.Color} / {string.Join(", ", sizes)}"
+                        : first.Color;
+
+                    col.Item().PaddingTop(4).PaddingLeft(8).BorderLeft(2).BorderColor(Colors.Grey.Lighten1)
+                        .PaddingLeft(6).Column(pc =>
                         {
-                            t.Span("Prints · ").SemiBold().FontSize(9);
-                            t.Span($"{item.ProductName} ({item.VariantLabel})").FontSize(9).FontColor(Colors.Grey.Darken1);
+                            pc.Item().Text(t =>
+                            {
+                                t.Span(designLabel).SemiBold().FontSize(9);
+                                t.Span("  →  ").FontSize(9).FontColor(Colors.Grey.Medium);
+                                t.Span(placementsText).FontSize(9);
+                            });
+                            pc.Item().Text(t =>
+                            {
+                                t.Span($"{first.ProductName} · ").FontSize(9).FontColor(Colors.Grey.Darken1);
+                                t.Span(variantText).FontSize(9).SemiBold();
+                            });
+                            foreach (var note in group.SelectMany(r => r.Notes).Distinct())
+                                pc.Item().Text(note).FontSize(8).FontColor(Colors.Grey.Darken1);
                         });
-
-                        var groups = item.Prints
-                            .OrderBy(p => p.SortOrder)
-                            .GroupBy(p => p.UploadedAssetUrl ?? string.Empty);
-
-                        foreach (var group in groups)
-                        {
-                            var placements = string.Join(", ",
-                                group.Select(p => $"{p.PrintAreaName} · {p.PrintSizeName}"));
-                            var designLabel = DesignFileLabel(group.Key.Length == 0 ? null : group.Key);
-
-                            block.Item().PaddingTop(3).PaddingLeft(8).BorderLeft(2).BorderColor(Colors.Grey.Lighten1)
-                                .PaddingLeft(6).Column(pc =>
-                                {
-                                    pc.Item().Text(t =>
-                                    {
-                                        t.Span(designLabel).SemiBold().FontSize(9);
-                                        t.Span("  →  ").FontSize(9).FontColor(Colors.Grey.Medium);
-                                        t.Span(placements).FontSize(9);
-                                    });
-                                    foreach (var print in group)
-                                    {
-                                        if (!string.IsNullOrWhiteSpace(print.DesignNote))
-                                            pc.Item().Text($"{print.PrintAreaName} design note: {print.DesignNote}")
-                                                .FontSize(8).FontColor(Colors.Grey.Darken1);
-                                        if (!string.IsNullOrWhiteSpace(print.Notes))
-                                            pc.Item().Text($"{print.PrintAreaName} print note: {print.Notes}")
-                                                .FontSize(8).FontColor(Colors.Grey.Darken1);
-                                    }
-                                });
-                        }
-                    });
                 }
             });
         });
@@ -380,6 +401,19 @@ public class OrderProductionPdfService : IOrderProductionPdfService, ITransientD
     /// <summary>Culture-independent NZD money formatting, e.g. "1,250.00 NZD".</summary>
     private static string FormatMoney(decimal value)
         => $"{value.ToString("N2", CultureInfo.InvariantCulture)} NZD";
+
+    /// <summary>
+    /// Splits a "Colour / Size" variant label into its parts. Splits on the last " / " so colours that
+    /// contain a slash stay intact; returns an empty size when the label has no separator.
+    /// </summary>
+    private static (string Color, string Size) SplitVariantLabel(string variantLabel)
+    {
+        var label = variantLabel?.Trim() ?? string.Empty;
+        var idx = label.LastIndexOf(" / ", StringComparison.Ordinal);
+        return idx < 0
+            ? (label, string.Empty)
+            : (label[..idx].Trim(), label[(idx + 3)..].Trim());
+    }
 
     private static string FormatDateTime(DateTime utc)
     {
