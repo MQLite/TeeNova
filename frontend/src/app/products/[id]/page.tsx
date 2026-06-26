@@ -966,12 +966,15 @@ export default function ProductDetailPage() {
                   </span>
                 )}
               </div>
-              <div className="relative w-full overflow-x-auto">
+              {/* Constrained-height scroll box so the size-name header row can stick on scroll: an
+                  overflow-x-only wrapper becomes the scroll container and breaks `sticky top`, so we
+                  scroll both axes here (short matrices fit and never scroll). */}
+              <div className="relative max-h-[70vh] w-full overflow-auto">
                 <table className="min-w-full border-separate border-spacing-0 text-sm">
                   <thead>
-                    <tr className="border-b border-black/[0.08]">
-                      {/* Sticky Color header */}
-                      <th className="sticky left-0 z-30 w-36 bg-white pb-2 pr-3 text-left font-mono text-[11px] font-normal uppercase tracking-[0.54px] text-black/50 shadow-[2px_0_4px_rgba(0,0,0,0.06)]">
+                    <tr>
+                      {/* Frozen corner: sticks both top (header row) and left (Colour column). */}
+                      <th className="sticky left-0 top-0 z-40 w-36 border-b border-black/[0.08] bg-white pb-2 pr-3 text-left font-mono text-[11px] font-normal uppercase tracking-[0.54px] text-black/50 shadow-[2px_0_4px_rgba(0,0,0,0.06)]">
                         Colour
                       </th>
                       {uniqueSizes.map((size) => {
@@ -981,7 +984,7 @@ export default function ProductDetailPage() {
                         return (
                           <th
                             key={size}
-                            className="min-w-[4rem] px-1.5 pb-2 text-center font-mono text-[11px] font-normal uppercase tracking-[0.54px] text-black/50"
+                            className="sticky top-0 z-30 min-w-[4rem] border-b border-black/[0.08] bg-white px-1.5 pb-2 text-center font-mono text-[11px] font-normal uppercase tracking-[0.54px] text-black/50"
                           >
                             {size}
                             {adjustment !== 0 && <span className="block text-[9px] opacity-60">+${adjustment.toFixed(2)}</span>}
