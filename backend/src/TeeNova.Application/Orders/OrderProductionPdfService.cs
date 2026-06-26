@@ -208,53 +208,37 @@ public class OrderProductionPdfService : IOrderProductionPdfService, ITransientD
                     }
                 });
 
-                // Print production list. One line per distinct product + colour + design + placement set;
-                // the garment sizes that share it are combined (e.g. "Daisy Yellow / S, M, L, XL"). Prints
-                // on one variant that share a design are first collapsed onto a single placement line, then
-                // grouped across variants so the same instruction over multiple sizes is a single row.
-                // Per-size quantities stay in the Items table above.
+                // Print production list, grouped by the print instruction itself — design file, position
+                // (print area) and print size. Every garment that takes that exact print is listed under it,
+                // with sizes combined per product + colour (e.g. "Daisy Yellow / S, M, L, XL"). Per-size
+                // quantities stay in the Items table above.
                 var printRows = order.Items
                     .Where(i => i.Prints.Count > 0)
                     .SelectMany(item =>
                     {
                         var (color, size) = SplitVariantLabel(item.VariantLabel);
-                        return item.Prints
-                            .GroupBy(p => p.UploadedAssetUrl ?? string.Empty)
-                            .Select(dg =>
+                        return item.Prints.Select(p => (
+                            item.ProductName,
+                            Color: color,
+                            Size: size,
+                            DesignUrl: p.UploadedAssetUrl ?? string.Empty,
+                            Area: p.PrintAreaName,
+                            PrintSize: p.PrintSizeName,
+                            Notes: new[]
                             {
-                                var ordered = dg.OrderBy(p => p.SortOrder).ToList();
-                                var placements = ordered.Select(p => $"{p.PrintAreaName} · {p.PrintSizeName}").ToList();
-                                var notes = ordered
-                                    .SelectMany(p => new[]
-                                    {
-                                        string.IsNullOrWhiteSpace(p.DesignNote) ? null : $"{p.PrintAreaName} design note: {p.DesignNote}",
-                                        string.IsNullOrWhiteSpace(p.Notes) ? null : $"{p.PrintAreaName} print note: {p.Notes}",
-                                    })
-                                    .Where(n => n is not null).Select(n => n!).ToList();
-                                return (
-                                    item.ProductName,
-                                    Color: color,
-                                    Size: size,
-                                    DesignUrl: dg.Key,
-                                    Placements: placements,
-                                    PlacementSig: string.Join("|", placements),
-                                    Notes: notes);
-                            });
+                                string.IsNullOrWhiteSpace(p.DesignNote) ? null : $"Design note: {p.DesignNote}",
+                                string.IsNullOrWhiteSpace(p.Notes) ? null : $"Print note: {p.Notes}",
+                            }.Where(n => n is not null).Select(n => n!).ToList()));
                     })
                     .ToList();
 
                 if (printRows.Count > 0)
                     col.Item().PaddingTop(8).Text("Print production").SemiBold().FontSize(10);
 
-                foreach (var group in printRows.GroupBy(r => (r.ProductName, r.Color, r.DesignUrl, r.PlacementSig)))
+                foreach (var group in printRows.GroupBy(r => (r.DesignUrl, r.Area, r.PrintSize)))
                 {
                     var first = group.First();
                     var designLabel = DesignFileLabel(string.IsNullOrEmpty(first.DesignUrl) ? null : first.DesignUrl);
-                    var placementsText = string.Join(", ", first.Placements);
-                    var sizes = group.Select(r => r.Size).Where(s => s.Length > 0).Distinct().ToList();
-                    var variantText = sizes.Count > 0
-                        ? $"{first.Color} / {string.Join(", ", sizes)}"
-                        : first.Color;
 
                     col.Item().PaddingTop(4).PaddingLeft(8).BorderLeft(2).BorderColor(Colors.Grey.Lighten1)
                         .PaddingLeft(6).Column(pc =>
@@ -262,14 +246,25 @@ public class OrderProductionPdfService : IOrderProductionPdfService, ITransientD
                             pc.Item().Text(t =>
                             {
                                 t.Span(designLabel).SemiBold().FontSize(9);
-                                t.Span("  →  ").FontSize(9).FontColor(Colors.Grey.Medium);
-                                t.Span(placementsText).FontSize(9);
+                                t.Span("  ·  ").FontSize(9).FontColor(Colors.Grey.Medium);
+                                t.Span($"{first.Area} · {first.PrintSize}").FontSize(9);
                             });
-                            pc.Item().Text(t =>
+
+                            // Each product + colour the print lands on, with its garment sizes combined.
+                            foreach (var garment in group.GroupBy(r => (r.ProductName, r.Color)))
                             {
-                                t.Span($"{first.ProductName} · ").FontSize(9).FontColor(Colors.Grey.Darken1);
-                                t.Span(variantText).FontSize(9).SemiBold();
-                            });
+                                var g = garment.First();
+                                var sizes = garment.Select(r => r.Size).Where(s => s.Length > 0).Distinct().ToList();
+                                var variantText = sizes.Count > 0
+                                    ? $"{g.Color} / {string.Join(", ", sizes)}"
+                                    : g.Color;
+                                pc.Item().Text(t =>
+                                {
+                                    t.Span($"{g.ProductName} · ").FontSize(9).FontColor(Colors.Grey.Darken1);
+                                    t.Span(variantText).FontSize(9).SemiBold();
+                                });
+                            }
+
                             foreach (var note in group.SelectMany(r => r.Notes).Distinct())
                                 pc.Item().Text(note).FontSize(8).FontColor(Colors.Grey.Darken1);
                         });
