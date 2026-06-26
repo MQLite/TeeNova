@@ -94,11 +94,21 @@ public class CatalogAppService : ApplicationService, ICatalogAppService
             .ToList();
 
         const int heroReferenceQuantity = 10;
-        var cheapestTierByGroup = new Dictionary<Guid, decimal>();
-        // Per group: the chosen print-size hero break — the first printable size by sort order, resolved
-        // at the reference quantity. Mirrors the product-detail hero card (Jira 9303).
-        var heroBreakByGroup =
-            new Dictionary<Guid, (string PrintSizeName, decimal UnitPrintPrice, int TierMinQuantity, int Quantity)>();
+
+        // Each product can narrow which print sizes it actually allows via scoped config options (Jira
+        // 9204). The shared group prices more sizes (e.g. A3) than a small garment like a kids tee permits,
+        // so the storefront card must price only sizes the product can print — mirroring the product-detail
+        // page. A product with no active scoped rows imposes no narrowing (global matrix fallback).
+        var productIds = items.Select(p => p.Id).ToList();
+        var activeConfigOptions = await _printConfigOptionRepository.GetListAsync(
+            o => productIds.Contains(o.ProductId) && o.IsActive);
+        var printableSizesByProduct = activeConfigOptions
+            .GroupBy(o => o.ProductId)
+            .ToDictionary(g => g.Key, g => g.Select(o => o.PrintSizeId).ToHashSet());
+
+        // Group print data kept as lists so each product can apply its own printable-size filter below.
+        var activeTiersByGroup = new Dictionary<Guid, List<ProductPrintPriceTier>>();
+        var printSizes = new Dictionary<Guid, PrintConfig.PrintSize>();
         if (groupIds.Count > 0)
         {
             var activeGroupIds = (await _printPricingGroupRepository.GetListAsync(
@@ -109,81 +119,71 @@ public class CatalogAppService : ApplicationService, ICatalogAppService
             var activeTiers = await _printPriceTierRepository.GetListAsync(
                 t => activeGroupIds.Contains(t.PrintPricingGroupId) && t.IsActive);
 
-            cheapestTierByGroup = activeTiers
+            activeTiersByGroup = activeTiers
                 .GroupBy(t => t.PrintPricingGroupId)
-                .ToDictionary(g => g.Key, g => g.Min(t => t.UnitPrintPrice));
+                .ToDictionary(g => g.Key, g => g.ToList());
 
-            // Resolve the hero break from group-default tiers (Size == null) only — the same basis as the
-            // customer product page's group-default ladders.
-            var groupDefaultTiers = activeTiers.Where(t => t.Size == null).ToList();
-            var printSizeIds = groupDefaultTiers.Select(t => t.PrintSizeId).Distinct().ToList();
-            var printSizes = (await _printSizeRepository.GetListAsync(s => printSizeIds.Contains(s.Id)))
+            var printSizeIds = activeTiers.Select(t => t.PrintSizeId).Distinct().ToList();
+            printSizes = (await _printSizeRepository.GetListAsync(s => printSizeIds.Contains(s.Id)))
                 .ToDictionary(s => s.Id);
-
-            foreach (var grp in groupDefaultTiers.GroupBy(t => t.PrintPricingGroupId))
-            {
-                // "First print size they can print" = the lowest PrintSize.SortOrder among priced sizes.
-                var chosen = grp
-                    .GroupBy(t => t.PrintSizeId)
-                    .Where(ladder => printSizes.ContainsKey(ladder.Key))
-                    .OrderBy(ladder => printSizes[ladder.Key].SortOrder)
-                    .ThenBy(ladder => printSizes[ladder.Key].Name)
-                    .FirstOrDefault();
-                if (chosen == null) continue;
-
-                // Resolve the tier at the reference quantity: highest MinQuantity <= ref, else the lowest.
-                var rows = chosen.OrderBy(t => t.MinQuantity).ToList();
-                var resolved = rows.LastOrDefault(t => t.MinQuantity <= heroReferenceQuantity) ?? rows[0];
-                var quantity = resolved.MinQuantity <= heroReferenceQuantity ? heroReferenceQuantity : resolved.MinQuantity;
-
-                heroBreakByGroup[grp.Key] = (
-                    printSizes[chosen.Key].Name,
-                    resolved.UnitPrintPrice,
-                    resolved.MinQuantity,
-                    quantity);
-            }
         }
 
         foreach (var (dto, product) in dtos.Zip(items))
         {
-            if (product.PrintPricingGroupId.HasValue
-                && cheapestTierByGroup.TryGetValue(product.PrintPricingGroupId.Value, out var cheapestPrint))
-            {
-                dto.FromPrice     = product.BasePrice + cheapestPrint;
-                dto.HasPriceTiers = true;
-            }
-            else
-            {
-                dto.FromPrice     = null;
-                dto.HasPriceTiers = false;
-            }
+            dto.FromPrice     = null;
+            dto.HasPriceTiers = false;
 
-            // Hero card data (Jira 9303): combine the per-product garment "from" price with the chosen
-            // group print break so cards mirror the product-detail hero card.
-            if (product.PrintPricingGroupId.HasValue
-                && heroBreakByGroup.TryGetValue(product.PrintPricingGroupId.Value, out var heroBreak))
+            if (!product.PrintPricingGroupId.HasValue
+                || !activeTiersByGroup.TryGetValue(product.PrintPricingGroupId.Value, out var groupTiers))
+                continue;
+
+            // Narrow the group's tiers to the print sizes THIS product can actually print (Jira 9204).
+            // No scoped rows → keep every group size (global behaviour).
+            var printable = printableSizesByProduct.GetValueOrDefault(product.Id);
+            var tiers = printable == null
+                ? groupTiers
+                : groupTiers.Where(t => printable.Contains(t.PrintSizeId)).ToList();
+            if (tiers.Count == 0) continue;
+
+            // Storefront "from" price (Jira 9203): fixed garment BasePrice + cheapest achievable print price.
+            dto.FromPrice     = product.BasePrice + tiers.Min(t => t.UnitPrintPrice);
+            dto.HasPriceTiers = true;
+
+            // Hero break (Jira 9303): first printable group-default (Size == null) size by sort order,
+            // resolved at the reference quantity. Same basis as the product-detail hero card.
+            var chosen = tiers
+                .Where(t => t.Size == null && printSizes.ContainsKey(t.PrintSizeId))
+                .GroupBy(t => t.PrintSizeId)
+                .OrderBy(ladder => printSizes[ladder.Key].SortOrder)
+                .ThenBy(ladder => printSizes[ladder.Key].Name)
+                .FirstOrDefault();
+            if (chosen == null) continue;
+
+            // Resolve the tier at the reference quantity: highest MinQuantity <= ref, else the lowest.
+            var rows = chosen.OrderBy(t => t.MinQuantity).ToList();
+            var resolved = rows.LastOrDefault(t => t.MinQuantity <= heroReferenceQuantity) ?? rows[0];
+            var quantity = resolved.MinQuantity <= heroReferenceQuantity ? heroReferenceQuantity : resolved.MinQuantity;
+
+            var garmentFromPrice = product.BasePrice +
+                (product.Variants.Count > 0 ? product.Variants.Min(v => v.PriceAdjustment) : 0m);
+
+            var sizeAdjustments = product.Variants
+                .GroupBy(v => v.Size)
+                .Select(g => g.OrderBy(v => v.SortOrder).First())
+                .Where(v => v.PriceAdjustment != 0m)
+                .OrderBy(v => v.SortOrder)
+                .Select(v => new HeroSizeAdjustmentDto { Size = v.Size, Adjustment = v.PriceAdjustment })
+                .ToList();
+
+            dto.Hero = new ProductHeroPriceDto
             {
-                var garmentFromPrice = product.BasePrice +
-                    (product.Variants.Count > 0 ? product.Variants.Min(v => v.PriceAdjustment) : 0m);
-
-                var sizeAdjustments = product.Variants
-                    .GroupBy(v => v.Size)
-                    .Select(g => g.OrderBy(v => v.SortOrder).First())
-                    .Where(v => v.PriceAdjustment != 0m)
-                    .OrderBy(v => v.SortOrder)
-                    .Select(v => new HeroSizeAdjustmentDto { Size = v.Size, Adjustment = v.PriceAdjustment })
-                    .ToList();
-
-                dto.Hero = new ProductHeroPriceDto
-                {
-                    Price            = garmentFromPrice + heroBreak.UnitPrintPrice,
-                    PrintSizeName    = heroBreak.PrintSizeName,
-                    Quantity         = heroBreak.Quantity,
-                    TierMinQuantity  = heroBreak.TierMinQuantity,
-                    GarmentFromPrice = garmentFromPrice,
-                    SizeAdjustments  = sizeAdjustments,
-                };
-            }
+                Price            = garmentFromPrice + resolved.UnitPrintPrice,
+                PrintSizeName    = printSizes[chosen.Key].Name,
+                Quantity         = quantity,
+                TierMinQuantity  = resolved.MinQuantity,
+                GarmentFromPrice = garmentFromPrice,
+                SizeAdjustments  = sizeAdjustments,
+            };
         }
 
         return new PagedResultDto<ProductListItemDto>(totalCount, dtos);
