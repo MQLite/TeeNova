@@ -10,6 +10,8 @@ interface PrintSizeSelectorProps {
   allowedSizesErrorByArea: Record<string, string | undefined>
   printSizeByArea: Record<string, string | undefined>
   errors?: Record<string, string | undefined>
+  /** Per-area informational hint when the chosen print size is printed smaller on some garment sizes. */
+  printedSmallerNoteByArea?: Record<string, string | undefined>
   onChange: (areaId: string, sizeId: string) => void
   // Upload props (optional — omit to hide upload UI)
   printAreaUploads?: Record<string, UploadedAsset | undefined>
@@ -31,6 +33,7 @@ export function PrintSizeSelector({
   allowedSizesErrorByArea,
   printSizeByArea,
   errors,
+  printedSmallerNoteByArea,
   onChange,
   printAreaUploads,
   printAreaNotes,
@@ -59,6 +62,7 @@ export function PrintSizeSelector({
         const allowedSizes = allowedSizesByArea[area.id]
         const selectedSizeId = printSizeByArea[area.id] ?? ''
         const validationError = errors?.[area.id]
+        const printedSmallerNote = printedSmallerNoteByArea?.[area.id]
 
         const asset = printAreaUploads?.[area.id]
         const uploadError = printAreaUploadErrors?.[area.id]
@@ -134,6 +138,15 @@ export function PrintSizeSelector({
             {validationError && (
               <p className="mt-2 text-sm text-red-600" style={{ letterSpacing: '-0.14px' }}>
                 {validationError}
+              </p>
+            )}
+
+            {printedSmallerNote && (
+              <p
+                className="mt-2 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800"
+                style={{ letterSpacing: '-0.14px' }}
+              >
+                {printedSmallerNote}
               </p>
             )}
 

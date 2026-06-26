@@ -17,7 +17,7 @@ import { ProductHeroPrice } from '@/components/products/ProductHeroPrice'
 import { useCartStore } from '@/features/cart/cart-store'
 import { filterImagesForColor, resolveImageUrl } from '@/lib/image-utils'
 import { formatMoneyNZD, cheapestPrintTierPrice, groupDefaultPrintLadders, resolveHeroPrintPrice } from '@/lib/pricing'
-import { printableSizeIdsFromOptions, resolveAllowedPrintOptions } from '@/lib/print-options'
+import { printableSizeIdsFromOptions, resolveAllowedPrintOptions, unsupportedSizesForPair } from '@/lib/print-options'
 import type {
   CartItemPrint,
   PriceCalculationResponse,
@@ -138,25 +138,23 @@ export default function ProductDetailPage() {
     [product],
   )
 
-  // 'global' = use the global PrintAreaSizeOption matrix (unchanged); 'scoped' = narrow to the
-  // resolved pairs; 'empty' = selected sizes share no common print option (block prints).
+  // 'global' = use the global PrintAreaSizeOption matrix (unchanged); 'scoped' = offer the union of the
+  // selected garment sizes' allowed pairs (Jira 9204). A print size suitable for only some selected
+  // sizes stays offered — the smaller garments get a smaller print (see printedSmallerByArea below).
   const scopeResolution = useMemo(
     () => resolveAllowedPrintOptions(activeScopedOptions, selectedSizes),
     [activeScopedOptions, selectedSizes],
   )
-
-  const printSelectionBlocked = scopeResolution.mode === 'empty'
 
   // Areas offered to the customer: all global areas, or (scoped) only those with an allowed size.
   const availableAreas = useMemo(() => {
     if (scopeResolution.mode === 'scoped') {
       return printAreas.filter((a) => scopeResolution.allowed.has(a.id))
     }
-    if (scopeResolution.mode === 'empty') return []
     return printAreas
   }, [printAreas, scopeResolution])
 
-  // Per-area print sizes for display: the loaded global options, narrowed by the scoped set when scoped.
+  // Per-area print sizes for display: the loaded global options, narrowed by the scoped union when scoped.
   const displayAllowedSizesByArea = useMemo(() => {
     if (scopeResolution.mode !== 'scoped') return allowedSizesByArea
     const out: Record<string, PrintAreaSizeOption[]> = {}
@@ -167,10 +165,20 @@ export default function ProductDetailPage() {
     return out
   }, [allowedSizesByArea, scopeResolution])
 
-  const multiSizeScopedNote =
-    scopeResolution.mode === 'scoped' && selectedSizes.length > 1
-      ? 'Some selected sizes support different print options. Only shared print options are shown.'
-      : null
+  // Per-area "printed smaller" hint: for each chosen print size, the selected garment sizes that don't
+  // natively fit it. Shown so the customer knows those sizes get a smaller image at the same price.
+  const printedSmallerByArea = useMemo(() => {
+    const out: Record<string, string> = {}
+    for (const areaId of selectedPrintAreas) {
+      const sizeId = printSizeByArea[areaId]
+      if (!sizeId) continue
+      const sizes = unsupportedSizesForPair(activeScopedOptions, selectedSizes, areaId, sizeId)
+      if (sizes.length > 0) {
+        out[areaId] = `We may print a smaller image on ${sizes.join(', ')} — the chosen print size doesn't fully fit these garment sizes.`
+      }
+    }
+    return out
+  }, [activeScopedOptions, selectedSizes, selectedPrintAreas, printSizeByArea])
 
   const missingPrintSizeAreaIds = useMemo(
     () =>
@@ -309,8 +317,6 @@ export default function ProductDetailPage() {
     if (loadError) return loadError
     if (!product) return 'Product could not be loaded.'
     if (selectedVariantLines.length === 0) return 'Enter at least one quantity to preview pricing.'
-    if (printSelectionBlocked)
-      return 'The selected sizes do not share a common print option. Please split the order or choose different sizes/options.'
     if (selectedPrintAreas.some((id) => allowedSizesLoadingByArea[id]))
       return 'Loading available print sizes…'
     if (selectedPrintAreas.some((id) => allowedSizesErrorByArea[id]))
@@ -324,7 +330,6 @@ export default function ProductDetailPage() {
     loadError,
     missingPrintSizeAreaIds.length,
     pricingError,
-    printSelectionBlocked,
     product,
     selectedPrintAreas,
     selectedVariantLines.length,
@@ -654,11 +659,6 @@ export default function ProductDetailPage() {
       return
     }
 
-    if (printSelectionBlocked) {
-      setAddToCartError('The selected sizes do not share a common print option. Split the order or choose different sizes/options.')
-      return
-    }
-
     if (missingPrintSizeAreaIds.length > 0) {
       setAddToCartError('Select a print size for every chosen print area before adding to cart.')
       return
@@ -894,29 +894,15 @@ export default function ProductDetailPage() {
             image column no longer pins, so the print area / sizes / wide quantity matrix fill the page. */}
         <div className="mt-8 flex flex-col gap-5">
             <div className="card p-6">
-              {printSelectionBlocked ? (
-                <div className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
-                  The selected sizes do not share a common print option. Please split the order or choose
-                  different sizes/options to add prints.
-                </div>
-              ) : (
-                <>
-                  <PrintAreaSelector
-                    areas={availableAreas}
-                    selectedAreaIds={selectedPrintAreas}
-                    onChange={handlePrintAreasChange}
-                  />
-                  {multiSizeScopedNote && (
-                    <p className="mt-3 rounded-2xl border border-black/[0.08] bg-black/[0.02] px-4 py-2.5 text-xs text-black/55" style={{ letterSpacing: '-0.14px' }}>
-                      {multiSizeScopedNote}
-                    </p>
-                  )}
-                  {resetNotice && (
-                    <p className="mt-3 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-2.5 text-xs text-amber-800" style={{ letterSpacing: '-0.14px' }}>
-                      {resetNotice}
-                    </p>
-                  )}
-                </>
+              <PrintAreaSelector
+                areas={availableAreas}
+                selectedAreaIds={selectedPrintAreas}
+                onChange={handlePrintAreasChange}
+              />
+              {resetNotice && (
+                <p className="mt-3 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-2.5 text-xs text-amber-800" style={{ letterSpacing: '-0.14px' }}>
+                  {resetNotice}
+                </p>
               )}
             </div>
 
@@ -936,6 +922,7 @@ export default function ProductDetailPage() {
                 allowedSizesErrorByArea={allowedSizesErrorByArea}
                 printSizeByArea={printSizeByArea}
                 errors={perAreaValidationErrors}
+                printedSmallerNoteByArea={printedSmallerByArea}
                 onChange={handlePrintSizeChange}
                 printAreaUploads={printAreaUploads}
                 printAreaNotes={printAreaNotes}
@@ -1070,7 +1057,7 @@ export default function ProductDetailPage() {
               <button
                 type="button"
                 onClick={handleAddToCart}
-                disabled={pricingLoading || uploadingPrintAreaId !== null || printSelectionBlocked}
+                disabled={pricingLoading || uploadingPrintAreaId !== null}
                 className="btn-black w-full py-3 text-sm disabled:opacity-40"
               >
                 {addedToCart

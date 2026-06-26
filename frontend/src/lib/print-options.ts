@@ -4,13 +4,14 @@ import type { ProductPrintConfigOption } from '@/types'
  * Result of resolving a product's scoped allowed print options for a set of selected garment sizes
  * (Jira 9206). Mirrors the backend resolver (9204):
  *  - 'global' — no scoped rows apply → use the global PrintAreaSizeOption matrix (unchanged behaviour)
- *  - 'scoped' — scoped rows apply → only the listed (printAreaId, printSizeId) pairs are allowed
- *  - 'empty'  — multiple sizes were selected but they share no common scoped option → block prints
+ *  - 'scoped' — scoped rows apply → the listed (printAreaId, printSizeId) pairs are offered, taken as
+ *               the UNION across the selected garment sizes. A print size suitable for only some of the
+ *               selected sizes stays selectable; the smaller garments get a smaller print (see
+ *               {@link unsupportedSizesForPair}). There is no longer an "all sizes must share it" block.
  */
 export type ScopeResolution =
   | { mode: 'global' }
   | { mode: 'scoped'; allowed: Map<string, Set<string>> } // printAreaId → set of printSizeId
-  | { mode: 'empty' }
 
 /** Pairs allowed for one garment size, or null when that size has no scoped rows (= global, no narrowing). */
 function allowedPairsForSize(
@@ -54,8 +55,9 @@ export function printableSizeIdsFromOptions(
  *  - No active scoped rows at all → 'global'.
  *  - No size selected yet → product-default rows if any (else 'global').
  *  - One size → that size's override rows, else product-default, else 'global' (size unscoped).
- *  - Multiple sizes → intersection of each size's allowed pairs; sizes with no scoped rows impose no
- *    extra narrowing. If no selected size has scoped rows → 'global'. Empty intersection → 'empty'.
+ *  - Multiple sizes → UNION of each size's allowed pairs; sizes with no scoped rows impose no
+ *    constraint. If no selected size has scoped rows → 'global'. A size suitable for only some of the
+ *    selected garment sizes stays offered (printed smaller on the rest, see {@link unsupportedSizesForPair}).
  */
 export function resolveAllowedPrintOptions(
   activeOptions: ProductPrintConfigOption[],
@@ -75,12 +77,27 @@ export function resolveAllowedPrintOptions(
 
   if (constrained.length === 0) return { mode: 'global' }
 
-  // Intersection across all constrained sizes.
-  let intersection = new Set(constrained[0])
-  for (let i = 1; i < constrained.length; i++) {
-    intersection = new Set([...intersection].filter((p) => constrained[i].has(p)))
-  }
+  // Union across all constrained sizes: offer a pair if ANY selected size supports it.
+  const union = new Set<string>()
+  for (const set of constrained) for (const pair of set) union.add(pair)
 
-  if (intersection.size === 0) return { mode: 'empty' }
-  return { mode: 'scoped', allowed: toAreaMap(intersection) }
+  return { mode: 'scoped', allowed: toAreaMap(union) }
+}
+
+/**
+ * The selected garment sizes that do NOT natively support the (areaId, sizeId) pair — i.e. sizes that
+ * are scoped (have override/default rows) yet don't list this pair. These get a smaller print at the
+ * chosen size's price. Sizes with no scoped rows impose no constraint and are never reported here.
+ */
+export function unsupportedSizesForPair(
+  activeOptions: ProductPrintConfigOption[],
+  selectedSizes: string[],
+  areaId: string,
+  sizeId: string,
+): string[] {
+  const pair = `${areaId}:${sizeId}`
+  return selectedSizes.filter((size) => {
+    const allowed = allowedPairsForSize(activeOptions, size)
+    return allowed !== null && !allowed.has(pair)
+  })
 }

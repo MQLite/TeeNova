@@ -59,10 +59,26 @@ public class ProductPrintConfigOptionResolver : ITransientDependency
     }
 
     /// <summary>
+    /// Product-wide union of allowed (PrintArea, PrintSize) pairs across <b>all</b> active scoped rows
+    /// (every garment size override + the product defaults). Null when the product has no scoped rows
+    /// (the global matrix then governs). Basis for the "printed smaller" policy (Jira 9204).
+    /// </summary>
+    public static HashSet<(Guid AreaId, Guid SizeId)>? ResolveProductAllowedPairs(
+        IReadOnlyList<ProductPrintConfigOption> activeRows)
+    {
+        if (activeRows.Count == 0)
+            return null;
+
+        return activeRows.Select(o => (o.PrintAreaId, o.PrintSizeId)).ToHashSet();
+    }
+
+    /// <summary>
     /// Throws a friendly <see cref="BusinessException"/> for any selected (PrintArea, PrintSize) pair
-    /// not permitted by the product's scoped options. No-op when the product has no scoped restriction
-    /// for this size (the global validator then governs) or when nothing is selected. Global
-    /// active-state checks are performed by the caller / PrintConfigValidator, not here.
+    /// the product permits for <i>no</i> garment size. Validation is product-wide (Jira 9204): a print
+    /// size suitable for at least one of the product's sizes is accepted for the whole order — smaller
+    /// garments simply receive a smaller print at the chosen size's price, so per-size narrowing is no
+    /// longer enforced here. No-op when the product has no scoped rows (global validator governs) or
+    /// when nothing is selected. <paramref name="garmentSize"/> is retained for diagnostic context only.
     /// </summary>
     public async Task ValidateSelectionAsync(
         Guid productId, string? garmentSize, IReadOnlyList<(Guid AreaId, Guid SizeId)> selectedPairs)
@@ -70,9 +86,10 @@ public class ProductPrintConfigOptionResolver : ITransientDependency
         if (selectedPairs.Count == 0)
             return;
 
-        var allowed = await ResolveAllowedPairsAsync(productId, garmentSize);
+        var activeRows = await _optionRepository.GetListAsync(o => o.ProductId == productId && o.IsActive);
+        var allowed = ResolveProductAllowedPairs(activeRows);
         if (allowed == null)
-            return; // unconfigured for this size → preserve existing global behaviour
+            return; // unconfigured product → preserve existing global behaviour
 
         foreach (var (areaId, sizeId) in selectedPairs)
         {
