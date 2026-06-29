@@ -26,7 +26,7 @@ import { AdjustOrderPriceModal } from '@/components/admin/AdjustOrderPriceModal'
 import { OrderContentEditModal } from '@/components/admin/OrderContentEditModal'
 import { DownloadDesignButton } from '@/components/orders/DownloadDesignButton'
 import { DownloadProductionPdfButton } from '@/components/admin/DownloadProductionPdfButton'
-import type { AdjustOrderPriceInput, Order, OrderItem, OrderItemPrint, OrderPrintGroup, OrderPrintGroupRow, OrderStatus, RecordPaymentInput } from '@/types'
+import type { AdjustOrderPriceInput, Order, OrderItem, OrderPrintGroup, OrderPrintGroupRow, OrderStatus, RecordPaymentInput } from '@/types'
 import clsx from 'clsx'
 
 // 鈹€鈹€ Constants 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
@@ -57,32 +57,8 @@ function getFileNameFromUrl(url: string | null | undefined) {
 
 // 鈹€鈹€ Sub-components 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
 
-function getPrintSummary(item: OrderItem) {
-  return item.prints ?? []
-}
-
-function getPrintAreaPrice(itemPrint: NonNullable<OrderItem['prints']>[number]) {
-  return itemPrint.printAreaPrice ?? 0
-}
-
-function getPrintSizePrice(itemPrint: NonNullable<OrderItem['prints']>[number]) {
-  return itemPrint.printSizePrice ?? 0
-}
-
-function getPrintEntryTotal(itemPrint: NonNullable<OrderItem['prints']>[number]) {
-  return getPrintAreaPrice(itemPrint) + getPrintSizePrice(itemPrint)
-}
-
-function getTotalPrintAddOns(item: OrderItem) {
-  return getPrintSummary(item).reduce((sum, itemPrint) => sum + getPrintEntryTotal(itemPrint), 0)
-}
-
 function getLineTotal(item: OrderItem) {
   return item.lineTotal ?? item.unitPrice * item.quantity
-}
-
-function getInferredProductAndVariantPortion(item: OrderItem) {
-  return item.unitPrice - getTotalPrintAddOns(item)
 }
 
 function formatMoney(value: number) {
@@ -109,116 +85,105 @@ function itemHasNoPrints(item: OrderItem) {
   return !item.prints || item.prints.length === 0
 }
 
-function PrintDesignCard({
-  print,
+/**
+ * Design controls for one print group (thumbnail + Download / Replace / Clear). A group shares one
+ * design across all its member prints, so Replace/Clear here apply the change to EVERY print in the
+ * group via the parent handler. Used inside the Grouped Print Summary header.
+ */
+function GroupDesignControls({
+  designUrl,
+  designName,
   disabled,
   onReplace,
   onClear,
 }: {
-  print: OrderItemPrint
+  designUrl: string | null
+  designName: string
   disabled: boolean
-  onReplace: (print: OrderItemPrint, assetId: string, assetUrl: string) => Promise<void>
-  onClear: (print: OrderItemPrint) => Promise<void>
+  onReplace: (assetId: string, assetUrl: string) => Promise<void>
+  onClear: () => Promise<void>
 }) {
   const inputRef = useRef<HTMLInputElement>(null)
-  const [uploading, setUploading] = useState(false)
+  const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  const fileName = getFileNameFromUrl(print.uploadedAssetUrl)
+  const fileName = getFileNameFromUrl(designUrl)
 
   async function handleFile(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0]
     if (!file) return
-    setUploading(true)
+    setBusy(true)
     setError(null)
     try {
       const result = await filesApi.upload(file)
-      await onReplace(print, result.assetId, result.fileUrl)
+      await onReplace(result.assetId, result.fileUrl)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Could not replace this design.')
     } finally {
-      setUploading(false)
+      setBusy(false)
       if (inputRef.current) inputRef.current.value = ''
     }
   }
 
+  async function handleClear() {
+    setBusy(true)
+    setError(null)
+    try {
+      await onClear()
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not clear this design.')
+    } finally {
+      setBusy(false)
+    }
+  }
+
   return (
-    <div className="overflow-hidden rounded-lg border border-black/[0.08] bg-white">
-      <div className="flex gap-3 p-3">
-        <div className="flex h-20 w-20 shrink-0 items-center justify-center overflow-hidden rounded-lg border border-black/[0.08] bg-black/[0.02]">
-          {print.uploadedAssetUrl ? (
-            // eslint-disable-next-line @next/next/no-img-element
-            <img
-              src={print.uploadedAssetUrl}
-              alt={`Design for ${print.printAreaName}`}
-              className="h-full w-full object-contain p-1"
-            />
-          ) : (
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.5} className="h-8 w-8 text-black/20">
-              <path strokeLinecap="round" strokeLinejoin="round" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
-            </svg>
-          )}
-        </div>
-        <div className="min-w-0 flex-1">
-          <div className="flex flex-wrap items-center gap-1.5">
-            <span className="rounded-full border border-black/[0.08] px-2 py-0.5 font-mono text-[10px] uppercase tracking-[0.54px] text-black/55">
-              {print.printAreaName}
-            </span>
-            <span className="rounded-full border border-black/[0.08] px-2 py-0.5 font-mono text-[10px] uppercase tracking-[0.54px] text-black/45">
-              {print.printSizeName}
-            </span>
-          </div>
-          <p className="mt-2 text-xs text-black/55" style={{ letterSpacing: '-0.14px' }}>
-            {print.uploadedAssetUrl ? 'Design uploaded' : 'No design uploaded'}
+    <div className="flex shrink-0 gap-2.5">
+      <div className="flex h-16 w-16 shrink-0 items-center justify-center overflow-hidden rounded-lg border border-black/[0.08] bg-white">
+        {designUrl ? (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img
+            src={designUrl}
+            alt={`Design ${designName}`}
+            className="h-full w-full object-contain p-1"
+          />
+        ) : (
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.5} className="h-7 w-7 text-black/20">
+            <path strokeLinecap="round" strokeLinejoin="round" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+          </svg>
+        )}
+      </div>
+      <div className="flex w-24 flex-col gap-1">
+        {designUrl && <DownloadDesignButton url={designUrl} fileName={fileName} compact />}
+        <input
+          ref={inputRef}
+          type="file"
+          accept="image/*,.pdf,.ai,.svg"
+          className="hidden"
+          onChange={handleFile}
+        />
+        <button
+          type="button"
+          disabled={disabled || busy}
+          onClick={() => inputRef.current?.click()}
+          className="inline-flex items-center justify-center rounded-[50px] border border-dashed border-black/[0.15] px-2 py-1 font-mono text-[10px] uppercase tracking-[0.54px] text-black/45 transition-colors hover:border-black/30 hover:text-black disabled:cursor-not-allowed disabled:opacity-40"
+        >
+          {busy ? 'Working' : designUrl ? 'Replace' : 'Upload'}
+        </button>
+        {designUrl && (
+          <button
+            type="button"
+            disabled={disabled || busy}
+            onClick={handleClear}
+            className="inline-flex items-center justify-center rounded-[50px] border border-black/[0.10] px-2 py-1 font-mono text-[10px] uppercase tracking-[0.54px] text-black/40 transition-colors hover:border-red-200 hover:text-red-600 disabled:cursor-not-allowed disabled:opacity-40"
+          >
+            Clear
+          </button>
+        )}
+        {error && (
+          <p className="rounded-md border border-red-200 bg-red-50 px-1.5 py-1 text-[10px] leading-snug text-red-700">
+            {error}
           </p>
-          {fileName && (
-            <p className="mt-0.5 truncate text-[11px] text-black/40" title={fileName}>
-              {fileName}
-            </p>
-          )}
-          {print.designNote && (
-            <div className="mt-2 rounded-md border border-amber-100 bg-amber-50 px-2 py-1.5">
-              <p className="text-[10px] font-mono uppercase tracking-[0.54px] text-amber-600 mb-0.5">Design note</p>
-              <p className="text-[11px] leading-snug text-amber-700" style={{ letterSpacing: '-0.14px' }}>
-                {print.designNote}
-              </p>
-            </div>
-          )}
-          {error && (
-            <p className="mt-2 rounded-md border border-red-200 bg-red-50 px-2 py-1.5 text-[11px] text-red-700">
-              {error}
-            </p>
-          )}
-          <div className="mt-2 flex flex-wrap items-center gap-1.5">
-            {print.uploadedAssetUrl && (
-              <DownloadDesignButton url={print.uploadedAssetUrl} fileName={fileName} compact />
-            )}
-            <input
-              ref={inputRef}
-              type="file"
-              accept="image/*,.pdf,.ai,.svg"
-              className="hidden"
-              onChange={handleFile}
-            />
-            <button
-              type="button"
-              disabled={disabled || uploading}
-              onClick={() => inputRef.current?.click()}
-              className="inline-flex flex-1 items-center justify-center rounded-[50px] border border-dashed border-black/[0.15] px-2 py-1 font-mono text-[10px] uppercase tracking-[0.54px] text-black/45 transition-colors hover:border-black/30 hover:text-black disabled:cursor-not-allowed disabled:opacity-40"
-            >
-              {uploading ? 'Uploading' : print.uploadedAssetUrl ? 'Replace' : 'Upload'}
-            </button>
-            {print.uploadedAssetUrl && (
-              <button
-                type="button"
-                disabled={disabled || uploading}
-                onClick={() => onClear(print)}
-                className="inline-flex items-center justify-center rounded-[50px] border border-black/[0.10] px-2 py-1 font-mono text-[10px] uppercase tracking-[0.54px] text-black/40 transition-colors hover:border-red-200 hover:text-red-600 disabled:cursor-not-allowed disabled:opacity-40"
-              >
-                Clear
-              </button>
-            )}
-          </div>
-        </div>
+        )}
       </div>
     </div>
   )
@@ -269,14 +234,20 @@ export default function AdminOrderDetailPage() {
 
   // 鈹€鈹€ Action handlers 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
 
-  async function handlePrintDesignReplace(print: OrderItemPrint, assetId: string, assetUrl: string) {
+  // A print group shares one design across all member prints. Replacing/clearing applies the change
+  // to every print in the group via the existing per-print design endpoint (IDs are stable across
+  // these calls — updatePrintDesign does not regenerate them), then rehydrates from the final order.
+  async function handleGroupDesignReplace(group: OrderPrintGroup, assetId: string, assetUrl: string) {
     if (!order) return
     try {
-      const updated = await ordersApi.updatePrintDesign(order.id, print.id, {
-        uploadedAssetId: assetId,
-        uploadedAssetUrl: assetUrl,
-        designNote: print.designNote,
-      })
+      let updated = order
+      for (const row of group.rows) {
+        updated = await ordersApi.updatePrintDesign(order.id, row.orderItemPrintId, {
+          uploadedAssetId: assetId,
+          uploadedAssetUrl: assetUrl,
+          designNote: row.designNote ?? null,
+        })
+      }
       setOrder(updated)
       showToast('Print design replaced')
     } catch {
@@ -285,18 +256,22 @@ export default function AdminOrderDetailPage() {
     }
   }
 
-  async function handlePrintDesignClear(print: OrderItemPrint) {
+  async function handleGroupDesignClear(group: OrderPrintGroup) {
     if (!order) return
     try {
-      const updated = await ordersApi.updatePrintDesign(order.id, print.id, {
-        uploadedAssetId: null,
-        uploadedAssetUrl: null,
-        designNote: print.designNote ?? null,
-      })
+      let updated = order
+      for (const row of group.rows) {
+        updated = await ordersApi.updatePrintDesign(order.id, row.orderItemPrintId, {
+          uploadedAssetId: null,
+          uploadedAssetUrl: null,
+          designNote: row.designNote ?? null,
+        })
+      }
       setOrder(updated)
       showToast('Print design cleared')
     } catch {
       showToast('Could not clear print design', 'error')
+      throw new Error('Could not clear print design')
     }
   }
 
@@ -842,10 +817,20 @@ export default function AdminOrderDetailPage() {
                   item snapshots.
                 </p>
 
-                {printGroups.map((group) => (
+                {printGroups.map((group) => {
+                  // One design per group: pick the first member print that carries an uploaded asset.
+                  const groupDesignUrl = group.rows.find((r) => r.uploadedAssetUrl)?.uploadedAssetUrl ?? null
+                  return (
                   <div key={groupReactKey(group)} className="overflow-hidden rounded-lg border border-black/[0.08]">
-                    {/* Group header: design + position + size + total quantity */}
-                    <div className="flex flex-wrap items-start gap-2 border-b border-black/[0.06] bg-black/[0.02] px-4 py-3">
+                    {/* Group header: design file controls + position + size + total quantity */}
+                    <div className="flex flex-wrap items-start gap-3 border-b border-black/[0.06] bg-black/[0.02] px-4 py-3">
+                      <GroupDesignControls
+                        designUrl={groupDesignUrl}
+                        designName={group.designName || 'design'}
+                        disabled={isCancelled}
+                        onReplace={(assetId, assetUrl) => handleGroupDesignReplace(group, assetId, assetUrl)}
+                        onClear={() => handleGroupDesignClear(group)}
+                      />
                       <div className="min-w-0 flex-1">
                         <p className="truncate text-sm text-black" style={{ fontWeight: 480, letterSpacing: '-0.14px' }}
                           title={group.designName || 'No design uploaded'}>
@@ -909,7 +894,8 @@ export default function AdminOrderDetailPage() {
                       ))}
                     </div>
                   </div>
-                ))}
+                  )
+                })}
               </CardBody>
             </Card>
           )}
@@ -949,81 +935,6 @@ export default function AdminOrderDetailPage() {
               </CardBody>
             </Card>
           )}
-
-          {/* Order totals summary */}
-          <Card>
-            <CardHeader className="flex items-center justify-between">
-              <h2 className="text-sm text-black" style={{ fontWeight: 540, letterSpacing: '-0.26px' }}>
-                Order Items
-              </h2>
-              <span className="font-mono text-[11px] uppercase tracking-[0.54px] text-black/50">
-                {order.items.length} item{order.items.length !== 1 ? 's' : ''}
-                {' · '}
-                <span className="text-black" style={{ fontWeight: 540 }}>${order.totalAmount.toFixed(2)}</span>
-              </span>
-            </CardHeader>
-            <CardBody className="p-0">
-              <div className="divide-y divide-black/[0.06]">
-                {order.items.map((item) => (
-                  <div key={item.id}>
-                    {/* Item header row */}
-                    <div className="flex items-start gap-4 px-5 pt-4 pb-3">
-                      <div className="min-w-0 flex-1">
-                        <p className="text-sm text-black" style={{ fontWeight: 480, letterSpacing: '-0.14px' }}>
-                          {item.productName}
-                        </p>
-                        <p className="mt-0.5 text-xs text-black/55" style={{ letterSpacing: '-0.14px' }}>
-                          {item.variantLabel}
-                        </p>
-                        <div className="mt-1.5 flex flex-wrap gap-1.5">
-                          <span className="inline-flex items-center rounded-full border border-black/[0.08] px-2 py-0.5 font-mono text-[10px] uppercase tracking-[0.54px] text-black/55">
-                            Qty {item.quantity}
-                          </span>
-                          {getPrintSummary(item).map((print) => (
-                            <span key={`${print.printAreaId}:${print.printSizeId}`}
-                              className="inline-flex items-center rounded-full border border-black/[0.08] px-2 py-0.5 font-mono text-[10px] uppercase tracking-[0.54px] text-black/55">
-                              {print.printAreaName} · {print.printSizeName}
-                            </span>
-                          ))}
-                        </div>
-                      </div>
-                    </div>
-
-                    {/* Print-area design cards */}
-                    {getPrintSummary(item).length > 0 && (
-                      <div className="px-5 pb-4">
-                        <p className="mb-2 font-mono text-[10px] uppercase tracking-[0.54px] text-black/40">
-                          Print Design Files
-                        </p>
-                        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
-                          {getPrintSummary(item)
-                            .slice()
-                            .sort((a, b) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0))
-                            .map((print) => (
-                              <PrintDesignCard
-                                key={print.id}
-                                print={print}
-                                disabled={isCancelled}
-                                onReplace={handlePrintDesignReplace}
-                                onClear={handlePrintDesignClear}
-                              />
-                            ))}
-                        </div>
-                      </div>
-                    )}
-
-                    {getPrintSummary(item).length === 0 && (
-                      <div className="px-5 pb-4">
-                        <div className="rounded-lg border border-dashed border-black/[0.10] bg-black/[0.02] px-4 py-4 text-center font-mono text-[11px] uppercase tracking-[0.54px] text-black/35">
-                          No design files attached to this item.
-                        </div>
-                      </div>
-                    )}
-                  </div>
-                ))}
-              </div>
-            </CardBody>
-          </Card>
 
         </div>
       </div>
