@@ -26,4 +26,8 @@ public interface IOrderAppService : IApplicationService
     Task<OrderDto> RecordPaymentAsync(Guid id, RecordPaymentDto input);
     Task<OnlinePaymentSessionDto> CreateOnlinePaymentSessionAsync(Guid id, CreateOnlinePaymentSessionDto input);
     Task<OrderDto> AdjustPriceAsync(Guid id, AdjustOrderPriceDto input);
+
+    // Admin order-content edit (Jira 9405): preview (no persistence) + save (reprice + persist).
+    Task<OrderContentQuoteResultDto> QuoteContentUpdateAsync(Guid id, UpdateOrderContentDto input);
+    Task<OrderDto> UpdateContentAsync(Guid id, UpdateOrderContentDto input);
 }

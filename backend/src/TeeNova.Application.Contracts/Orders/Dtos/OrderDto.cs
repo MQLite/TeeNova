@@ -20,6 +20,14 @@ public class OrderDto
     public decimal TotalAmount { get; set; }
     public ShippingAddressDto ShippingAddress { get; set; } = default!;
     public List<OrderItemDto> Items { get; set; } = new();
+
+    /// <summary>
+    /// Additive read-only grouping of print content by design + print position + print size (Jira 9403).
+    /// Computed on the backend from <see cref="Items"/>; the flat <see cref="Items"/> list is unchanged
+    /// and remains the source of truth for compatibility (production PDF, customer tracking, etc.).
+    /// </summary>
+    public List<OrderPrintGroupDto> PrintGroups { get; set; } = new();
+
     public string? Notes { get; set; }
     public string? AdminNotes { get; set; }
     public DateTime CreationTime { get; set; }

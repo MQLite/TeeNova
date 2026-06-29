@@ -449,6 +449,45 @@ export interface OrderItemPrint {
   uploadedAssetId?: string | null
   uploadedAssetUrl?: string | null
   designNote?: string | null
+  // Print-only tier snapshot (Jira 9203); exposed by the backend DTO. 0 / null for pre-9203 rows.
+  resolvedUnitPrintPrice?: number
+  appliedPrintTierMinQuantity?: number | null
+}
+
+// Grouped print read model (Jira 9403/9404). Additive; computed by the backend from order items.
+// Display-only: never use these rows to compute order totals (one item with multiple prints appears
+// in multiple groups, so summing row line totals across groups double-counts).
+export interface OrderPrintGroupRow {
+  orderItemId: string
+  orderItemPrintId: string
+  productName: string
+  variantLabel: string
+  color?: string | null
+  garmentSize?: string | null
+  quantity: number
+  unitPrice: number
+  lineTotal: number
+  uploadedAssetId?: string | null
+  uploadedAssetUrl?: string | null
+  designNote?: string | null
+  printNotes?: string | null
+  resolvedUnitPrintPrice: number
+  appliedPrintTierMinQuantity?: number | null
+  isLegacyPricingSnapshot: boolean
+}
+
+export interface OrderPrintGroup {
+  groupKey: string
+  designName: string
+  designKey: string
+  printAreaId: string
+  printAreaName: string
+  printAreaCode?: string | null
+  printSizeId: string
+  printSizeName: string
+  printSizeCode?: string | null
+  totalQuantity: number
+  rows: OrderPrintGroupRow[]
 }
 
 export interface OrderItem {
@@ -463,6 +502,73 @@ export interface OrderItem {
   prints?: OrderItemPrint[]
 }
 
+// Admin order-content edit (Jira 9405/9406). These mirror the backend Update*ContentDto shapes:
+// IDs + quantities + design/note fields only. NEVER carry price fields — the backend is the sole
+// pricing authority and ignores any client-supplied price.
+
+export interface UpdateOrderItemPrintContent {
+  /** Existing OrderItemPrint id when editing/replacing; omitted/undefined when adding. */
+  id?: string
+  printAreaId: string
+  printSizeId: string
+  uploadedAssetId?: string | null
+  uploadedAssetUrl?: string | null
+  designNote?: string | null
+  printNotes?: string | null
+}
+
+export interface UpdateOrderItemContent {
+  /** Existing OrderItem id when editing/replacing; omitted/undefined when adding. */
+  id?: string
+  productId: string
+  productVariantId: string
+  quantity: number
+  prints: UpdateOrderItemPrintContent[]
+}
+
+/** Full desired item set (replace semantics): omitted items are removed on save. */
+export interface UpdateOrderContent {
+  items: UpdateOrderItemContent[]
+}
+
+/**
+ * Preview of how a content change affects the order's payment snapshot (no persistence).
+ * PaidAmount and payment transactions are never altered by repricing.
+ */
+export interface PaymentImpact {
+  paidAmount: number
+  oldBalanceAmount: number
+  newBalanceAmount: number
+  oldRequiredPaymentAmount: number
+  newRequiredPaymentAmount: number
+  oldRequiredDepositAmount?: number | null
+  newRequiredDepositAmount?: number | null
+  currentPaymentStatus: string
+  previewPaymentStatus: string
+  /** True when the new total differs from the current total. */
+  totalChanged: boolean
+  /** True when saving would cancel one or more Pending online payment sessions. */
+  wouldCancelPendingPaymentSessions: boolean
+  /** True when the change cannot be saved as-is (see {@link blockingReasons}). */
+  isBlocked: boolean
+  /** Machine-friendly blocking reason codes (e.g. "NewTotalBelowPaidAmount", "OrderCancelled"). */
+  blockingReasons: string[]
+}
+
+/**
+ * Result of a non-persisting admin order-content preview (Jira 9405). The `previewOrder` carries the
+ * repriced totals + regrouped PrintGroups, but item/print ids on brand-new rows are EPHEMERAL preview
+ * ids and must never be treated as stable saved ids.
+ */
+export interface OrderContentQuoteResult {
+  oldTotalAmount: number
+  newTotalAmount: number
+  previewOrder: Order
+  payment: PaymentImpact
+  /** Human-readable, non-blocking notes (e.g. pending sessions will be cancelled). */
+  warnings: string[]
+}
+
 export interface Order {
   id: string
   orderNumber: string
@@ -475,6 +581,9 @@ export interface Order {
   totalAmount: number
   shippingAddress: ShippingAddress
   items: OrderItem[]
+  // Additive grouped print read model (Jira 9403). Optional so an older backend that omits it
+  // never breaks the page. Display-only; order totals stay based on `items` / `totalAmount`.
+  printGroups?: OrderPrintGroup[]
   notes: string | null
   adminNotes: string | null
   creationTime: string

@@ -23,62 +23,44 @@ namespace TeeNova.Orders;
 public class OrderAppService : ApplicationService, IOrderAppService
 {
     private readonly IRepository<Order, Guid>                       _orderRepository;
-    private readonly IRepository<Catalog.Product, Guid>             _productRepository;
-    private readonly IRepository<Catalog.PrintPricingGroup, Guid>   _printPricingGroupRepository;
-    private readonly IRepository<Catalog.ProductPrintPriceTier, Guid> _printPriceTierRepository;
     private readonly IRepository<OrderTimelineEntry, Guid>   _timelineRepository;
     private readonly IRepository<PaymentTransaction, Guid>   _paymentTransactionRepository;
     private readonly IRepository<OrderPriceAdjustment, Guid> _priceAdjustmentRepository;
-    private readonly IRepository<PrintArea, Guid>            _printAreaRepository;
-    private readonly IRepository<PrintSize, Guid>            _printSizeRepository;
     private readonly IRepository<OnlinePaymentSession, Guid> _onlinePaymentSessionRepository;
-    private readonly PrintConfigValidator                    _printConfigValidator;
-    private readonly Catalog.ProductPrintConfigOptionResolver _printConfigOptionResolver;
     private readonly IOrderEmailNotificationService          _orderEmailNotificationService;
     private readonly IOptions<OnlinePaymentOptions>          _onlinePaymentOptions;
     private readonly IOnlinePaymentProviderResolver          _onlinePaymentProviderResolver;
     private readonly IHttpContextAccessor                    _httpContextAccessor;
     private readonly IInventorySettingsAppService            _inventorySettings;
     private readonly IInventoryDeductionService              _inventoryDeductionService;
+    private readonly OrderContentPricingService              _orderContentPricingService;
 
     public OrderAppService(
         IRepository<Order, Guid>                 orderRepository,
-        IRepository<Catalog.Product, Guid>       productRepository,
-        IRepository<Catalog.PrintPricingGroup, Guid> printPricingGroupRepository,
-        IRepository<Catalog.ProductPrintPriceTier, Guid> printPriceTierRepository,
         IRepository<OrderTimelineEntry, Guid>    timelineRepository,
         IRepository<PaymentTransaction, Guid>    paymentTransactionRepository,
         IRepository<OrderPriceAdjustment, Guid>  priceAdjustmentRepository,
-        IRepository<PrintArea, Guid>             printAreaRepository,
-        IRepository<PrintSize, Guid>             printSizeRepository,
         IRepository<OnlinePaymentSession, Guid>  onlinePaymentSessionRepository,
-        PrintConfigValidator                     printConfigValidator,
-        Catalog.ProductPrintConfigOptionResolver printConfigOptionResolver,
         IOrderEmailNotificationService           orderEmailNotificationService,
         IOptions<OnlinePaymentOptions>           onlinePaymentOptions,
         IOnlinePaymentProviderResolver           onlinePaymentProviderResolver,
         IHttpContextAccessor                     httpContextAccessor,
         IInventorySettingsAppService             inventorySettings,
-        IInventoryDeductionService               inventoryDeductionService)
+        IInventoryDeductionService               inventoryDeductionService,
+        OrderContentPricingService               orderContentPricingService)
     {
         _orderRepository                = orderRepository;
-        _productRepository              = productRepository;
-        _printPricingGroupRepository    = printPricingGroupRepository;
-        _printPriceTierRepository       = printPriceTierRepository;
         _timelineRepository             = timelineRepository;
         _paymentTransactionRepository   = paymentTransactionRepository;
         _priceAdjustmentRepository      = priceAdjustmentRepository;
-        _printAreaRepository            = printAreaRepository;
-        _printSizeRepository            = printSizeRepository;
         _onlinePaymentSessionRepository = onlinePaymentSessionRepository;
-        _printConfigValidator           = printConfigValidator;
-        _printConfigOptionResolver      = printConfigOptionResolver;
         _orderEmailNotificationService  = orderEmailNotificationService;
         _onlinePaymentOptions           = onlinePaymentOptions;
         _onlinePaymentProviderResolver  = onlinePaymentProviderResolver;
         _httpContextAccessor            = httpContextAccessor;
         _inventorySettings              = inventorySettings;
         _inventoryDeductionService      = inventoryDeductionService;
+        _orderContentPricingService     = orderContentPricingService;
     }
 
     public async Task<OrderDto> CreateAsync(CreateOrderDto input)
@@ -105,120 +87,26 @@ public class OrderAppService : ApplicationService, IOrderAppService
         // affects old orders. This does NOT deduct stock and never blocks checkout.
         var inventoryDeductionEligible = (await _inventorySettings.GetAsync()).AutoDeductOnPressedEnabled;
 
-        // Load every referenced product (with variants) once, up front.
-        var productIds = input.Items.Select(i => i.ProductId).Distinct().ToList();
-        var productQueryable = await _productRepository.GetQueryableAsync();
-        var products = (await productQueryable
-                .Include(p => p.Variants)
-                .Where(p => productIds.Contains(p.Id))
-                .ToListAsync())
-            .ToDictionary(p => p.Id);
-
-        foreach (var id in productIds)
-            if (!products.ContainsKey(id))
-                throw new Volo.Abp.Domain.Entities.EntityNotFoundException(typeof(Catalog.Product), id);
-
-        // Print-tier quantity scope (Jira 9203): the PrintPricingGroup TOTAL quantity. Products that
-        // share a group combine; different PrintSize values in a group also combine for the break
-        // threshold. Ungrouped products are isolated (keyed by their own id). Count each item's
-        // garment quantity ONCE for the group, regardless of how many prints it carries.
-        var groupQuantities = new Dictionary<string, int>();
-        foreach (var itemDto in input.Items)
-        {
-            var key = PrintPricingGroupKey(products[itemDto.ProductId]);
-            groupQuantities[key] = groupQuantities.GetValueOrDefault(key) + itemDto.Quantity;
-        }
-
-        // Load all tiers for the real groups referenced by this order, grouped for resolution.
-        var groupIds = products.Values
-            .Where(p => p.PrintPricingGroupId.HasValue)
-            .Select(p => p.PrintPricingGroupId!.Value)
-            .Distinct()
+        // Authoritative whole-order pricing via the shared service (Jira 9405): identical resolution to
+        // the storefront quote and the admin content-edit paths so prices can never drift.
+        var draft = input.Items
+            .Select(i => new OrderDraftItem(
+                Id: null,
+                i.ProductId,
+                i.ProductVariantId,
+                i.Quantity,
+                (i.Prints ?? new List<CreateOrderItemPrintDto>())
+                    .Select(p => new OrderDraftPrint(
+                        Id: null,
+                        p.PrintAreaId, p.PrintSizeId,
+                        p.UploadedAssetId, p.UploadedAssetUrl, p.DesignNote, PrintNotes: null))
+                    .ToList()))
             .ToList();
 
-        var activeGroupIds = groupIds.Count == 0
-            ? new List<Guid>()
-            : (await _printPricingGroupRepository.GetListAsync(g => groupIds.Contains(g.Id) && g.IsActive))
-                .Select(g => g.Id)
-                .ToList();
+        var priced = await _orderContentPricingService.PriceAsync(draft);
 
-        var tiersByGroup = activeGroupIds.Count == 0
-            ? new Dictionary<Guid, List<Catalog.ProductPrintPriceTier>>()
-            : (await _printPriceTierRepository.GetListAsync(t => activeGroupIds.Contains(t.PrintPricingGroupId)))
-                .GroupBy(t => t.PrintPricingGroupId)
-                .ToDictionary(g => g.Key, g => g.ToList());
-
-        foreach (var itemDto in input.Items)
-        {
-            var product = products[itemDto.ProductId];
-
-            var variant = product.Variants.FirstOrDefault(v => v.Id == itemDto.ProductVariantId)
-                ?? throw new Volo.Abp.BusinessException("TeeNova:Catalog:VariantNotFound");
-
-            // Load prints first so their prices feed into the final unit price before
-            // OrderItem is constructed (unit price is immutable after construction).
-            // LoadOrderItemPrintsAsync enforces global active-state + matrix; then narrow by the
-            // product/size scoped allowed options (Jira 9204); a no-op for unconfigured products.
-            var loadedPrints = itemDto.Prints?.Count > 0
-                ? await LoadOrderItemPrintsAsync(itemDto.Prints)
-                : [];
-
-            await _printConfigOptionResolver.ValidateSelectionAsync(
-                product.Id,
-                variant.Size,
-                loadedPrints.Select(p => (p.Area.Id, p.Size.Id)).ToList());
-
-            // Resolve each selected print against the effective group's tiers + group quantity,
-            // then price through the shared PriceCalculator so the saved order price matches the
-            // storefront quote exactly (print-only formula: garment fixed + sum of resolved print prices).
-            var groupQuantity = groupQuantities[PrintPricingGroupKey(product)];
-            var groupTiers = product.PrintPricingGroupId.HasValue
-                && tiersByGroup.TryGetValue(product.PrintPricingGroupId.Value, out var gt)
-                    ? gt
-                    : null;
-
-            var resolvedByPrint = loadedPrints
-                .Select(p => PrintTierPriceResolver.Resolve(
-                    groupTiers, variant.Size, p.Size.Id, groupQuantity, p.Size.BasePrice))
-                .ToList();
-
-            var resolvedPrints = loadedPrints
-                .Select((p, idx) => new ResolvedPrintAddOn(
-                    new PrintPricingEntry(
-                        p.Area.Id, p.Area.Name, p.Area.BasePrice,
-                        p.Size.Id, p.Size.Name, p.Size.BasePrice),
-                    resolvedByPrint[idx]))
-                .ToList();
-
-            var unitPrice = PriceCalculator
-                .Calculate(product.BasePrice, variant.PriceAdjustment, resolvedPrints, itemDto.Quantity)
-                .UnitPrice;
-            var variantLabel = $"{variant.Color} / {variant.Size}";
-
-            var item = new OrderItem(
-                GuidGenerator.Create(), order.Id,
-                product.Id, variant.Id,
-                product.Name, variantLabel,
-                itemDto.Quantity, unitPrice)
-            {
-                InventoryDeductionEligible = inventoryDeductionEligible,
-            };
-
-            AddPrintsToItem(item, loadedPrints, resolvedByPrint);
-
-            order.AddItem(item);
-
-            Logger.LogInformation(
-                "[OrderPricing] OrderId={OrderId} ProductId={ProductId} ProductVariantId={ProductVariantId} Quantity={Quantity} GroupQuantity={GroupQuantity} PrintCount={PrintCount} UnitPrice={UnitPrice} LineTotal={LineTotal}",
-                order.Id,
-                product.Id,
-                variant.Id,
-                itemDto.Quantity,
-                groupQuantity,
-                loadedPrints.Count,
-                unitPrice,
-                unitPrice * itemDto.Quantity);
-        }
+        foreach (var pricedItem in priced.Items)
+            order.AddItem(BuildOrderItem(order.Id, pricedItem, inventoryDeductionEligible));
 
         order.InitializePaymentRequirement();
         await _orderRepository.InsertAsync(order, autoSave: true);
@@ -269,6 +157,11 @@ public class OrderAppService : ApplicationService, IOrderAppService
         await EnrichTimelineAsync(dto);
         await EnrichPaymentTransactionsAsync(dto);
         await EnrichPriceAdjustmentsAsync(dto);
+
+        // Additive grouped print read model (Jira 9403). Pure projection over the already-loaded
+        // Items/Prints snapshot — no DB access, no mutation of the flat items or any price snapshot.
+        dto.PrintGroups = OrderPrintGroupBuilder.Build(dto);
+
         return dto;
     }
 
@@ -330,6 +223,111 @@ public class OrderAppService : ApplicationService, IOrderAppService
             timelineDesc = timelineDesc[..509] + "...";
 
         await AddTimelineEntryAsync(id, OrderEventType.PriceAdjusted, timelineDesc, order.Status);
+
+        return await GetAsync(id);
+    }
+
+    /// <summary>
+    /// Admin-only NON-PERSISTING preview (Jira 9405): re-resolves the WHOLE submitted order draft via the
+    /// shared authoritative pricing service and returns the repriced preview order, the regrouped print
+    /// read model, and the payment impact. Nothing is saved; no session/status/payment/inventory side
+    /// effects occur. Editability problems (terminal/inventory/below-paid) are reported as blocking
+    /// reasons rather than thrown, so the edit UI can show them before save. Invalid product/variant/print
+    /// selections still throw (an invalid draft cannot be priced/previewed).
+    /// </summary>
+    public async Task<OrderContentQuoteResultDto> QuoteContentUpdateAsync(Guid id, UpdateOrderContentDto input)
+    {
+        var order = await LoadOrderWithItemsAsync(id);
+        var draft = BuildAndValidateDraft(order, input);
+
+        var priced   = await _orderContentPricingService.PriceAsync(draft);
+        var newTotal = priced.TotalAmount;
+        var oldTotal = order.TotalAmount;
+
+        var pendingSessionCount = await CountPendingPaymentSessionsAsync(id);
+        var payment = BuildPaymentImpact(order, newTotal, pendingSessionCount);
+
+        var warnings = new List<string>();
+        if (payment.WouldCancelPendingPaymentSessions)
+            warnings.Add($"Saving will cancel {pendingSessionCount} pending online payment session(s).");
+
+        var previewOrder = BuildPreviewOrderDto(order, priced, payment, newTotal);
+
+        return new OrderContentQuoteResultDto
+        {
+            OldTotalAmount = oldTotal,
+            NewTotalAmount = newTotal,
+            PreviewOrder   = previewOrder,
+            Payment        = payment,
+            Warnings       = warnings,
+        };
+    }
+
+    /// <summary>
+    /// Admin-only content save (Jira 9405): validates editability, re-resolves the WHOLE order via the
+    /// shared pricing service (never trusting client prices), replaces the item set (replace semantics:
+    /// omitted items removed, kept/new items rebuilt from server snapshots), recalculates Total +
+    /// payment exactly as <see cref="AdjustPriceAsync"/> does, cancels pending online sessions when the
+    /// total changes, writes an audit timeline entry, and returns the fresh <see cref="OrderDto"/>
+    /// (with PrintGroups). Rejects Cancelled/Completed orders, inventory-deducted orders, and any new
+    /// total below PaidAmount. Does NOT send email, generate a PDF, or deduct inventory.
+    /// </summary>
+    public async Task<OrderDto> UpdateContentAsync(Guid id, UpdateOrderContentDto input)
+    {
+        var order = await LoadOrderWithItemsAsync(id);
+
+        // Fail fast on guards before doing any pricing DB work.
+        EnsureContentEditable(order);
+
+        var draft  = BuildAndValidateDraft(order, input);
+        var priced = await _orderContentPricingService.PriceAsync(draft);
+
+        var oldTotal = order.TotalAmount;
+
+        // All items in an order share the creation-time deduction-eligibility snapshot (Jira 9005);
+        // preserve it on the rebuilt rows. (Eligibility != deducted; deducted orders are rejected above.)
+        var inventoryDeductionEligible = order.Items.FirstOrDefault()?.InventoryDeductionEligible ?? false;
+
+        var newItems = priced.Items
+            .Select(p => BuildOrderItem(order.Id, p, inventoryDeductionEligible))
+            .ToList();
+
+        // Domain replace + payment recalc (re-validates terminal/positive/below-paid defensively).
+        order.ReplaceItems(newItems, Clock.Now);
+
+        // Cancel any Pending online payment sessions when the total changed; their frozen amounts are
+        // now stale. Mirrors AdjustPriceAsync exactly.
+        var sessionNote = string.Empty;
+        if (order.TotalAmount != oldTotal)
+        {
+            var sessionQuery = await _onlinePaymentSessionRepository.GetQueryableAsync();
+            var pendingSessions = await sessionQuery
+                .Where(s => s.OrderId == id && s.Status == OnlinePaymentSessionStatus.Pending)
+                .ToListAsync();
+
+            foreach (var session in pendingSessions)
+            {
+                session.MarkCancelled(null, "order_content_edited");
+                await _onlinePaymentSessionRepository.UpdateAsync(session, autoSave: false);
+            }
+
+            if (pendingSessions.Count > 0)
+                sessionNote = $" {pendingSessions.Count} pending payment session(s) cancelled.";
+        }
+
+        await _orderRepository.UpdateAsync(order, autoSave: true);
+
+        var direction = order.TotalAmount > oldTotal ? "increased"
+            : order.TotalAmount < oldTotal ? "decreased"
+            : "unchanged";
+
+        var timelineDesc = $"Order content updated. Total {direction} " +
+                           $"({oldTotal:F2} -> {order.TotalAmount:F2} NZD).{sessionNote}";
+
+        if (timelineDesc.Length > 512)
+            timelineDesc = timelineDesc[..509] + "...";
+
+        await AddTimelineEntryAsync(id, OrderEventType.ContentEdited, timelineDesc, order.Status);
 
         return await GetAsync(id);
     }
@@ -866,95 +864,259 @@ public class OrderAppService : ApplicationService, IOrderAppService
     }
 
     /// <summary>
-    /// Loads and validates PrintArea + PrintSize for each requested print.
-    /// Returns a list of loaded entity pairs; prices are used for unit price
-    /// calculation before OrderItem is constructed.
+    /// Builds a fresh <see cref="OrderItem"/> (new ids for the item and every print) from a priced
+    /// draft row. Shared by order creation and the admin content-edit save (replace semantics): both
+    /// persist server-resolved snapshots only — UnitPrice, ResolvedUnitPrintPrice and the applied tier.
     /// </summary>
-    private async Task<List<LoadedOrderItemPrint>> LoadOrderItemPrintsAsync(
-        IEnumerable<CreateOrderItemPrintDto> printDtos)
+    private OrderItem BuildOrderItem(Guid orderId, PricedOrderItem priced, bool inventoryDeductionEligible)
     {
-        var result = new List<LoadedOrderItemPrint>();
-        var pairs  = new List<(PrintArea Area, PrintSize Size)>();
-
-        foreach (var dto in printDtos)
+        var item = new OrderItem(
+            GuidGenerator.Create(), orderId,
+            priced.ProductId, priced.ProductVariantId,
+            priced.ProductName, priced.VariantLabel,
+            priced.Quantity, priced.UnitPrice)
         {
-            var area = await _printAreaRepository.FindAsync(dto.PrintAreaId)
-                ?? throw new Volo.Abp.Domain.Entities.EntityNotFoundException(
-                    typeof(PrintArea), dto.PrintAreaId);
+            InventoryDeductionEligible = inventoryDeductionEligible,
+        };
 
-            if (!area.IsActive)
-                throw new Volo.Abp.BusinessException("TeeNova:PrintConfig:PrintAreaInactive")
-                    .WithData("PrintAreaId", dto.PrintAreaId)
-                    .WithData("PrintAreaName", area.Name);
-
-            var size = await _printSizeRepository.FindAsync(dto.PrintSizeId)
-                ?? throw new Volo.Abp.Domain.Entities.EntityNotFoundException(
-                    typeof(PrintSize), dto.PrintSizeId);
-
-            if (!size.IsActive)
-                throw new Volo.Abp.BusinessException("TeeNova:PrintConfig:PrintSizeInactive")
-                    .WithData("PrintSizeId", dto.PrintSizeId)
-                    .WithData("PrintSizeName", size.Name);
-
-            pairs.Add((area, size));
-            result.Add(new LoadedOrderItemPrint(
-                area,
-                size,
-                dto.UploadedAssetId,
-                dto.UploadedAssetUrl,
-                dto.DesignNote));
-        }
-
-        // Validate that each (PrintArea, PrintSize) pair has an active PrintAreaSizeOption.
-        // Uses a single batch query across all pairs.
-        await _printConfigValidator.ValidatePrintCombinationsAsync(pairs);
-
-        return result;
-    }
-
-    /// <summary>
-    /// Writes OrderItemPrint records onto the item from already-loaded entities, snapshotting the
-    /// resolved print-tier price (Jira 9203) actually charged for each print.
-    /// Synchronous: no DB access, entities were loaded by LoadOrderItemPrintsAsync.
-    /// </summary>
-    private void AddPrintsToItem(
-        OrderItem item,
-        IReadOnlyList<LoadedOrderItemPrint> prints,
-        IReadOnlyList<ResolvedPrintTier> resolved)
-    {
-        var sortOrder = 0;
-        for (var i = 0; i < prints.Count; i++)
+        foreach (var print in priced.Prints)
         {
-            var print = prints[i];
-            var r     = resolved[i];
             item.AddPrint(
                 GuidGenerator.Create(),
-                print.Area.Id, print.Area.Name, print.Area.Code, print.Area.BasePrice,
-                print.Size.Id, print.Size.Name, print.Size.Code, print.Size.BasePrice,
-                resolvedUnitPrintPrice: r.UnitPrintPrice,
-                appliedPrintTierMinQuantity: r.AppliedMinQuantity,
-                sortOrder: sortOrder++,
+                print.PrintAreaId, print.PrintAreaName, print.PrintAreaCode, print.PrintAreaPrice,
+                print.PrintSizeId, print.PrintSizeName, print.PrintSizeCode, print.PrintSizePrice,
+                resolvedUnitPrintPrice: print.ResolvedUnitPrintPrice,
+                appliedPrintTierMinQuantity: print.AppliedPrintTierMinQuantity,
+                sortOrder: print.SortOrder,
+                notes: print.PrintNotes,
                 uploadedAssetId: print.UploadedAssetId,
                 uploadedAssetUrl: print.UploadedAssetUrl,
                 designNote: print.DesignNote);
         }
+
+        return item;
+    }
+
+    // ── Admin content-edit helpers (Jira 9405) ──────────────────────────────────
+
+    private async Task<Order> LoadOrderWithItemsAsync(Guid id)
+    {
+        var query = await _orderRepository.GetQueryableAsync();
+        return await query
+            .Include(o => o.Items)
+            .ThenInclude(i => i.Prints)
+            .FirstOrDefaultAsync(o => o.Id == id)
+            ?? throw new Volo.Abp.Domain.Entities.EntityNotFoundException(typeof(Order), id);
     }
 
     /// <summary>
-    /// Print-tier aggregation key (Jira 9203): the PrintPricingGroup id when the product is grouped,
-    /// otherwise an isolated per-product key so ungrouped products never aggregate with others.
+    /// Rejects a content edit on an order that is in a terminal state or whose stock has already been
+    /// deducted (Jira 9005). V1 inventory rule (deliberately coarse and safe): if ANY existing item has
+    /// <c>InventoryDeductedAt</c> set, the whole content update is rejected — no stock is reversed or
+    /// re-deducted here. Granular per-item detection is a future enhancement.
     /// </summary>
-    private static string PrintPricingGroupKey(Catalog.Product product)
-        => product.PrintPricingGroupId.HasValue
-            ? $"g:{product.PrintPricingGroupId.Value}"
-            : $"p:{product.Id}";
+    private static void EnsureContentEditable(Order order)
+    {
+        if (order.Status == OrderStatus.Cancelled || order.Status == OrderStatus.Completed)
+            throw new Volo.Abp.BusinessException("TeeNova:Order:CannotEditContentForTerminalOrder")
+                .WithData("Status", order.Status);
 
-    private record LoadedOrderItemPrint(
-        PrintArea Area,
-        PrintSize Size,
-        Guid? UploadedAssetId,
-        string? UploadedAssetUrl,
-        string? DesignNote);
+        if (order.Items.Any(i => i.InventoryDeductedAt != null))
+            throw new Volo.Abp.BusinessException("TeeNova:Order:CannotEditContentInventoryDeducted")
+                .WithData("OrderId", order.Id);
+    }
+
+    /// <summary>
+    /// Maps the request to the shared pricing service's draft shape after validating the supplied
+    /// item/print ids against the loaded order: existing ids must belong to the order (and a print id to
+    /// its specified item); a new item (null id) cannot carry an existing print id; ids must be unique.
+    /// </summary>
+    private static List<OrderDraftItem> BuildAndValidateDraft(Order order, UpdateOrderContentDto input)
+    {
+        if (input?.Items == null || input.Items.Count == 0)
+            throw new Volo.Abp.BusinessException("TeeNova:Order:OrderMustHaveItems");
+
+        var existingItems = order.Items.ToDictionary(i => i.Id);
+        var seenItemIds   = new HashSet<Guid>();
+        var seenPrintIds  = new HashSet<Guid>();
+
+        var draft = new List<OrderDraftItem>();
+
+        foreach (var itemDto in input.Items)
+        {
+            if (itemDto.Quantity <= 0)
+                throw new Volo.Abp.BusinessException("TeeNova:Order:ItemQuantityMustBePositive")
+                    .WithData("Quantity", itemDto.Quantity);
+
+            OrderItem? existingItem = null;
+            if (itemDto.Id.HasValue)
+            {
+                if (!seenItemIds.Add(itemDto.Id.Value))
+                    throw new Volo.Abp.BusinessException("TeeNova:Order:DuplicateOrderItemId")
+                        .WithData("OrderItemId", itemDto.Id.Value);
+
+                if (!existingItems.TryGetValue(itemDto.Id.Value, out existingItem))
+                    throw new Volo.Abp.BusinessException("TeeNova:Order:OrderItemNotInOrder")
+                        .WithData("OrderItemId", itemDto.Id.Value);
+            }
+
+            var draftPrints = new List<OrderDraftPrint>();
+            foreach (var printDto in itemDto.Prints ?? new List<UpdateOrderItemPrintContentDto>())
+            {
+                if (printDto.Id.HasValue)
+                {
+                    if (!seenPrintIds.Add(printDto.Id.Value))
+                        throw new Volo.Abp.BusinessException("TeeNova:Order:DuplicateOrderItemPrintId")
+                            .WithData("OrderItemPrintId", printDto.Id.Value);
+
+                    // A brand-new item cannot reference an existing print id; an existing print id must
+                    // belong to the item it is declared under.
+                    if (existingItem == null
+                        || existingItem.Prints.All(p => p.Id != printDto.Id.Value))
+                        throw new Volo.Abp.BusinessException("TeeNova:Order:OrderItemPrintNotInItem")
+                            .WithData("OrderItemPrintId", printDto.Id.Value);
+                }
+
+                draftPrints.Add(new OrderDraftPrint(
+                    printDto.Id,
+                    printDto.PrintAreaId,
+                    printDto.PrintSizeId,
+                    printDto.UploadedAssetId,
+                    printDto.UploadedAssetUrl,
+                    printDto.DesignNote,
+                    printDto.PrintNotes));
+            }
+
+            draft.Add(new OrderDraftItem(
+                itemDto.Id,
+                itemDto.ProductId,
+                itemDto.ProductVariantId,
+                itemDto.Quantity,
+                draftPrints));
+        }
+
+        return draft;
+    }
+
+    private async Task<int> CountPendingPaymentSessionsAsync(Guid orderId)
+    {
+        var sessionQuery = await _onlinePaymentSessionRepository.GetQueryableAsync();
+        return await sessionQuery
+            .CountAsync(s => s.OrderId == orderId && s.Status == OnlinePaymentSessionStatus.Pending);
+    }
+
+    /// <summary>
+    /// Computes the previewed payment impact of a new total WITHOUT mutating the order. Mirrors the
+    /// recalculation in <see cref="Order.AdjustPrice"/> / <c>ReplaceItems</c> (deposit = 50% ceiling;
+    /// PaidAmount unchanged) and reports blocking conditions for the edit UI.
+    /// </summary>
+    private static PaymentImpactDto BuildPaymentImpact(Order order, decimal newTotal, int pendingSessionCount)
+    {
+        var paid                = order.PaidAmount;
+        var newRequiredPayment  = newTotal;
+        decimal? newRequiredDeposit = order.PaymentRequirementType == PaymentRequirementType.DepositThenBalance
+            ? Math.Ceiling(newTotal * 0.50m * 100m) / 100m
+            : null;
+        var newBalance          = newRequiredPayment - paid;
+        var totalChanged        = newTotal != order.TotalAmount;
+
+        var blocking = new List<string>();
+        if (order.Status == OrderStatus.Cancelled) blocking.Add("OrderCancelled");
+        if (order.Status == OrderStatus.Completed) blocking.Add("OrderCompleted");
+        if (order.Items.Any(i => i.InventoryDeductedAt != null)) blocking.Add("InventoryAlreadyDeducted");
+        if (newTotal <= 0) blocking.Add("NewTotalNotPositive");
+        if (newTotal < paid) blocking.Add("NewTotalBelowPaidAmount");
+
+        return new PaymentImpactDto
+        {
+            PaidAmount               = paid,
+            OldBalanceAmount         = order.BalanceAmount,
+            NewBalanceAmount         = newBalance,
+            OldRequiredPaymentAmount = order.RequiredPaymentAmount,
+            NewRequiredPaymentAmount = newRequiredPayment,
+            OldRequiredDepositAmount = order.RequiredDepositAmount,
+            NewRequiredDepositAmount = newRequiredDeposit,
+            CurrentPaymentStatus     = order.PaymentStatus.ToString(),
+            PreviewPaymentStatus     = PreviewPaymentStatus(
+                                          order.PaymentRequirementType, paid, newRequiredPayment, newRequiredDeposit).ToString(),
+            TotalChanged             = totalChanged,
+            WouldCancelPendingPaymentSessions = totalChanged && pendingSessionCount > 0,
+            IsBlocked                = blocking.Count > 0,
+            BlockingReasons          = blocking,
+        };
+    }
+
+    /// <summary>Pure mirror of <c>Order.RecalculatePaymentStatus</c> for non-persisting previews.</summary>
+    private static PaymentStatus PreviewPaymentStatus(
+        PaymentRequirementType type, decimal paid, decimal requiredPayment, decimal? requiredDeposit)
+    {
+        if (paid >= requiredPayment)
+            return PaymentStatus.Paid;
+
+        if (type == PaymentRequirementType.DepositThenBalance
+            && requiredDeposit.HasValue && paid >= requiredDeposit.Value)
+            return PaymentStatus.DepositPaid;
+
+        if (paid > 0m)
+            return PaymentStatus.PartiallyPaid;
+
+        return type == PaymentRequirementType.DepositThenBalance
+            ? PaymentStatus.DepositRequired
+            : PaymentStatus.Unpaid;
+    }
+
+    /// <summary>
+    /// Builds a non-persisting preview <see cref="OrderDto"/>: the current order mapped, then its items /
+    /// total / payment-preview fields overwritten from the priced draft, and PrintGroups rebuilt from the
+    /// preview items. Ids on brand-new rows are ephemeral preview ids (real ids are assigned on save).
+    /// </summary>
+    private OrderDto BuildPreviewOrderDto(Order order, PricedOrderDraft priced, PaymentImpactDto payment, decimal newTotal)
+    {
+        var dto = ObjectMapper.Map<Order, OrderDto>(order);
+        dto.DisplayStatus = GetDisplayStatus(order.Status);
+
+        dto.Items = priced.Items.Select(p => new OrderItemDto
+        {
+            Id               = p.Id ?? Guid.NewGuid(),
+            ProductId        = p.ProductId,
+            ProductVariantId = p.ProductVariantId,
+            ProductName      = p.ProductName,
+            VariantLabel     = p.VariantLabel,
+            Quantity         = p.Quantity,
+            UnitPrice        = p.UnitPrice,
+            Prints           = p.Prints.Select(pr => new OrderItemPrintDto
+            {
+                Id                          = pr.Id ?? Guid.NewGuid(),
+                PrintAreaId                 = pr.PrintAreaId,
+                PrintAreaName               = pr.PrintAreaName,
+                PrintAreaCode               = pr.PrintAreaCode,
+                PrintAreaPrice              = pr.PrintAreaPrice,
+                PrintSizeId                 = pr.PrintSizeId,
+                PrintSizeName               = pr.PrintSizeName,
+                PrintSizeCode               = pr.PrintSizeCode,
+                PrintSizePrice              = pr.PrintSizePrice,
+                ResolvedUnitPrintPrice      = pr.ResolvedUnitPrintPrice,
+                AppliedPrintTierMinQuantity = pr.AppliedPrintTierMinQuantity,
+                SortOrder                   = pr.SortOrder,
+                Notes                       = pr.PrintNotes,
+                UploadedAssetId             = pr.UploadedAssetId,
+                UploadedAssetUrl            = pr.UploadedAssetUrl,
+                DesignNote                  = pr.DesignNote,
+            }).ToList(),
+        }).ToList();
+
+        dto.TotalAmount           = newTotal;
+        dto.PaidAmount            = payment.PaidAmount;
+        dto.RequiredPaymentAmount = payment.NewRequiredPaymentAmount;
+        dto.RequiredDepositAmount = payment.NewRequiredDepositAmount;
+        dto.BalanceAmount         = payment.NewBalanceAmount;
+        dto.PaymentStatus         = Enum.Parse<PaymentStatus>(payment.PreviewPaymentStatus);
+
+        // Regroup the preview content with the same builder the real GET uses (Jira 9403).
+        dto.PrintGroups = OrderPrintGroupBuilder.Build(dto);
+
+        return dto;
+    }
 
     private async Task<OrderDto> ChangeStatusAsync(Guid id, OrderStatus newStatus)
     {

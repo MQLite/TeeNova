@@ -233,6 +233,53 @@ public class Order : FullAuditedAggregateRoot<Guid>
                 .WithData("PaidAmount", PaidAmount)
                 .WithData("NewTotalAmount", newTotalAmount);
 
+        ApplyTotalAndRecalculatePayment(newTotalAmount, now);
+    }
+
+    /// <summary>
+    /// Replaces the order's entire item set from a server-priced draft (Jira 9405 admin content edit)
+    /// and re-runs the SAME payment recalculation as <see cref="AdjustPrice"/> against the recomputed
+    /// total. PaidAmount and PaymentTransaction records are never touched. Pass already-built items whose
+    /// UnitPrice / print snapshots were produced by the authoritative pricing service — this method
+    /// never computes prices itself (Epic 9200: backend pricing is authoritative).
+    /// </summary>
+    public void ReplaceItems(IEnumerable<OrderItem> newItems, DateTime now)
+    {
+        if (Status == OrderStatus.Cancelled || Status == OrderStatus.Completed)
+            throw new BusinessException("TeeNova:Order:CannotEditContentForTerminalOrder")
+                .WithData("Status", Status);
+
+        var items = newItems?.ToList() ?? new List<OrderItem>();
+        if (items.Count == 0)
+            throw new BusinessException("TeeNova:Order:OrderMustHaveItems");
+
+        _items.Clear();
+        _items.AddRange(items);
+
+        RecalculateTotal();
+
+        if (TotalAmount <= 0)
+            throw new BusinessException("TeeNova:Order:AdjustedTotalMustBePositive")
+                .WithData("NewTotalAmount", TotalAmount);
+
+        if (TotalAmount < PaidAmount)
+            throw new BusinessException("TeeNova:Order:AdjustedTotalBelowPaidAmount")
+                .WithData("PaidAmount", PaidAmount)
+                .WithData("NewTotalAmount", TotalAmount);
+
+        ApplyTotalAndRecalculatePayment(TotalAmount, now);
+    }
+
+    // ── Private helpers ───────────────────────────────────────────────────────
+
+    /// <summary>
+    /// Applies a new authoritative total to the payment snapshot (RequiredPaymentAmount,
+    /// RequiredDepositAmount, BalanceAmount, PaymentStatus) without touching PaidAmount or any
+    /// PaymentTransaction. Shared by <see cref="AdjustPrice"/> and <see cref="ReplaceItems"/> so the
+    /// two paths recalculate payment identically; callers perform their own guard validation first.
+    /// </summary>
+    private void ApplyTotalAndRecalculatePayment(decimal newTotalAmount, DateTime now)
+    {
         TotalAmount           = newTotalAmount;
         RequiredPaymentAmount = newTotalAmount;
 
@@ -243,8 +290,6 @@ public class Order : FullAuditedAggregateRoot<Guid>
 
         RecalculatePaymentStatus(now);
     }
-
-    // ── Private helpers ───────────────────────────────────────────────────────
 
     /// <summary>
     /// Recalculates PaymentStatus, FullyPaidAt, and DepositPaidAt from the current

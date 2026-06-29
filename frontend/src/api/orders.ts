@@ -5,10 +5,12 @@ import type {
   DeliveryMethod,
   OnlinePaymentSession,
   Order,
+  OrderContentQuoteResult,
   OrderStatus,
   PagedResult,
   RecordPaymentInput,
   ShippingAddress,
+  UpdateOrderContent,
 } from '@/types'
 
 export interface CreateOrderItemPrintPayload {
@@ -118,6 +120,20 @@ export function makeOrdersApi(client: ApiClient) {
       },
     ): Promise<Order> {
       return client.put(`/api/orders/${orderId}/prints/${printId}/design`, payload)
+    },
+
+    // ── Admin order-content edit (Jira 9405/9406) ──────────────────────────────
+    // Admin-only routes under /api/admin/orders. Must be called through the admin
+    // (authenticated) client — never the anonymous customer order route.
+
+    /** Preview a content change: reprices the whole order and returns payment impact. No persistence. */
+    quoteContentUpdate(orderId: string, payload: UpdateOrderContent): Promise<OrderContentQuoteResult> {
+      return client.post(`/api/admin/orders/${orderId}/content/quote`, payload)
+    },
+
+    /** Validate, reprice and persist a content change; returns the fresh order (with PrintGroups). */
+    updateContent(orderId: string, payload: UpdateOrderContent): Promise<Order> {
+      return client.put(`/api/admin/orders/${orderId}/content`, payload)
     },
   }
 }

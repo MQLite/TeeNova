@@ -23,9 +23,10 @@ import { NotificationPanel } from '@/components/admin/NotificationPanel'
 import { PaymentSection } from '@/components/admin/PaymentSection'
 import { RecordPaymentModal } from '@/components/admin/RecordPaymentModal'
 import { AdjustOrderPriceModal } from '@/components/admin/AdjustOrderPriceModal'
+import { OrderContentEditModal } from '@/components/admin/OrderContentEditModal'
 import { DownloadDesignButton } from '@/components/orders/DownloadDesignButton'
 import { DownloadProductionPdfButton } from '@/components/admin/DownloadProductionPdfButton'
-import type { AdjustOrderPriceInput, Order, OrderItem, OrderItemPrint, OrderStatus, RecordPaymentInput } from '@/types'
+import type { AdjustOrderPriceInput, Order, OrderItem, OrderItemPrint, OrderPrintGroup, OrderPrintGroupRow, OrderStatus, RecordPaymentInput } from '@/types'
 import clsx from 'clsx'
 
 // 鈹€鈹€ Constants 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
@@ -86,6 +87,26 @@ function getInferredProductAndVariantPortion(item: OrderItem) {
 
 function formatMoney(value: number) {
   return `$${value.toFixed(2)}`
+}
+
+// ── Grouped print summary helpers (Jira 9404) ───────────────────────────────────
+
+/** Color/size are display-only row details (never part of the group key). Fall back to the raw label. */
+function formatGroupRowVariant(row: OrderPrintGroupRow) {
+  const color = row.color?.trim()
+  const size = row.garmentSize?.trim()
+  if (color && size) return `${color} / ${size}`
+  if (color) return color
+  if (size) return size
+  return row.variantLabel?.trim() || '—'
+}
+
+function groupReactKey(group: OrderPrintGroup) {
+  return group.groupKey || `${group.designKey}|${group.printAreaId}|${group.printSizeId}`
+}
+
+function itemHasNoPrints(item: OrderItem) {
+  return !item.prints || item.prints.length === 0
 }
 
 function PrintDesignCard({
@@ -235,6 +256,7 @@ export default function AdminOrderDetailPage() {
   const [recordingNotification, setRecordingNotification] = useState(false)
   const [recordPaymentOpen, setRecordPaymentOpen] = useState(false)
   const [adjustPriceOpen, setAdjustPriceOpen] = useState(false)
+  const [editContentOpen, setEditContentOpen] = useState(false)
   const [toast, setToast] = useState<string | null>(null)
   const [toastTone, setToastTone] = useState<'success' | 'error'>('success')
 
@@ -367,6 +389,13 @@ export default function AdminOrderDetailPage() {
     }
   }
 
+  function handleContentSaved(updated: Order) {
+    // Backend regenerates item/print IDs and returns fresh PrintGroups/totals — replace wholesale.
+    setOrder(updated)
+    setEditContentOpen(false)
+    showToast('Order content updated')
+  }
+
   async function handleStartReview() {
     if (!order) return
     setUpdating(true)
@@ -497,6 +526,13 @@ export default function AdminOrderDetailPage() {
   const isCompleted = order.status === 'Completed'
   const isTerminal = isCompleted || isCancelled
   const pipelineIdx = PIPELINE.indexOf(order.status)
+
+  // Grouped print summary (Jira 9404) — driven entirely by the backend read model. Optional so an
+  // older backend that omits `printGroups` simply renders no grouped section (page never crashes).
+  const printGroups = order.printGroups ?? []
+  // Garment-only items come from the unchanged flat `items`, so they are never lost from the view
+  // when the grouped summary only contains item×print fan-out rows.
+  const garmentOnlyItems = order.items.filter(itemHasNoPrints)
 
   return (
     <div className="admin-page admin-stack">
@@ -766,6 +802,154 @@ export default function AdminOrderDetailPage() {
         {/* 鈹€鈹€ RIGHT: design review workstation 鈹€鈹€ */}
         <div className="space-y-6">
 
+          {/* Content edit toolbar (Jira 9406) — server-priced order-content edit */}
+          <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-black/[0.08] bg-white px-5 py-3">
+            <div>
+              <p className="text-sm text-black" style={{ fontWeight: 480, letterSpacing: '-0.14px' }}>
+                Order Content
+              </p>
+              <p className="mt-0.5 text-[11px] text-black/45" style={{ letterSpacing: '-0.14px' }}>
+                {isTerminal
+                  ? `Editing is disabled while the order is ${isCancelled ? 'cancelled' : 'completed'}.`
+                  : 'Edit items, variants, prints and notes. The server reprices and rehydrates the order.'}
+              </p>
+            </div>
+            <Button
+              size="sm"
+              variant="white"
+              disabled={isTerminal}
+              onClick={() => setEditContentOpen(true)}
+            >
+              Edit order content
+            </Button>
+          </div>
+
+          {/* Grouped print summary (Jira 9404) — design + print position + print size */}
+          {printGroups.length > 0 && (
+            <Card>
+              <CardHeader className="flex items-center justify-between">
+                <h2 className="text-sm text-black" style={{ fontWeight: 540, letterSpacing: '-0.26px' }}>
+                  Grouped Print Summary
+                </h2>
+                <span className="font-mono text-[11px] uppercase tracking-[0.54px] text-black/50">
+                  {printGroups.length} group{printGroups.length !== 1 ? 's' : ''}
+                </span>
+              </CardHeader>
+              <CardBody className="space-y-4">
+                <p className="text-[11px] leading-snug text-black/40" style={{ letterSpacing: '-0.14px' }}>
+                  Grouped by design · print position · print size. Colour and garment size are row
+                  details only. This is a production summary — order totals remain based on the original
+                  item snapshots.
+                </p>
+
+                {printGroups.map((group) => (
+                  <div key={groupReactKey(group)} className="overflow-hidden rounded-lg border border-black/[0.08]">
+                    {/* Group header: design + position + size + total quantity */}
+                    <div className="flex flex-wrap items-start gap-2 border-b border-black/[0.06] bg-black/[0.02] px-4 py-3">
+                      <div className="min-w-0 flex-1">
+                        <p className="truncate text-sm text-black" style={{ fontWeight: 480, letterSpacing: '-0.14px' }}
+                          title={group.designName || 'No design uploaded'}>
+                          {group.designName || 'No design uploaded'}
+                        </p>
+                        <div className="mt-1.5 flex flex-wrap gap-1.5">
+                          <span className="inline-flex items-center rounded-full border border-black/[0.08] px-2 py-0.5 font-mono text-[10px] uppercase tracking-[0.54px] text-black/55">
+                            {group.printAreaName || 'Unknown print position'}
+                          </span>
+                          <span className="inline-flex items-center rounded-full border border-black/[0.08] px-2 py-0.5 font-mono text-[10px] uppercase tracking-[0.54px] text-black/45">
+                            {group.printSizeName || 'Unknown print size'}
+                          </span>
+                        </div>
+                      </div>
+                      <span className="inline-flex items-center rounded-full bg-black px-2.5 py-0.5 font-mono text-[10px] uppercase tracking-[0.54px] text-white">
+                        Qty {group.totalQuantity}
+                      </span>
+                    </div>
+
+                    {/* Group rows: product / colour / garment size / qty / unit price / line total */}
+                    <div className="divide-y divide-black/[0.06]">
+                      {group.rows.map((row) => (
+                        <div key={row.orderItemPrintId} className="flex flex-wrap items-start gap-3 px-4 py-2.5">
+                          <div className="min-w-0 flex-1">
+                            <p className="text-xs text-black" style={{ fontWeight: 480, letterSpacing: '-0.14px' }}>
+                              {row.productName || 'Product'}
+                            </p>
+                            <p className="mt-0.5 text-[11px] text-black/55" style={{ letterSpacing: '-0.14px' }}>
+                              {formatGroupRowVariant(row)}
+                            </p>
+                            {(row.designNote || row.printNotes) && (
+                              <div className="mt-1.5 space-y-0.5">
+                                {row.designNote && (
+                                  <p className="text-[10px] leading-snug text-black/45" style={{ letterSpacing: '-0.14px' }}>
+                                    Design note: {row.designNote}
+                                  </p>
+                                )}
+                                {row.printNotes && (
+                                  <p className="text-[10px] leading-snug text-black/45" style={{ letterSpacing: '-0.14px' }}>
+                                    Print note: {row.printNotes}
+                                  </p>
+                                )}
+                              </div>
+                            )}
+                            {row.isLegacyPricingSnapshot && (
+                              <span className="mt-1.5 inline-flex items-center rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 font-mono text-[9px] uppercase tracking-[0.54px] text-amber-600">
+                                Legacy pricing
+                              </span>
+                            )}
+                          </div>
+                          <div className="shrink-0 text-right">
+                            <p className="font-mono text-[10px] uppercase tracking-[0.54px] text-black/45">
+                              Qty {row.quantity}
+                            </p>
+                            <p className="mt-0.5 text-xs text-black" style={{ fontWeight: 480 }}>
+                              {formatMoney(row.lineTotal)}
+                            </p>
+                            <p className="text-[10px] text-black/40">{formatMoney(row.unitPrice)} ea</p>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                ))}
+              </CardBody>
+            </Card>
+          )}
+
+          {/* Garment-only items (no prints) — sourced from the unchanged flat items */}
+          {garmentOnlyItems.length > 0 && (
+            <Card>
+              <CardHeader>
+                <h2 className="font-mono text-[11px] uppercase tracking-[0.54px] text-black/55">
+                  Garment-only Items
+                </h2>
+              </CardHeader>
+              <CardBody className="p-0">
+                <div className="divide-y divide-black/[0.06]">
+                  {garmentOnlyItems.map((item) => (
+                    <div key={item.id} className="flex flex-wrap items-start gap-3 px-5 py-3">
+                      <div className="min-w-0 flex-1">
+                        <p className="text-sm text-black" style={{ fontWeight: 480, letterSpacing: '-0.14px' }}>
+                          {item.productName || 'Product'}
+                        </p>
+                        <p className="mt-0.5 text-xs text-black/55" style={{ letterSpacing: '-0.14px' }}>
+                          {item.variantLabel || '—'}
+                        </p>
+                      </div>
+                      <div className="shrink-0 text-right">
+                        <p className="font-mono text-[10px] uppercase tracking-[0.54px] text-black/45">
+                          Qty {item.quantity}
+                        </p>
+                        <p className="mt-0.5 text-xs text-black" style={{ fontWeight: 480 }}>
+                          {formatMoney(getLineTotal(item))}
+                        </p>
+                        <p className="text-[10px] text-black/40">{formatMoney(item.unitPrice)} ea</p>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </CardBody>
+            </Card>
+          )}
+
           {/* Order totals summary */}
           <Card>
             <CardHeader className="flex items-center justify-between">
@@ -858,6 +1042,14 @@ export default function AdminOrderDetailPage() {
         open={adjustPriceOpen}
         onClose={() => setAdjustPriceOpen(false)}
         onSubmit={handleAdjustPrice}
+      />
+
+      {/* Edit order content modal (Jira 9406) */}
+      <OrderContentEditModal
+        order={order}
+        open={editContentOpen}
+        onClose={() => setEditContentOpen(false)}
+        onSaved={handleContentSaved}
       />
     </div>
   )
