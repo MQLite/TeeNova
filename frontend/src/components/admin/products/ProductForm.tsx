@@ -134,8 +134,8 @@ export function ProductForm({
       setError('Name is required.')
       return
     }
-    if (isNaN(price) || price <= 0) {
-      setError('Base price must be a positive number.')
+    if (isNaN(price) || price < 0) {
+      setError('Base price cannot be negative.')
       return
     }
     if (!values.productType.trim()) {
@@ -213,7 +213,7 @@ export function ProductForm({
                 value={values.basePrice}
                 onChange={(e) => set('basePrice', e.target.value)}
                 placeholder="0.00"
-                min="0.01"
+                min="0"
                 step="0.01"
                 disabled={saving}
                 className={`${FIELD_BASE} pl-8`}

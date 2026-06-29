@@ -65,17 +65,22 @@ public class OrderAppService : ApplicationService, IOrderAppService
 
     public async Task<OrderDto> CreateAsync(CreateOrderDto input)
     {
+        // Address is optional for manual + pickup orders (walk-in / phone). The NOT NULL address
+        // columns are stored as empty strings when omitted; a customer name + email are still kept.
+        var addr = input.ShippingAddress;
         var address = new ShippingAddress(
-            input.ShippingAddress.FullName,
-            input.ShippingAddress.AddressLine1,
-            input.ShippingAddress.City,
-            input.ShippingAddress.State,
-            input.ShippingAddress.PostalCode,
-            input.ShippingAddress.Country,
-            input.ShippingAddress.AddressLine2,
-            input.ShippingAddress.Phone);
+            addr.FullName ?? string.Empty,
+            addr.AddressLine1 ?? string.Empty,
+            addr.City ?? string.Empty,
+            addr.State,
+            addr.PostalCode ?? string.Empty,
+            string.IsNullOrWhiteSpace(addr.Country) ? "NZ" : addr.Country,
+            addr.AddressLine2,
+            addr.Phone);
 
-        var customerName = input.ShippingAddress.FullName;
+        var customerName = string.IsNullOrWhiteSpace(addr.FullName)
+            ? input.CustomerEmail
+            : addr.FullName;
         var order = new Order(GuidGenerator.Create(), customerName, input.CustomerEmail, address)
         {
             Notes = input.Notes,

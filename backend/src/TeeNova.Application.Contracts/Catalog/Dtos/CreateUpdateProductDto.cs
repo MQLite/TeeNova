@@ -13,7 +13,7 @@ public class CreateProductDto
     public string? Description { get; set; }
 
     [Required]
-    [Range(0.01, 999999)]
+    [Range(0, 999999)]
     public decimal BasePrice { get; set; }
 
     [Required]
@@ -36,7 +36,7 @@ public class UpdateProductDto
     public string? Description { get; set; }
 
     [Required]
-    [Range(0.01, 999999)]
+    [Range(0, 999999)]
     public decimal BasePrice { get; set; }
 
     [Required]

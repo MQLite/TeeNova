@@ -159,6 +159,10 @@ export default function CheckoutPage() {
 
   const subtotal = recalcSubtotal
 
+  // Address is optional only for manual payment + pickup (walk-in / phone orders). Name + email
+  // stay required. Online payment or shipping delivery still requires a full address.
+  const addressOptional = paymentMethod === 'manual' && deliveryMethod === 'Pickup'
+
   return (
     <div className="min-h-screen bg-white">
       {/* Header bar */}
@@ -250,16 +254,26 @@ export default function CheckoutPage() {
                   <span className="flex h-7 w-7 items-center justify-center rounded-full bg-black text-xs font-medium text-white">3</span>
                   <h2 className="text-sm text-black" style={{ fontWeight: 540, letterSpacing: '-0.26px' }}>
                     {deliveryMethod === 'Pickup' ? 'Contact Address' : 'Shipping Address'}
+                    {addressOptional && (
+                      <span className="ml-2 font-mono text-[11px] uppercase tracking-[0.54px] text-black/40">
+                        (optional)
+                      </span>
+                    )}
                   </h2>
                 </div>
                 <div className="grid grid-cols-1 gap-4 p-6 sm:grid-cols-2">
+                  {addressOptional && (
+                    <p className="sm:col-span-2 text-xs text-black/55" style={{ letterSpacing: '-0.14px' }}>
+                      Address is optional for pickup orders paid manually. You can leave it blank.
+                    </p>
+                  )}
                   <Field label="Full Name" name="fullName" value={form.fullName} onChange={handleChange} required placeholder="Jane Smith" className="sm:col-span-2" />
-                  <Field label="Address Line 1" name="addressLine1" value={form.addressLine1} onChange={handleChange} required placeholder="123 Main Street" className="sm:col-span-2" />
+                  <Field label={addressOptional ? 'Address Line 1 (optional)' : 'Address Line 1'} name="addressLine1" value={form.addressLine1} onChange={handleChange} required={!addressOptional} placeholder="123 Main Street" className="sm:col-span-2" />
                   <Field label="Address Line 2 (optional)" name="addressLine2" value={form.addressLine2 ?? ''} onChange={handleChange} placeholder="Apt, suite, unit..." className="sm:col-span-2" />
-                  <Field label="City" name="city" value={form.city} onChange={handleChange} required placeholder="Auckland" />
+                  <Field label={addressOptional ? 'City (optional)' : 'City'} name="city" value={form.city} onChange={handleChange} required={!addressOptional} placeholder="Auckland" />
                   <Field label="Region / State (optional)" name="state" value={form.state} onChange={handleChange} placeholder="Auckland" />
-                  <Field label="Postcode" name="postalCode" value={form.postalCode} onChange={handleChange} required placeholder="1010" />
-                  <Field label="Country" name="country" value={form.country} onChange={handleChange} required placeholder="NZ" />
+                  <Field label={addressOptional ? 'Postcode (optional)' : 'Postcode'} name="postalCode" value={form.postalCode} onChange={handleChange} required={!addressOptional} placeholder="1010" />
+                  <Field label={addressOptional ? 'Country (optional)' : 'Country'} name="country" value={form.country} onChange={handleChange} required={!addressOptional} placeholder="NZ" />
                   <Field label="Phone (optional)" name="phone" type="tel" value={form.phone ?? ''} onChange={handleChange} placeholder="+64 21 000 0000" className="sm:col-span-2" />
                 </div>
               </div>
