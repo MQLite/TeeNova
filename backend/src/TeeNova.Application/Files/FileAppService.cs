@@ -33,7 +33,7 @@ public class FileAppService : ApplicationService, IFileAppService
     {
         ".png", ".jpg", ".jpeg", ".svg", ".webp", ".pdf", ".ai",
     };
-    private const long MaxFileSizeBytes = 10 * 1024 * 1024; // 10 MB
+    private const long MaxFileSizeBytes = 20 * 1024 * 1024; // 20 MB
 
     private readonly IFileStorageService _storageService;
     private readonly IRepository<UploadedAsset, Guid> _assetRepository;

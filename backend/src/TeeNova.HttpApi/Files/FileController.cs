@@ -23,11 +23,11 @@ public class FileController : TeeNovaControllerBase
 
     /// <summary>
     /// Uploads a design image. Returns an asset ID and public URL.
-    /// Max 10 MB. Accepted: PNG, JPEG, SVG, WebP.
+    /// Max 20 MB. Accepted: PNG, JPEG, SVG, WebP.
     /// </summary>
     [HttpPost("upload")]
     [AllowAnonymous]
-    [RequestSizeLimit(10 * 1024 * 1024)]
+    [RequestSizeLimit(20 * 1024 * 1024)]
     [Consumes("multipart/form-data")]
     public async Task<UploadFileOutput> UploadAsync(
         [FromForm] IFormFile file,
