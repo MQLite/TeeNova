@@ -23,7 +23,12 @@ export default function NewProductPage() {
         basePrice: parseFloat(values.basePrice),
         productType: values.productType,
         isActive: values.isActive,
-        printPricingGroupId: values.printPricingGroupId || null,
+        // Badge prices via quantity tiers, not a print pricing group — never send a group for it.
+        printPricingGroupId: values.kind === 'Garment' ? values.printPricingGroupId || null : null,
+        kind: values.kind,
+        pricingModel: values.pricingModel,
+        minimumQuantity: parseInt(values.minimumQuantity, 10),
+        designUploadRequired: values.designUploadRequired,
       })
       router.push(`/admin/products/${product.id}`)
     } catch (err) {

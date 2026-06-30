@@ -85,6 +85,21 @@ function itemHasNoPrints(item: OrderItem) {
   return !item.prints || item.prints.length === 0
 }
 
+// Non-garment items (Badge etc., Jira 9505) carry an item-level design and no variant/prints, so they
+// must not render through the garment-shaped grouped summary or "Garment-only" list. Treat a missing
+// productKind as Garment for backward compatibility with pre-9503 order snapshots.
+function isNonGarmentItem(item: OrderItem) {
+  return (item.productKind ?? 'Garment') !== 'Garment'
+}
+
+const PRICING_MODEL_LABELS: Record<string, string> = {
+  GarmentPrint: 'Garment print',
+  QuantityTierUnit: 'Quantity-tier',
+  FixedSize: 'Fixed size',
+  AreaBased: 'Area based',
+  CustomQuoteOnly: 'Custom quote',
+}
+
 /**
  * Design controls for one print group (thumbnail + Download / Replace / Clear). A group shares one
  * design across all its member prints, so Replace/Clear here apply the change to EVERY print in the
@@ -505,9 +520,13 @@ export default function AdminOrderDetailPage() {
   // Grouped print summary (Jira 9404) — driven entirely by the backend read model. Optional so an
   // older backend that omits `printGroups` simply renders no grouped section (page never crashes).
   const printGroups = order.printGroups ?? []
+  // Non-garment items (Badge, Jira 9505) render in their own section — they have no variant/prints and
+  // carry an item-level design, so the garment-shaped views would show broken "—" / blank rows.
+  const nonGarmentItems = order.items.filter(isNonGarmentItem)
   // Garment-only items come from the unchanged flat `items`, so they are never lost from the view
-  // when the grouped summary only contains item×print fan-out rows.
-  const garmentOnlyItems = order.items.filter(itemHasNoPrints)
+  // when the grouped summary only contains item×print fan-out rows. Exclude non-garment items, which
+  // also have no prints but belong in their own section above.
+  const garmentOnlyItems = order.items.filter((item) => itemHasNoPrints(item) && !isNonGarmentItem(item))
 
   return (
     <div className="admin-page admin-stack">
@@ -798,6 +817,81 @@ export default function AdminOrderDetailPage() {
               Edit order content
             </Button>
           </div>
+
+          {/* Custom Product Items (Jira 9505) — non-garment items (Badge): item-level design, no variant/prints */}
+          {nonGarmentItems.length > 0 && (
+            <Card>
+              <CardHeader className="flex items-center justify-between">
+                <h2 className="text-sm text-black" style={{ fontWeight: 540, letterSpacing: '-0.26px' }}>
+                  Custom Product Items
+                </h2>
+                <span className="font-mono text-[11px] uppercase tracking-[0.54px] text-black/50">
+                  {nonGarmentItems.length} item{nonGarmentItems.length !== 1 ? 's' : ''}
+                </span>
+              </CardHeader>
+              <CardBody className="p-0">
+                <div className="divide-y divide-black/[0.06]">
+                  {nonGarmentItems.map((item) => {
+                    const designName = getFileNameFromUrl(item.uploadedAssetUrl)
+                    return (
+                      <div key={item.id} className="flex flex-wrap items-start gap-3 px-5 py-4">
+                        {/* Design thumbnail (item-level) */}
+                        <div className="flex h-16 w-16 shrink-0 items-center justify-center overflow-hidden rounded-lg border border-black/[0.08] bg-white">
+                          {item.uploadedAssetUrl ? (
+                            // eslint-disable-next-line @next/next/no-img-element
+                            <img src={item.uploadedAssetUrl} alt={`Design ${designName ?? ''}`} className="h-full w-full object-contain p-1" />
+                          ) : (
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.5} className="h-7 w-7 text-black/20">
+                              <path strokeLinecap="round" strokeLinejoin="round" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                            </svg>
+                          )}
+                        </div>
+                        <div className="min-w-0 flex-1">
+                          <p className="text-sm text-black" style={{ fontWeight: 480, letterSpacing: '-0.14px' }}>
+                            {item.productName || 'Product'}
+                          </p>
+                          <div className="mt-1.5 flex flex-wrap gap-1.5">
+                            <span className="inline-flex items-center rounded-full border border-black/[0.08] px-2 py-0.5 font-mono text-[10px] uppercase tracking-[0.54px] text-black/55">
+                              {item.productKind ?? 'Custom'}
+                            </span>
+                            {item.pricingModel && (
+                              <span className="inline-flex items-center rounded-full border border-black/[0.08] px-2 py-0.5 font-mono text-[10px] uppercase tracking-[0.54px] text-black/45">
+                                {PRICING_MODEL_LABELS[item.pricingModel] ?? item.pricingModel}
+                              </span>
+                            )}
+                            {item.appliedQuantityTierMinQuantity != null && (
+                              <span className="inline-flex items-center rounded-full border border-black/[0.08] px-2 py-0.5 font-mono text-[10px] uppercase tracking-[0.54px] text-black/45">
+                                Tier: {item.appliedQuantityTierMinQuantity}+
+                              </span>
+                            )}
+                          </div>
+                          {item.designNote && (
+                            <p className="mt-1.5 text-[11px] leading-snug text-black/45" style={{ letterSpacing: '-0.14px' }}>
+                              Design note: {item.designNote}
+                            </p>
+                          )}
+                          {item.uploadedAssetUrl && (
+                            <div className="mt-2">
+                              <DownloadDesignButton url={item.uploadedAssetUrl} fileName={designName} compact />
+                            </div>
+                          )}
+                        </div>
+                        <div className="shrink-0 text-right">
+                          <p className="font-mono text-[10px] uppercase tracking-[0.54px] text-black/45">
+                            Qty {item.quantity}
+                          </p>
+                          <p className="mt-0.5 text-xs text-black" style={{ fontWeight: 480 }}>
+                            {formatMoney(getLineTotal(item))}
+                          </p>
+                          <p className="text-[10px] text-black/40">{formatMoney(item.unitPrice)} ea</p>
+                        </div>
+                      </div>
+                    )
+                  })}
+                </div>
+              </CardBody>
+            </Card>
+          )}
 
           {/* Grouped print summary (Jira 9404) — design + print position + print size */}
           {printGroups.length > 0 && (

@@ -24,11 +24,22 @@ public class CreateOrderItemDto
     [Required]
     public Guid ProductId { get; set; }
 
-    [Required]
-    public Guid ProductVariantId { get; set; }
+    /// <summary>
+    /// Garment variant. Optional (Jira 9503): required for garment products (enforced server-side by the
+    /// pricing strategy), omitted for non-garment products such as Badge.
+    /// </summary>
+    public Guid? ProductVariantId { get; set; }
 
-    [Range(1, 100)]
+    [Range(1, 100000)]
     public int Quantity { get; set; } = 1;
+
+    // ── Item-level design (Jira 9503) — used by non-garment items (Badge). Garment design lives in Prints.
+    public Guid?   UploadedAssetId  { get; set; }
+    public string? UploadedAssetUrl { get; set; }
+    public string? DesignNote       { get; set; }
+
+    /// <summary>Reserved non-garment configuration (Banner). Ignored for Garment/Badge MVP.</summary>
+    public string? ConfigurationJson { get; set; }
 
     public List<CreateOrderItemPrintDto> Prints { get; set; } = new();
 }

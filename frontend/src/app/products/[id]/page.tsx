@@ -11,6 +11,7 @@ import { PricingBreakdownPanel } from '@/components/products/PricingBreakdownPan
 import { PrintAreaSelector } from '@/components/products/PrintAreaSelector'
 import { PrintSizeSelector } from '@/components/products/PrintSizeSelector'
 import { PrintPriceTierTable } from '@/components/products/PrintPriceTierTable'
+import { BadgeProductDetail } from '@/components/products/BadgeProductDetail'
 import { ProductImageGallery } from '@/components/products/ProductImageGallery'
 import { ProductDetailsSection } from '@/components/products/ProductDetailsSection'
 import { ProductHeroPrice } from '@/components/products/ProductHeroPrice'
@@ -752,6 +753,13 @@ export default function ProductDetailPage() {
         <Link href="/products" className="btn-glass btn-sm">Back to Products</Link>
       </div>
     )
+  }
+
+  // Dispatch by product kind (Jira 9504). Badge has its own storefront UX (quantity-tier unit pricing,
+  // item-level design) with no variant/print controls — render it instead of the garment layout. All
+  // hooks above run unconditionally (stable hook order); for a Badge they no-op (no variants/prints).
+  if (product.kind === 'Badge') {
+    return <BadgeProductDetail product={product} />
   }
 
   const activeImage =

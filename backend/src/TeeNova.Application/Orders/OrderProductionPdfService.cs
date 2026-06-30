@@ -6,6 +6,7 @@ using System.Threading.Tasks;
 using QuestPDF.Fluent;
 using QuestPDF.Helpers;
 using QuestPDF.Infrastructure;
+using TeeNova.Catalog;
 using TeeNova.Orders.Dtos;
 using Volo.Abp.DependencyInjection;
 
@@ -200,7 +201,7 @@ public class OrderProductionPdfService : IOrderProductionPdfService, ITransientD
                     foreach (var item in order.Items)
                     {
                         BodyCell(table.Cell()).Text(item.ProductName);
-                        BodyCell(table.Cell()).Text(item.VariantLabel);
+                        BodyCell(table.Cell()).Text(item.VariantLabel ?? "-");
                         BodyCell(table.Cell()).AlignRight().Text(item.Quantity.ToString(CultureInfo.InvariantCulture));
                         CheckBoxCell(table.Cell());
                         CheckBoxCell(table.Cell());
@@ -269,8 +270,47 @@ public class OrderProductionPdfService : IOrderProductionPdfService, ITransientD
                                 pc.Item().Text(note).FontSize(8).FontColor(Colors.Grey.Darken1);
                         });
                 }
+
+                // Non-garment / design-only items (Badge, Jira 9505). These carry no print placements, so
+                // they never appear in the print-production list above. Each is rendered with its product,
+                // quantity, pricing, applied quantity tier, design file name and design note — no variant,
+                // print position, print size, or blank " / " artifacts.
+                ComposeDesignOnlyItems(col, order);
             });
         });
+    }
+
+    private void ComposeDesignOnlyItems(ColumnDescriptor col, OrderDto order)
+    {
+        var designOnly = order.Items.Where(i => i.ProductKind != ProductKind.Garment).ToList();
+        if (designOnly.Count == 0)
+            return;
+
+        col.Item().PaddingTop(8).Text("Badge / design-only items").SemiBold().FontSize(10);
+
+        foreach (var item in designOnly)
+        {
+            col.Item().PaddingTop(4).PaddingLeft(8).BorderLeft(2).BorderColor(Colors.Grey.Lighten1)
+                .PaddingLeft(6).Column(ic =>
+                {
+                    ic.Item().Text(t =>
+                    {
+                        t.Span(item.ProductName).SemiBold().FontSize(9);
+                        t.Span($"  ·  Qty {item.Quantity.ToString(CultureInfo.InvariantCulture)}").FontSize(9);
+                        t.Span($"  ·  {FormatMoney(item.UnitPrice)} ea").FontSize(9).FontColor(Colors.Grey.Darken1);
+                        t.Span($"  ·  Line {FormatMoney(item.UnitPrice * item.Quantity)}").FontSize(9).FontColor(Colors.Grey.Darken1);
+                    });
+
+                    if (item.AppliedQuantityTierMinQuantity.HasValue)
+                        ic.Item().Text($"Quantity tier: {item.AppliedQuantityTierMinQuantity.Value}+")
+                            .FontSize(8).FontColor(Colors.Grey.Darken1);
+
+                    ic.Item().Text($"Design: {DesignDisplayName(item.UploadedAssetUrl)}").FontSize(8).FontColor(Colors.Grey.Darken1);
+
+                    if (!string.IsNullOrWhiteSpace(item.DesignNote))
+                        ic.Item().Text($"Design note: {item.DesignNote}").FontSize(8).FontColor(Colors.Grey.Darken1);
+                });
+        }
     }
 
     private void ComposeNotes(IContainer container, OrderDto order)
@@ -371,7 +411,7 @@ public class OrderProductionPdfService : IOrderProductionPdfService, ITransientD
     /// Splits a "Colour / Size" variant label into its parts. Splits on the last " / " so colours that
     /// contain a slash stay intact; returns an empty size when the label has no separator.
     /// </summary>
-    private static (string Color, string Size) SplitVariantLabel(string variantLabel)
+    private static (string Color, string Size) SplitVariantLabel(string? variantLabel)
     {
         var label = variantLabel?.Trim() ?? string.Empty;
         var idx = label.LastIndexOf(" / ", StringComparison.Ordinal);

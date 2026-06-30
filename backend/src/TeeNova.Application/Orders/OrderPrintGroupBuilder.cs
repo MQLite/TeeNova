@@ -98,7 +98,7 @@ public static class OrderPrintGroupBuilder
             OrderItemId = item.Id,
             OrderItemPrintId = print.Id,
             ProductName = item.ProductName,
-            VariantLabel = item.VariantLabel,
+            VariantLabel = item.VariantLabel ?? string.Empty,
             Color = color,
             GarmentSize = garmentSize,
             Quantity = item.Quantity,

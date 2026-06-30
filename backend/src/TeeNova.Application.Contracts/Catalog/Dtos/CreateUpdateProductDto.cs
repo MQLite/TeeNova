@@ -24,6 +24,19 @@ public class CreateProductDto
 
     /// <summary>Optional print-pricing group assignment (Jira 9203). Null = ungrouped.</summary>
     public Guid? PrintPricingGroupId { get; set; }
+
+    /// <summary>Business category (Jira 9503). Defaults to Garment when omitted (backward compatible).</summary>
+    public ProductKind Kind { get; set; } = ProductKind.Garment;
+
+    /// <summary>Pricing behavior (Jira 9503). Defaults to GarmentPrint when omitted.</summary>
+    public PricingModel PricingModel { get; set; } = PricingModel.GarmentPrint;
+
+    /// <summary>Minimum sellable quantity (Jira 9503). Must be ≥ 1.</summary>
+    [Range(1, 1000000)]
+    public int MinimumQuantity { get; set; } = 1;
+
+    /// <summary>When true, an order item for this product must carry a design asset (Jira 9503).</summary>
+    public bool DesignUploadRequired { get; set; }
 }
 
 public class UpdateProductDto
@@ -47,4 +60,17 @@ public class UpdateProductDto
 
     /// <summary>Optional print-pricing group assignment (Jira 9203). Null = ungrouped.</summary>
     public Guid? PrintPricingGroupId { get; set; }
+
+    /// <summary>Business category (Jira 9503). Defaults to Garment when omitted (backward compatible).</summary>
+    public ProductKind Kind { get; set; } = ProductKind.Garment;
+
+    /// <summary>Pricing behavior (Jira 9503). Defaults to GarmentPrint when omitted.</summary>
+    public PricingModel PricingModel { get; set; } = PricingModel.GarmentPrint;
+
+    /// <summary>Minimum sellable quantity (Jira 9503). Must be ≥ 1.</summary>
+    [Range(1, 1000000)]
+    public int MinimumQuantity { get; set; } = 1;
+
+    /// <summary>When true, an order item for this product must carry a design asset (Jira 9503).</summary>
+    public bool DesignUploadRequired { get; set; }
 }

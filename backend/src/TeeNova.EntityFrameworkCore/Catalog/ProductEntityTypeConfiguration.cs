@@ -8,7 +8,8 @@ public class ProductEntityTypeConfiguration :
     IEntityTypeConfiguration<Product>,
     IEntityTypeConfiguration<ProductVariant>,
     IEntityTypeConfiguration<ProductImage>,
-    IEntityTypeConfiguration<ProductPriceTier>
+    IEntityTypeConfiguration<ProductPriceTier>,
+    IEntityTypeConfiguration<ProductQuantityPriceTier>
 {
     public void Configure(EntityTypeBuilder<Product> builder)
     {
@@ -24,6 +25,28 @@ public class ProductEntityTypeConfiguration :
         builder.Property(p => p.ProductType)
             .IsRequired()
             .HasMaxLength(64);
+
+        // Behavioral discriminators (Jira 9503) — stored as strings (mirrors OrderStatus/PaymentStatus)
+        // so the DB stays readable and resilient to enum reordering. Defaults backfill existing rows.
+        builder.Property(p => p.Kind)
+            .HasConversion<string>()
+            .IsRequired()
+            .HasMaxLength(32)
+            .HasDefaultValue(ProductKind.Garment);
+
+        builder.Property(p => p.PricingModel)
+            .HasConversion<string>()
+            .IsRequired()
+            .HasMaxLength(32)
+            .HasDefaultValue(PricingModel.GarmentPrint);
+
+        builder.Property(p => p.MinimumQuantity)
+            .IsRequired()
+            .HasDefaultValue(1);
+
+        builder.Property(p => p.DesignUploadRequired)
+            .IsRequired()
+            .HasDefaultValue(false);
 
         builder.Property(p => p.BasePrice)
             .HasColumnType("decimal(18,4)");
@@ -43,6 +66,12 @@ public class ProductEntityTypeConfiguration :
         // violate) and avoids SQL Server multiple-cascade-path errors. Orphaned override rows
         // (variant later deleted) are harmless: they never match a live variant during resolution.
         builder.HasMany(p => p.PriceTiers)
+            .WithOne()
+            .HasForeignKey(t => t.ProductId)
+            .OnDelete(DeleteBehavior.Cascade);
+
+        // Badge quantity-tier unit prices (Jira 9503). Product-owned; cascade with the product.
+        builder.HasMany(p => p.QuantityPriceTiers)
             .WithOne()
             .HasForeignKey(t => t.ProductId)
             .OnDelete(DeleteBehavior.Cascade);
@@ -113,5 +142,21 @@ public class ProductEntityTypeConfiguration :
         builder.HasIndex(t => new { t.ProductId, t.ProductVariantId, t.MinQuantity })
             .IsUnique()
             .HasFilter(null);
+    }
+
+    public void Configure(EntityTypeBuilder<ProductQuantityPriceTier> builder)
+    {
+        builder.ToTable("ProductQuantityPriceTiers");
+
+        // Unit prices are validated to 2 decimals (storefront money precision); flows losslessly into
+        // the decimal(18,4) OrderItem.UnitPrice snapshot.
+        builder.Property(t => t.UnitPrice)
+            .HasColumnType("decimal(18,2)");
+
+        builder.HasIndex(t => t.ProductId);
+
+        // Natural key: one unit price per (product, quantity break). No variant / print-size scope.
+        builder.HasIndex(t => new { t.ProductId, t.MinQuantity })
+            .IsUnique();
     }
 }

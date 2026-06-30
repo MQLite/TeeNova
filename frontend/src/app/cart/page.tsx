@@ -10,7 +10,8 @@ function getPrintSummary(item: CartItem) {
 }
 
 function getUploadedDesignUrl(item: CartItem) {
-  return item.prints?.find((print) => print.uploadedAssetUrl)?.uploadedAssetUrl
+  // Badge carries its design at item level; garments carry it per-print.
+  return item.uploadedAssetUrl ?? item.prints?.find((print) => print.uploadedAssetUrl)?.uploadedAssetUrl
 }
 
 export default function CartPage() {
@@ -66,6 +67,7 @@ export default function CartPage() {
               const groupKey = groupKeyByItemKey[item.cartItemKey]
               const groupQuantity = (groupKey ? groupTotals[groupKey] : undefined) ?? item.quantity
               const hint = tierHint(linePricing, groupQuantity)
+              const isBadge = item.kind === 'Badge'
               return (
               <div key={item.cartItemKey} className="card overflow-hidden">
                 <div className="flex gap-4 p-5">
@@ -90,21 +92,41 @@ export default function CartPage() {
                         <h3 className="text-base text-black" style={{ fontWeight: 480, letterSpacing: '-0.14px' }}>
                           {item.productName}
                         </h3>
-                        <p className="mt-0.5 text-sm text-black/55" style={{ letterSpacing: '-0.14px' }}>
-                          {item.variantLabel}
-                        </p>
-                        {getPrintSummary(item).length > 0 ? (
-                          <div className="mt-2 flex flex-wrap gap-1">
-                            {getPrintSummary(item).map((print) => (
-                              <span key={`${print.printAreaId}:${print.printSizeId}`}
-                                className="inline-flex flex-col rounded-lg border border-black/[0.08] px-2 py-1 text-[10px] text-black/55">
-                                {print.printAreaName} - {print.printSizeName}
-                                {print.uploadedAssetUrl && <span className="text-green-600">Design uploaded</span>}
-                                {print.designNote && <span className="normal-case tracking-normal text-black/45">{print.designNote}</span>}
-                              </span>
-                            ))}
-                          </div>
-                        ) : null}
+                        {isBadge ? (
+                          <>
+                            <p className="mt-0.5 font-mono text-[10px] uppercase tracking-[0.54px] text-black/45">
+                              Badge · {item.quantity} pcs
+                            </p>
+                            {(getUploadedDesignUrl(item) || item.designNote) && (
+                              <div className="mt-2 flex flex-wrap gap-1">
+                                <span className="inline-flex flex-col rounded-lg border border-black/[0.08] px-2 py-1 text-[10px] text-black/55">
+                                  {getUploadedDesignUrl(item) && <span className="text-green-600">Design uploaded</span>}
+                                  {item.designNote && <span className="normal-case tracking-normal text-black/45">{item.designNote}</span>}
+                                </span>
+                              </div>
+                            )}
+                          </>
+                        ) : (
+                          <>
+                            {item.variantLabel && (
+                              <p className="mt-0.5 text-sm text-black/55" style={{ letterSpacing: '-0.14px' }}>
+                                {item.variantLabel}
+                              </p>
+                            )}
+                            {getPrintSummary(item).length > 0 ? (
+                              <div className="mt-2 flex flex-wrap gap-1">
+                                {getPrintSummary(item).map((print) => (
+                                  <span key={`${print.printAreaId}:${print.printSizeId}`}
+                                    className="inline-flex flex-col rounded-lg border border-black/[0.08] px-2 py-1 text-[10px] text-black/55">
+                                    {print.printAreaName} - {print.printSizeName}
+                                    {print.uploadedAssetUrl && <span className="text-green-600">Design uploaded</span>}
+                                    {print.designNote && <span className="normal-case tracking-normal text-black/45">{print.designNote}</span>}
+                                  </span>
+                                ))}
+                              </div>
+                            ) : null}
+                          </>
+                        )}
                       </div>
                       <button
                         onClick={() => removeItem(item.cartItemKey)}
@@ -136,8 +158,24 @@ export default function CartPage() {
                       </span>
                     </div>
 
+                    {/* Badge price breakdown: a single quantity-tier unit price (Jira 9504). */}
+                    {isBadge && linePricing && !lineError && (
+                      <div className="mt-3 space-y-1 rounded-lg bg-black/[0.02] px-3 py-2 text-xs text-black/60">
+                        <div className="flex items-center justify-between" style={{ letterSpacing: '-0.14px' }}>
+                          <span>Unit price</span>
+                          <span className="text-black/75">${linePricing.unitPrice.toFixed(2)}</span>
+                        </div>
+                        {linePricing.appliedTierMinQuantity != null && (
+                          <div className="flex items-center justify-between" style={{ letterSpacing: '-0.14px' }}>
+                            <span>Quantity tier</span>
+                            <span className="text-black/75">{linePricing.appliedTierMinQuantity}+</span>
+                          </div>
+                        )}
+                      </div>
+                    )}
+
                     {/* Print-only price breakdown: fixed garment + summed print prices (Jira 9207) */}
-                    {linePricing && !lineError && (
+                    {!isBadge && linePricing && !lineError && (
                       <div className="mt-3 space-y-1 rounded-lg bg-black/[0.02] px-3 py-2 text-xs text-black/60">
                         <div className="flex items-center justify-between" style={{ letterSpacing: '-0.14px' }}>
                           <span>Garment</span>
@@ -160,8 +198,8 @@ export default function CartPage() {
                       </div>
                     )}
 
-                    {/* Print volume tier note */}
-                    {linePricing && !lineError && linePricing.pricingMode === 'Tiered' && (
+                    {/* Print volume tier note (garment only) */}
+                    {!isBadge && linePricing && !lineError && linePricing.pricingMode === 'Tiered' && (
                       <div className="mt-2 flex flex-wrap items-center gap-1.5">
                         {linePricing.appliedTierMinQuantity != null && (
                           <span className="rounded-full bg-black/[0.05] px-2 py-0.5 text-[10px] uppercase tracking-[0.54px] text-black/55">

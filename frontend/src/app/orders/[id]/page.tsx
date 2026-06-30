@@ -51,7 +51,15 @@ interface PageProps {
   params: Promise<{ id: string }>
 }
 
+// Non-garment items (Badge, Jira 9505) carry an item-level design and no variant/prints. Treat a
+// missing productKind as Garment for backward compatibility with pre-9503 order snapshots.
+function isNonGarmentItem(item: OrderItem) {
+  return (item.productKind ?? 'Garment') !== 'Garment'
+}
+
 function getPrimaryPreview(item: OrderItem) {
+  // Badge design lives item-level; garments' design lives per print.
+  if (isNonGarmentItem(item)) return item.uploadedAssetUrl ?? null
   return getPrintSummary(item).find((print) => print.uploadedAssetUrl)?.uploadedAssetUrl
     ?? null
 }
@@ -130,9 +138,40 @@ export default async function OrderDetailPage({ params }: PageProps) {
                       {item.productName}
                     </p>
                     <p className="text-sm text-black/55" style={{ letterSpacing: '-0.14px' }}>
-                      {item.variantLabel} × {item.quantity}
+                      {item.variantLabel ? `${item.variantLabel} × ${item.quantity}` : `Qty ${item.quantity}`}
                     </p>
-                    {getPrintSummary(item).length > 0 && (
+
+                    {/* Badge / non-garment item-level design (Jira 9505): no print position/size rows. */}
+                    {isNonGarmentItem(item) && (item.uploadedAssetUrl || item.designNote) && (
+                      <div className="mt-3 rounded-lg border border-black/[0.08] bg-black/[0.02] p-3">
+                        <div className="flex items-start gap-3">
+                          {item.uploadedAssetUrl && (
+                            <div className="flex h-14 w-14 flex-shrink-0 items-center justify-center overflow-hidden rounded-lg border border-black/[0.08] bg-white">
+                              {/* eslint-disable-next-line @next/next/no-img-element */}
+                              <img
+                                src={item.uploadedAssetUrl}
+                                alt={`Design for ${item.productName}`}
+                                className="h-full w-full object-contain p-1"
+                              />
+                            </div>
+                          )}
+                          <div className="min-w-0 flex-1">
+                            {item.designNote && (
+                              <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
+                                <span className="font-medium">Note: </span>{item.designNote}
+                              </div>
+                            )}
+                            {item.uploadedAssetUrl && (
+                              <div className="mt-2">
+                                <DownloadDesignButton url={item.uploadedAssetUrl} />
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                    )}
+
+                    {!isNonGarmentItem(item) && getPrintSummary(item).length > 0 && (
                       <div className="mt-2 flex flex-wrap gap-1">
                         {getPrintSummary(item).map((print) => (
                           <span key={print.id} className="inline-flex flex-col rounded-lg border border-black/[0.08] px-2 py-1 text-[10px] text-black/55">

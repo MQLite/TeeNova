@@ -21,15 +21,25 @@ export interface CreateOrderItemPrintPayload {
   designNote?: string
 }
 
+export interface CreateOrderItemPayload {
+  productId: string
+  /** Garment variant: required for garments (server-enforced), omitted for Badge (Jira 9503/9504). */
+  productVariantId?: string
+  quantity: number
+  // ── Item-level design (Jira 9504) — used by non-garment items (Badge). Garment design is per-print.
+  // NEVER carries price fields: the backend is the sole pricing authority.
+  uploadedAssetId?: string
+  uploadedAssetUrl?: string
+  designNote?: string
+  /** Reserved non-garment configuration (Banner). Ignored for Garment/Badge MVP. */
+  configurationJson?: string
+  prints?: CreateOrderItemPrintPayload[]
+}
+
 export interface CreateOrderPayload {
   customerEmail: string
   shippingAddress: ShippingAddress
-  items: {
-    productId: string
-    productVariantId: string
-    quantity: number
-    prints?: CreateOrderItemPrintPayload[]
-  }[]
+  items: CreateOrderItemPayload[]
   notes?: string
   deliveryMethod?: DeliveryMethod
 }

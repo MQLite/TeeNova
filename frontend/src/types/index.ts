@@ -1,10 +1,37 @@
 // Catalog
 
+/**
+ * Business category of a product (Jira 9502/9503). Drives UI / admin / order-snapshot dispatch
+ * (which selectors, panels, and editors to render), distinct from {@link PricingModel} which drives
+ * pricing behavior, and distinct from the free-text display tag `productType`. Existing products
+ * backfill to "Garment". Mirrors the backend `ProductKind` enum (Garment=0, Badge=1, Banner=2, Other=3).
+ */
+export type ProductKind = 'Garment' | 'Badge' | 'Banner' | 'Other'
+
+/**
+ * Pricing behavior of a product (Jira 9502/9503). The single behavioral discriminator the backend
+ * pricing strategy dispatches on. Separate from {@link ProductKind} so one category can later support
+ * several pricing models. Mirrors the backend `PricingModel` enum
+ * (GarmentPrint=0, QuantityTierUnit=1, FixedSize=2, AreaBased=3, CustomQuoteOnly=4).
+ */
+export type PricingModel =
+  | 'GarmentPrint'
+  | 'QuantityTierUnit'
+  | 'FixedSize'
+  | 'AreaBased'
+  | 'CustomQuoteOnly'
+
 export interface ProductListItem {
   id: string
   name: string
   basePrice: number
   productType: string
+  /** Business category (Jira 9503). Lets list/grid views branch without a detail fetch. */
+  kind: ProductKind
+  /** Pricing behavior (Jira 9503). */
+  pricingModel: PricingModel
+  /** Minimum sellable quantity (Jira 9503), enforced server-side. */
+  minimumQuantity: number
   isActive: boolean
   thumbnailUrl: string | null
   primaryImageUrl: string | null
@@ -195,12 +222,53 @@ export interface SetProductPrintConfigOptionsPayload {
   options: CreateUpdateProductPrintConfigOption[]
 }
 
+// Badge quantity-tier unit pricing (Jira 9503)
+
+/**
+ * A Badge quantity-break unit price rule (Jira 9503). Among active tiers the highest MinQuantity ≤
+ * order quantity wins; line total = UnitPrice × quantity. Written only via the dedicated
+ * quantity-price-tiers endpoint (single-writer); ordinary product save never touches these.
+ */
+export interface ProductQuantityPriceTier {
+  id: string
+  productId: string
+  minQuantity: number
+  unitPrice: number
+  isActive: boolean
+  sortOrder: number
+}
+
+/** One tier row in a {@link SetProductQuantityPriceTiersPayload} replace payload. */
+export interface CreateUpdateProductQuantityPriceTier {
+  minQuantity: number
+  unitPrice: number
+  isActive: boolean
+  sortOrder: number
+}
+
+/**
+ * Replace-the-whole-set payload for a product's Badge quantity-tier unit prices (single-writer
+ * endpoint, Jira 9503). Empty list clears the product's quantity tiers (no resolvable Badge price
+ * until configured again).
+ */
+export interface SetProductQuantityPriceTiersPayload {
+  tiers: CreateUpdateProductQuantityPriceTier[]
+}
+
 export interface Product {
   id: string
   name: string
   description: string | null
   basePrice: number
   productType: string
+  /** Business category (Jira 9503). Drives storefront/admin dispatch. */
+  kind: ProductKind
+  /** Pricing behavior (Jira 9503). Drives the pricing strategy. */
+  pricingModel: PricingModel
+  /** Minimum sellable quantity (Jira 9503), enforced server-side. Always ≥ 1. */
+  minimumQuantity: number
+  /** When true, an order item for this product must carry a design asset (Jira 9503). */
+  designUploadRequired: boolean
   isActive: boolean
   creationTime: string
   /** Print-pricing group assignment (Jira 9203). Null = ungrouped. Written via product update. */
@@ -213,6 +281,11 @@ export interface Product {
   printPriceTiers: ProductPrintPriceTier[]
   /** Product/size scoped allowed print options (Jira 9204). Empty = global matrix fallback. */
   printConfigOptions: ProductPrintConfigOption[]
+  /**
+   * Badge quantity-tier unit prices (Jira 9503). Empty for non-Badge products. Active rows only on
+   * the public GET; written via the dedicated quantity-price-tiers endpoint.
+   */
+  quantityPriceTiers: ProductQuantityPriceTier[]
 }
 
 // Customization
@@ -273,7 +346,11 @@ export interface PriceCalculationPrintItem {
 
 export interface PriceCalculationRequest {
   productId: string
-  variantId: string
+  /**
+   * Garment variant (Jira 9503): required for garment quotes (enforced server-side), omitted for
+   * non-garment quotes such as Badge (price depends only on quantity, not variant).
+   */
+  variantId?: string
   quantity: number
   /**
    * Total quantity of this product across all selected variant lines on the page (Jira 9104).
@@ -493,12 +570,25 @@ export interface OrderPrintGroup {
 export interface OrderItem {
   id: string
   productId: string
-  productVariantId: string
+  /** Garment variant id; null for non-garment items such as Badge (Jira 9503). */
+  productVariantId: string | null
   productName: string
-  variantLabel: string
+  /** "Color / Size" snapshot for garments; null for non-garment items (Jira 9503). */
+  variantLabel: string | null
   quantity: number
   unitPrice: number
   lineTotal: number
+  // ── Model snapshot (Jira 9503) ───────────────────────────────────────────
+  pricingModel?: PricingModel
+  productKind?: ProductKind
+  // ── Item-level design (Jira 9503; used by Badge, null for garments) ───────
+  uploadedAssetId?: string | null
+  uploadedAssetUrl?: string | null
+  designNote?: string | null
+  /** Applied Badge quantity-tier MinQuantity snapshot (Jira 9503); null when not applicable. */
+  appliedQuantityTierMinQuantity?: number | null
+  /** Reserved non-garment configuration snapshot (Banner); null for now. */
+  configurationJson?: string | null
   prints?: OrderItemPrint[]
 }
 
@@ -521,8 +611,15 @@ export interface UpdateOrderItemContent {
   /** Existing OrderItem id when editing/replacing; omitted/undefined when adding. */
   id?: string
   productId: string
-  productVariantId: string
+  /** Garment variant: required for garments (server-enforced), omitted for Badge (Jira 9503). */
+  productVariantId?: string | null
   quantity: number
+  // ── Item-level design (Jira 9503) — used by non-garment items (Badge). NEVER price fields. ──
+  uploadedAssetId?: string | null
+  uploadedAssetUrl?: string | null
+  designNote?: string | null
+  /** Reserved non-garment configuration (Banner). Ignored for Garment/Badge MVP. */
+  configurationJson?: string | null
   prints: UpdateOrderItemPrintContent[]
 }
 
@@ -624,9 +721,11 @@ export interface CartItemPrint {
 export interface CartItem {
   cartItemKey: string
   productId: string
-  productVariantId: string
+  /** Garment variant id; omitted for non-garment items such as Badge (Jira 9503/9504). */
+  productVariantId?: string
   productName: string
-  variantLabel: string
+  /** "Color / Size" for garments; omitted for Badge (no variant) (Jira 9504). */
+  variantLabel?: string
   color?: string
   size?: string
   unitPrice: number
@@ -637,6 +736,19 @@ export interface CartItem {
    * Drives group-aware print-tier quantity aggregation in the cart/checkout quote.
    */
   printPricingGroupId?: string | null
+  // ── Product model + Badge support (Jira 9504) ─────────────────────────────
+  /** Business category — lets the cart/checkout branch display + payload by kind. */
+  kind?: ProductKind
+  /** Pricing behavior — drives the quote path (Badge sends no variant/prints). */
+  pricingModel?: PricingModel
+  /** Minimum sellable quantity (Badge); UX validation only, backend authoritative. */
+  minimumQuantity?: number
+  // ── Item-level design (Jira 9504; used by Badge, garment design lives in prints) ──
+  uploadedAssetId?: string
+  uploadedAssetUrl?: string
+  designNote?: string
+  /** Reserved non-garment configuration (Banner). Ignored for Garment/Badge MVP. */
+  configurationJson?: string
   prints?: CartItemPrint[]
 }
 

@@ -4,16 +4,20 @@ import type {
   CreateUpdatePrintPricingGroup,
   InventoryStatus,
   PagedResult,
+  PricingModel,
   PrintPricingGroup,
   Product,
   ProductImage,
+  ProductKind,
   ProductListItem,
   ProductPrintConfigOption,
   ProductPrintPriceTier,
+  ProductQuantityPriceTier,
   ProductVariant,
   SetProductPrintConfigOptionsPayload,
   SetProductPrintPriceTiersPayload,
   SetProductPriceTiersPayload,
+  SetProductQuantityPriceTiersPayload,
 } from '@/types'
 
 interface GetProductsParams {
@@ -32,6 +36,15 @@ export interface CreateProductPayload {
   isActive: boolean
   /** Optional print-pricing group assignment (Jira 9203). Null = ungrouped. */
   printPricingGroupId?: string | null
+  // ── Product kind / pricing model (Jira 9503/9504) ─────────────────────────
+  /** Business category. Defaults to Garment server-side when omitted (backward compatible). */
+  kind?: ProductKind
+  /** Pricing behavior. Defaults to GarmentPrint server-side when omitted. */
+  pricingModel?: PricingModel
+  /** Minimum sellable quantity (≥ 1). */
+  minimumQuantity?: number
+  /** When true, an order item for this product must carry a design asset. */
+  designUploadRequired?: boolean
 }
 
 export interface UpdateProductPayload {
@@ -45,6 +58,14 @@ export interface UpdateProductPayload {
    * product's own scalar fields, so this MUST be sent on every update or the assignment is cleared.
    */
   printPricingGroupId?: string | null
+  // ── Product kind / pricing model (Jira 9503/9504) ─────────────────────────
+  // Like printPricingGroupId, these are part of the full scalar replace: send them on every update
+  // or the backend defaults Kind/PricingModel back to Garment/GarmentPrint and MinimumQuantity to 1.
+  // NOTE: this update never touches Badge quantity price tiers — those have a dedicated endpoint.
+  kind?: ProductKind
+  pricingModel?: PricingModel
+  minimumQuantity?: number
+  designUploadRequired?: boolean
 }
 
 export interface CreateVariantPayload {
@@ -143,6 +164,24 @@ export function makeCatalogApi(client: ApiClient) {
      */
     setProductPriceTiers(productId: string, payload: SetProductPriceTiersPayload): Promise<Product> {
       return client.put<Product>(`/api/catalog/products/${productId}/price-tiers`, payload)
+    },
+
+    // ── Badge quantity-tier unit prices (Jira 9503/9504) ───────────────────────
+    // Dedicated single-writer endpoint: the ordinary product update never reads or writes these, so
+    // saving product fields can't clobber the tiers and vice versa.
+
+    /** Reads a Badge product's quantity-tier unit prices. */
+    getQuantityPriceTiers(productId: string): Promise<ProductQuantityPriceTier[]> {
+      return client.get(`/api/catalog/products/${productId}/quantity-price-tiers`)
+    },
+
+    /**
+     * Replaces a Badge product's full quantity-tier set (single-writer). Empty list clears the
+     * product's tiers (no resolvable Badge price until configured again). Does not touch product
+     * scalar fields, variants, or print pricing.
+     */
+    setQuantityPriceTiers(productId: string, payload: SetProductQuantityPriceTiersPayload): Promise<ProductQuantityPriceTier[]> {
+      return client.put(`/api/catalog/products/${productId}/quantity-price-tiers`, payload)
     },
 
     // ── Print pricing groups (Jira 9203) ──────────────────────────────────────

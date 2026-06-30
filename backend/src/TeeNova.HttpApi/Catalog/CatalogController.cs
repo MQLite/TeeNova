@@ -167,4 +167,19 @@ public class CatalogController : TeeNovaControllerBase
     [HttpPut("products/{productId:guid}/print-config-options")]
     public async Task<List<ProductPrintConfigOptionDto>> SetPrintConfigOptionsAsync(Guid productId, [FromBody] SetProductPrintConfigOptionsDto input)
         => await _catalogAppService.SetPrintConfigOptionsAsync(productId, input);
+
+    // ── Badge Quantity Price Tiers (Jira 9503, product-scoped single-writer) ──────
+
+    /// <summary>Returns a product's Badge quantity-tier unit prices (admin, incl. inactive rows).</summary>
+    [HttpGet("products/{productId:guid}/quantity-price-tiers")]
+    public async Task<List<ProductQuantityPriceTierDto>> GetQuantityPriceTiersAsync(Guid productId)
+        => await _catalogAppService.GetQuantityPriceTiersAsync(productId);
+
+    /// <summary>
+    /// Replaces the full set of Badge quantity-tier unit prices for a product (admin, single-writer).
+    /// Sending an empty list clears the product's quantity tiers.
+    /// </summary>
+    [HttpPut("products/{productId:guid}/quantity-price-tiers")]
+    public async Task<List<ProductQuantityPriceTierDto>> SetQuantityPriceTiersAsync(Guid productId, [FromBody] SetProductQuantityPriceTiersDto input)
+        => await _catalogAppService.SetQuantityPriceTiersAsync(productId, input);
 }

@@ -111,8 +111,27 @@ public class OrderEntityTypeConfiguration :
         builder.ToTable("OrderItems");
 
         builder.Property(i => i.ProductName).IsRequired().HasMaxLength(256);
-        builder.Property(i => i.VariantLabel).IsRequired().HasMaxLength(128);
+        // VariantLabel + ProductVariantId are now nullable (Jira 9503): null for non-garment items
+        // (Badge has no color/size variant). Garment items still carry both.
+        builder.Property(i => i.VariantLabel).IsRequired(false).HasMaxLength(128);
         builder.Property(i => i.UnitPrice).HasColumnType("decimal(18,4)");
+
+        // Model snapshot (Jira 9503) — stored as strings with garment defaults so existing rows backfill.
+        builder.Property(i => i.PricingModel)
+            .HasConversion<string>()
+            .IsRequired()
+            .HasMaxLength(32)
+            .HasDefaultValue(TeeNova.Catalog.PricingModel.GarmentPrint);
+        builder.Property(i => i.ProductKind)
+            .HasConversion<string>()
+            .IsRequired()
+            .HasMaxLength(32)
+            .HasDefaultValue(TeeNova.Catalog.ProductKind.Garment);
+
+        // Item-level design (Jira 9503) — used by non-garment items (Badge); null for garments.
+        builder.Property(i => i.UploadedAssetUrl).HasMaxLength(2048);
+        builder.Property(i => i.DesignNote).HasMaxLength(2000);
+        // ConfigurationJson reserved for Banner; left unbounded (nvarchar(max)).
 
         // InventoryDeductedAt is DateTime? — EF infers datetime2 nullable. Idempotency marker
         // for the Jira 9005 post-production deduction.

@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react'
 import { ProductStatusToggle } from '@/components/admin/products/ProductStatusToggle'
 import { VariantSection } from '@/components/admin/products/VariantSection'
 import { ColorImageManager } from '@/components/admin/products/ColorImageManager'
+import { BadgeQuantityPricesSection } from '@/components/admin/products/BadgeQuantityPricesSection'
 import type { Product } from '@/types'
 
 function getPriceRange(basePrice: number, adjustments: number[]): string {
@@ -43,6 +44,7 @@ export function ProductDetailBody({ product }: Props) {
   }, [product])
 
   const adjustments = currentProduct.variants.map((v) => v.priceAdjustment)
+  const isBadge = currentProduct.kind === 'Badge'
 
   return (
     <>
@@ -107,6 +109,38 @@ export function ProductDetailBody({ product }: Props) {
 
           <section className="rounded-[28px] border border-black/[0.08] bg-white p-5 shadow-card">
             <p className="font-mono text-[11px] uppercase tracking-[0.54px] text-black/45">
+              Selling Model
+            </p>
+            <div className="mt-4 grid grid-cols-2 gap-3">
+              <div className="rounded-2xl border border-black/[0.06] bg-black/[0.02] px-4 py-3">
+                <p className="font-mono text-[10px] uppercase tracking-[0.54px] text-black/45">Kind</p>
+                <p className="mt-1 text-sm text-black" style={{ fontWeight: 480, letterSpacing: '-0.14px' }}>
+                  {currentProduct.kind}
+                </p>
+              </div>
+              <div className="rounded-2xl border border-black/[0.06] bg-black/[0.02] px-4 py-3">
+                <p className="font-mono text-[10px] uppercase tracking-[0.54px] text-black/45">Pricing Model</p>
+                <p className="mt-1 text-sm text-black" style={{ fontWeight: 480, letterSpacing: '-0.14px' }}>
+                  {currentProduct.pricingModel}
+                </p>
+              </div>
+              <div className="rounded-2xl border border-black/[0.06] bg-black/[0.02] px-4 py-3">
+                <p className="font-mono text-[10px] uppercase tracking-[0.54px] text-black/45">Minimum Quantity</p>
+                <p className="mt-1 text-sm text-black" style={{ fontWeight: 480, letterSpacing: '-0.14px' }}>
+                  {currentProduct.minimumQuantity}
+                </p>
+              </div>
+              <div className="rounded-2xl border border-black/[0.06] bg-black/[0.02] px-4 py-3">
+                <p className="font-mono text-[10px] uppercase tracking-[0.54px] text-black/45">Design Upload</p>
+                <p className="mt-1 text-sm text-black" style={{ fontWeight: 480, letterSpacing: '-0.14px' }}>
+                  {currentProduct.designUploadRequired ? 'Required' : 'Optional'}
+                </p>
+              </div>
+            </div>
+          </section>
+
+          <section className="rounded-[28px] border border-black/[0.08] bg-white p-5 shadow-card">
+            <p className="font-mono text-[11px] uppercase tracking-[0.54px] text-black/45">
               Metadata
             </p>
             <div className="mt-4 space-y-3">
@@ -146,11 +180,20 @@ export function ProductDetailBody({ product }: Props) {
         </div>
       </div>
 
-      <VariantSection
-        productId={currentProduct.id}
-        initialVariants={currentProduct.variants}
-        onColorsChange={setVariantColors}
-      />
+      {/* Badge sells by quantity-tier unit price with no color/size variants (Jira 9504): show the
+          dedicated tier editor in place of the garment variant matrix. */}
+      {isBadge ? (
+        <BadgeQuantityPricesSection
+          productId={currentProduct.id}
+          minimumQuantity={currentProduct.minimumQuantity}
+        />
+      ) : (
+        <VariantSection
+          productId={currentProduct.id}
+          initialVariants={currentProduct.variants}
+          onColorsChange={setVariantColors}
+        />
+      )}
     </>
   )
 }

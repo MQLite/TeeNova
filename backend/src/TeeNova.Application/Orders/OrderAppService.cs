@@ -105,7 +105,11 @@ public class OrderAppService : ApplicationService, IOrderAppService
                         Id: null,
                         p.PrintAreaId, p.PrintSizeId,
                         p.UploadedAssetId, p.UploadedAssetUrl, p.DesignNote, PrintNotes: null))
-                    .ToList()))
+                    .ToList(),
+                UploadedAssetId: i.UploadedAssetId,
+                UploadedAssetUrl: i.UploadedAssetUrl,
+                DesignNote: i.DesignNote,
+                ConfigurationJson: i.ConfigurationJson))
             .ToList();
 
         var priced = await _orderContentPricingService.PriceAsync(draft);
@@ -882,6 +886,13 @@ public class OrderAppService : ApplicationService, IOrderAppService
             priced.Quantity, priced.UnitPrice)
         {
             InventoryDeductionEligible = inventoryDeductionEligible,
+            PricingModel                   = priced.PricingModel,
+            ProductKind                    = priced.ProductKind,
+            UploadedAssetId                = priced.UploadedAssetId,
+            UploadedAssetUrl               = priced.UploadedAssetUrl,
+            DesignNote                     = priced.DesignNote,
+            AppliedQuantityTierMinQuantity = priced.AppliedQuantityTierMinQuantity,
+            ConfigurationJson              = priced.ConfigurationJson,
         };
 
         foreach (var print in priced.Prints)
@@ -997,7 +1008,11 @@ public class OrderAppService : ApplicationService, IOrderAppService
                 itemDto.ProductId,
                 itemDto.ProductVariantId,
                 itemDto.Quantity,
-                draftPrints));
+                draftPrints,
+                UploadedAssetId: itemDto.UploadedAssetId,
+                UploadedAssetUrl: itemDto.UploadedAssetUrl,
+                DesignNote: itemDto.DesignNote,
+                ConfigurationJson: itemDto.ConfigurationJson));
         }
 
         return draft;
@@ -1089,6 +1104,13 @@ public class OrderAppService : ApplicationService, IOrderAppService
             VariantLabel     = p.VariantLabel,
             Quantity         = p.Quantity,
             UnitPrice        = p.UnitPrice,
+            PricingModel                   = p.PricingModel,
+            ProductKind                    = p.ProductKind,
+            UploadedAssetId                = p.UploadedAssetId,
+            UploadedAssetUrl               = p.UploadedAssetUrl,
+            DesignNote                     = p.DesignNote,
+            AppliedQuantityTierMinQuantity = p.AppliedQuantityTierMinQuantity,
+            ConfigurationJson              = p.ConfigurationJson,
             Prints           = p.Prints.Select(pr => new OrderItemPrintDto
             {
                 Id                          = pr.Id ?? Guid.NewGuid(),

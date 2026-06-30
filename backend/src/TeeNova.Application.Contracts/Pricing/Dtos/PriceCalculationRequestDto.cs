@@ -9,10 +9,13 @@ public class PriceCalculationRequestDto
     [Required]
     public Guid ProductId { get; set; }
 
-    [Required]
-    public Guid VariantId { get; set; }
+    /// <summary>
+    /// Garment variant. Optional (Jira 9503): required for garment quotes (enforced server-side),
+    /// omitted for non-garment quotes such as Badge (price depends only on quantity, not variant).
+    /// </summary>
+    public Guid? VariantId { get; set; }
 
-    [Range(1, 100)]
+    [Range(1, 100000)]
     public int Quantity { get; set; } = 1;
 
     /// <summary>

@@ -22,6 +22,7 @@ public class PricingAppService : ApplicationService, IPricingAppService
     private readonly IRepository<Catalog.Product, Guid>               _productRepository;
     private readonly IRepository<Catalog.PrintPricingGroup, Guid>     _printPricingGroupRepository;
     private readonly IRepository<Catalog.ProductPrintPriceTier, Guid> _printPriceTierRepository;
+    private readonly IRepository<Catalog.ProductQuantityPriceTier, Guid> _quantityPriceTierRepository;
     private readonly IRepository<PrintArea, Guid>                     _printAreaRepository;
     private readonly IRepository<PrintSize, Guid>                     _printSizeRepository;
     private readonly PrintConfigValidator                             _printConfigValidator;
@@ -31,6 +32,7 @@ public class PricingAppService : ApplicationService, IPricingAppService
         IRepository<Catalog.Product, Guid>               productRepository,
         IRepository<Catalog.PrintPricingGroup, Guid>     printPricingGroupRepository,
         IRepository<Catalog.ProductPrintPriceTier, Guid> printPriceTierRepository,
+        IRepository<Catalog.ProductQuantityPriceTier, Guid> quantityPriceTierRepository,
         IRepository<PrintArea, Guid>                     printAreaRepository,
         IRepository<PrintSize, Guid>                     printSizeRepository,
         PrintConfigValidator                             printConfigValidator,
@@ -39,6 +41,7 @@ public class PricingAppService : ApplicationService, IPricingAppService
         _productRepository         = productRepository;
         _printPricingGroupRepository = printPricingGroupRepository;
         _printPriceTierRepository  = printPriceTierRepository;
+        _quantityPriceTierRepository = quantityPriceTierRepository;
         _printAreaRepository       = printAreaRepository;
         _printSizeRepository       = printSizeRepository;
         _printConfigValidator      = printConfigValidator;
@@ -64,15 +67,30 @@ public class PricingAppService : ApplicationService, IPricingAppService
                 .WithData("ProductId", input.ProductId)
                 .WithData("ProductName", product.Name);
 
+        // 2b. Dispatch by pricing model (Jira 9503). Garment quote behavior below is unchanged; Badge
+        // resolves a quantity-tier unit price; other models have no storefront quote yet.
+        return product.PricingModel switch
+        {
+            Catalog.PricingModel.GarmentPrint     => await CalculateGarmentAsync(product, input),
+            Catalog.PricingModel.QuantityTierUnit => await CalculateQuantityTierUnitAsync(product, input),
+            _ => throw new BusinessException("TeeNova:Pricing:QuoteNotSupportedForPricingModel")
+                    .WithData("ProductId", product.Id)
+                    .WithData("PricingModel", product.PricingModel),
+        };
+    }
+
+    /// <summary>Existing Epic 9200 garment quote — behavior unchanged (Jira 9503 just gated it by model).</summary>
+    private async Task<PriceCalculationResponseDto> CalculateGarmentAsync(Catalog.Product product, PriceCalculationRequestDto input)
+    {
         // 3. Validate Variant
-        var variant = product.Variants.FirstOrDefault(v => v.Id == input.VariantId)
+        var variant = product.Variants.FirstOrDefault(v => input.VariantId.HasValue && v.Id == input.VariantId.Value)
             ?? throw new BusinessException("TeeNova:Pricing:VariantNotFound")
-                .WithData("VariantId", input.VariantId)
-                .WithData("ProductId", input.ProductId);
+                .WithData("VariantId", input.VariantId?.ToString() ?? "(none)")
+                .WithData("ProductId", product.Id);
 
         if (!variant.IsAvailable)
             throw new BusinessException("TeeNova:Pricing:VariantUnavailable")
-                .WithData("VariantId", input.VariantId)
+                .WithData("VariantId", input.VariantId?.ToString() ?? "(none)")
                 .WithData("VariantLabel", $"{variant.Color} / {variant.Size}");
 
         // 4. Load and validate PrintArea / PrintSize entries
@@ -118,6 +136,51 @@ public class PricingAppService : ApplicationService, IPricingAppService
             result.LineTotal);
 
         return result;
+    }
+
+    /// <summary>
+    /// Badge quote (Jira 9503): resolves a quantity-tier unit price (no variant, no prints). Enforces
+    /// the product minimum quantity. Garment-specific response fields are left empty/Badge-safe; the
+    /// storefront reads UnitPrice / LineTotal. Design upload is not needed to quote (price = unit × qty).
+    /// </summary>
+    private async Task<PriceCalculationResponseDto> CalculateQuantityTierUnitAsync(
+        Catalog.Product product, PriceCalculationRequestDto input)
+    {
+        if (input.Quantity < product.MinimumQuantity)
+            throw new BusinessException("TeeNova:Pricing:BelowMinimumQuantity")
+                .WithData("ProductId", product.Id)
+                .WithData("MinimumQuantity", product.MinimumQuantity)
+                .WithData("Quantity", input.Quantity);
+
+        var tiers = await _quantityPriceTierRepository.GetListAsync(t => t.ProductId == product.Id);
+        var resolved = QuantityTierResolver.Resolve(tiers, input.Quantity)
+            ?? throw new BusinessException("TeeNova:Pricing:NoQuantityTiers")
+                .WithData("ProductId", product.Id);
+
+        var unit = resolved.UnitPrice;
+
+        Logger.LogInformation(
+            "[PricingQuote] ProductId={ProductId} PricingModel=QuantityTierUnit Quantity={Quantity} AppliedTier={AppliedTier} UnitPrice={UnitPrice} LineTotal={LineTotal}",
+            product.Id, input.Quantity, resolved.AppliedMinQuantity, unit, unit * input.Quantity);
+
+        return new PriceCalculationResponseDto
+        {
+            ProductBasePrice            = 0m,
+            VariantAdjustment           = 0m,
+            PrintAddOns                 = new(),
+            GarmentUnitPrice            = unit,  // whole unit price (no separate garment/print split for Badge)
+            PrintUnitPrice              = 0m,
+            UnitPrice                   = unit,
+            Quantity                    = input.Quantity,
+            LineTotal                   = unit * input.Quantity,
+            Currency                    = "NZD",
+            PricingMode                 = "Tiered",
+            AppliedTierMinQuantity      = resolved.AppliedMinQuantity,
+            AppliedTierUnitPrice        = unit,
+            NextTierMinQuantity         = resolved.NextMinQuantity,
+            NextTierUnitPrice           = resolved.NextUnitPrice,
+            IncludedStandardPrintAmount = 0m,
+        };
     }
 
     /// <summary>

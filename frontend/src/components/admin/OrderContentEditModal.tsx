@@ -15,6 +15,7 @@ import type {
   PrintArea,
   PrintSize,
   Product,
+  ProductKind,
   ProductListItem,
   UpdateOrderContent,
 } from '@/types'
@@ -55,9 +56,21 @@ interface WorkingItem {
   /** Existing OrderItem id; absent on new rows. Never derived from preview ids. */
   id?: string
   productId: string
+  /** Business category (Jira 9505). Drives which editor renders; non-garment = design-only (Badge). */
+  productKind: ProductKind
+  /** Garment variant; '' for non-garment items (Badge has no variant). */
   productVariantId: string
   quantity: number
   prints: WorkingPrint[]
+  // ── Item-level design (Jira 9505) — used by non-garment items (Badge). Garment design is per-print.
+  uploadedAssetId?: string | null
+  uploadedAssetUrl?: string | null
+  designNote: string
+}
+
+/** Non-garment items (Badge etc.) edit through the design-only editor: no variant, no print rows. */
+function isNonGarment(kind: ProductKind): boolean {
+  return kind !== 'Garment'
 }
 
 function newKey(prefix: string): string {
@@ -71,8 +84,14 @@ function buildWorkingCopy(order: Order): WorkingItem[] {
     localKey: newKey('item'),
     id: item.id,
     productId: item.productId,
-    productVariantId: item.productVariantId,
+    productKind: item.productKind ?? 'Garment',
+    // Badge order items have a null variant (Jira 9503/9505); coerce to '' so the garment variant
+    // <select> stays controlled. The badge editor ignores this field entirely.
+    productVariantId: item.productVariantId ?? '',
     quantity: item.quantity,
+    uploadedAssetId: item.uploadedAssetId ?? null,
+    uploadedAssetUrl: item.uploadedAssetUrl ?? null,
+    designNote: item.designNote ?? '',
     prints: (item.prints ?? []).map((p) => ({
       localKey: newKey('print'),
       id: p.id,
@@ -88,22 +107,40 @@ function buildWorkingCopy(order: Order): WorkingItem[] {
 
 function buildPayload(items: WorkingItem[]): UpdateOrderContent {
   return {
-    items: items.map((item) => ({
-      // Only send a real saved id; new rows omit id so the backend adds them.
-      ...(item.id ? { id: item.id } : {}),
-      productId: item.productId,
-      productVariantId: item.productVariantId,
-      quantity: item.quantity,
-      prints: item.prints.map((p) => ({
-        ...(p.id ? { id: p.id } : {}),
-        printAreaId: p.printAreaId,
-        printSizeId: p.printSizeId,
-        uploadedAssetId: p.uploadedAssetId ?? null,
-        uploadedAssetUrl: p.uploadedAssetUrl ?? null,
-        designNote: p.designNote.trim() ? p.designNote.trim() : null,
-        printNotes: p.printNotes.trim() ? p.printNotes.trim() : null,
-      })),
-    })),
+    items: items.map((item) => {
+      const base = {
+        // Only send a real saved id; new rows omit id so the backend adds them.
+        ...(item.id ? { id: item.id } : {}),
+        productId: item.productId,
+        quantity: item.quantity,
+      }
+      // Non-garment items (Badge, Jira 9505): no variant, no prints, item-level design only.
+      // NEVER carries price fields — the backend is the sole pricing authority.
+      if (isNonGarment(item.productKind)) {
+        return {
+          ...base,
+          productVariantId: null,
+          uploadedAssetId: item.uploadedAssetId ?? null,
+          uploadedAssetUrl: item.uploadedAssetUrl ?? null,
+          designNote: item.designNote.trim() ? item.designNote.trim() : null,
+          prints: [],
+        }
+      }
+      // Garment items: variant + per-print design (unchanged behaviour).
+      return {
+        ...base,
+        productVariantId: item.productVariantId,
+        prints: item.prints.map((p) => ({
+          ...(p.id ? { id: p.id } : {}),
+          printAreaId: p.printAreaId,
+          printSizeId: p.printSizeId,
+          uploadedAssetId: p.uploadedAssetId ?? null,
+          uploadedAssetUrl: p.uploadedAssetUrl ?? null,
+          designNote: p.designNote.trim() ? p.designNote.trim() : null,
+          printNotes: p.printNotes.trim() ? p.printNotes.trim() : null,
+        })),
+      }
+    }),
   }
 }
 
@@ -142,6 +179,12 @@ const ERROR_MESSAGES: Record<string, string> = {
   OrderItemPrintNotInItem: 'A print no longer belongs to its item. Please re-open the editor and try again.',
   OrderCancelled: 'This order is cancelled and cannot be edited.',
   OrderCompleted: 'This order is completed and cannot be edited.',
+  // ── Badge / quantity-tier pricing (Jira 9503/9505) ──────────────────────────
+  BelowMinimumQuantity: 'A custom-product item is below its minimum order quantity. Increase the quantity and try again.',
+  DesignRequired: 'A custom-product item requires a design upload before it can be saved. Please upload artwork.',
+  NoQuantityTiers: 'Pricing for a custom product isn’t configured yet (no quantity tiers). Please set it up first.',
+  QuantityTierUnitDoesNotSupportPrints: 'A quantity-tier product is priced by quantity only and can’t take print placements.',
+  UnsupportedPricingModel: 'A product on this order can’t be priced automatically yet. Please contact the shop / set up pricing.',
 }
 
 function friendlyError(err: unknown): string {
@@ -303,25 +346,48 @@ export function OrderContentEditModal({ order, open, onClose, onSaved }: Props) 
 
   async function handleProductChange(localKey: string, productId: string) {
     const detail = await ensureProductLoaded(productId)
-    const firstVariant = detail?.variants.find((v) => v.isAvailable) ?? detail?.variants[0]
-    updateItem(localKey, { productId, productVariantId: firstVariant?.id ?? '' })
+    const kind: ProductKind = detail?.kind ?? 'Garment'
+    // Switching to a non-garment product clears the variant and any garment prints; switching to a
+    // garment seeds the first available variant. The server still re-validates either way.
+    if (isNonGarment(kind)) {
+      updateItem(localKey, { productId, productKind: kind, productVariantId: '', prints: [] })
+    } else {
+      const firstVariant = detail?.variants.find((v) => v.isAvailable) ?? detail?.variants[0]
+      updateItem(localKey, { productId, productKind: kind, productVariantId: firstVariant?.id ?? '' })
+    }
   }
 
   async function handleAddItem() {
     const first = products[0]
     if (!first) return
     const detail = await ensureProductLoaded(first.id)
-    const firstVariant = detail?.variants.find((v) => v.isAvailable) ?? detail?.variants[0]
+    const kind: ProductKind = detail?.kind ?? first.kind ?? 'Garment'
+    const firstVariant = isNonGarment(kind)
+      ? undefined
+      : detail?.variants.find((v) => v.isAvailable) ?? detail?.variants[0]
     mutate((prev) => [
       ...prev,
       {
         localKey: newKey('item'),
         productId: first.id,
+        productKind: kind,
         productVariantId: firstVariant?.id ?? '',
-        quantity: 1,
+        quantity: Math.max(1, first.minimumQuantity ?? 1),
+        uploadedAssetId: null,
+        uploadedAssetUrl: null,
+        designNote: '',
         prints: [],
       },
     ])
+  }
+
+  async function handleItemDesignUpload(itemKey: string, file: File) {
+    try {
+      const result = await filesApi.upload(file)
+      updateItem(itemKey, { uploadedAssetId: result.assetId, uploadedAssetUrl: result.fileUrl })
+    } catch {
+      setSaveError('Could not upload that design file. Please try again.')
+    }
   }
 
   function handleRemoveItem(localKey: string) {
@@ -369,9 +435,28 @@ export function OrderContentEditModal({ order, open, onClose, onSaved }: Props) 
 
   // ── Quote / save ────────────────────────────────────────────────────────────
 
+  // Per-item client-side validity (the server is still the authority; this only gates the buttons and
+  // surfaces inline hints). Garments need a variant; non-garment items (Badge) need a quantity at or
+  // above the product minimum and a design when the product requires one.
+  function itemMinQuantity(it: WorkingItem): number {
+    return productDetails[it.productId]?.minimumQuantity ?? 1
+  }
+  function itemDesignRequired(it: WorkingItem): boolean {
+    return productDetails[it.productId]?.designUploadRequired ?? false
+  }
+  function isItemValid(it: WorkingItem): boolean {
+    if (!it.productId) return false
+    if (isNonGarment(it.productKind)) {
+      if (it.quantity < itemMinQuantity(it)) return false
+      if (itemDesignRequired(it) && !it.uploadedAssetId) return false
+      return true
+    }
+    return !!it.productVariantId
+  }
+
   const hasItems = items.length > 0
-  const everyItemHasVariant = items.every((it) => it.productId && it.productVariantId)
-  const canQuote = !quoting && !saving && hasItems && everyItemHasVariant
+  const everyItemValid = items.every(isItemValid)
+  const canQuote = !quoting && !saving && hasItems && everyItemValid
 
   async function handleQuote() {
     setQuoting(true)
@@ -457,6 +542,12 @@ export function OrderContentEditModal({ order, open, onClose, onSaved }: Props) 
           {items.map((item, idx) => {
             const variants = productDetails[item.productId]?.variants ?? []
             const variantsLoading = !!item.productId && !productDetails[item.productId]
+            const nonGarment = isNonGarment(item.productKind)
+            const minQty = itemMinQuantity(item)
+            const designRequired = itemDesignRequired(item)
+            const itemDesignName = getFileName(item.uploadedAssetUrl)
+            const belowMin = nonGarment && item.quantity < minQty
+            const designMissing = nonGarment && designRequired && !item.uploadedAssetId
             return (
               <div key={item.localKey} className="rounded-2xl border border-black/[0.08] bg-black/[0.01] p-4">
                 <div className="mb-3 flex items-center justify-between">
@@ -473,7 +564,9 @@ export function OrderContentEditModal({ order, open, onClose, onSaved }: Props) 
                   </button>
                 </div>
 
-                <div className="grid grid-cols-1 gap-3 sm:grid-cols-[1fr_1fr_90px]">
+                <div className={nonGarment
+                  ? 'grid grid-cols-1 gap-3 sm:grid-cols-[1fr_90px]'
+                  : 'grid grid-cols-1 gap-3 sm:grid-cols-[1fr_1fr_90px]'}>
                   <div>
                     <label className={LABEL}>Product</label>
                     <select
@@ -493,29 +586,32 @@ export function OrderContentEditModal({ order, open, onClose, onSaved }: Props) 
                       ))}
                     </select>
                   </div>
-                  <div>
-                    <label className={LABEL}>Variant (colour / size)</label>
-                    <select
-                      className={FIELD}
-                      value={item.productVariantId}
-                      disabled={busy || variantsLoading}
-                      onChange={(e) => updateItem(item.localKey, { productVariantId: e.target.value })}
-                    >
-                      {variantsLoading && <option value="">Loading…</option>}
-                      {!variantsLoading && variants.length === 0 && <option value="">No variants</option>}
-                      {variants.map((v) => (
-                        <option key={v.id} value={v.id}>
-                          {v.color} / {v.size}{v.sku ? ` · ${v.sku}` : ''}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
+                  {/* Variant — garment only (Badge has no variant, Jira 9505). */}
+                  {!nonGarment && (
+                    <div>
+                      <label className={LABEL}>Variant (colour / size)</label>
+                      <select
+                        className={FIELD}
+                        value={item.productVariantId}
+                        disabled={busy || variantsLoading}
+                        onChange={(e) => updateItem(item.localKey, { productVariantId: e.target.value })}
+                      >
+                        {variantsLoading && <option value="">Loading…</option>}
+                        {!variantsLoading && variants.length === 0 && <option value="">No variants</option>}
+                        {variants.map((v) => (
+                          <option key={v.id} value={v.id}>
+                            {v.color} / {v.size}{v.sku ? ` · ${v.sku}` : ''}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                  )}
                   <div>
                     <label className={LABEL}>Qty</label>
                     <input
                       type="number"
-                      min={1}
-                      max={100}
+                      min={nonGarment ? minQty : 1}
+                      max={100000}
                       className={FIELD}
                       value={item.quantity}
                       disabled={busy}
@@ -524,7 +620,71 @@ export function OrderContentEditModal({ order, open, onClose, onSaved }: Props) 
                   </div>
                 </div>
 
-                {/* Prints */}
+                {/* Non-garment (Badge, Jira 9505): item-level design + note, no variant, no prints. */}
+                {nonGarment && (
+                  <div className="mt-3 space-y-3">
+                    <div className="rounded-xl border border-black/[0.08] bg-white p-3">
+                      <div className="grid grid-cols-1 gap-3">
+                        <div>
+                          <label className={LABEL}>Design note</label>
+                          <input
+                            className={FIELD}
+                            value={item.designNote}
+                            disabled={busy}
+                            placeholder="e.g. 25mm round button badge, full-bleed artwork"
+                            onChange={(e) => updateItem(item.localKey, { designNote: e.target.value })}
+                          />
+                        </div>
+                      </div>
+
+                      {/* Item-level design asset */}
+                      <div className="mt-2 flex flex-wrap items-center gap-2">
+                        <span className="font-mono text-[10px] uppercase tracking-[0.54px] text-black/40">
+                          {item.uploadedAssetUrl ? `Design: ${itemDesignName}` : 'No design file'}
+                        </span>
+                        <label className="inline-flex cursor-pointer items-center rounded-[50px] border border-dashed border-black/[0.15] px-2.5 py-1 font-mono text-[10px] uppercase tracking-[0.54px] text-black/45 transition-colors hover:border-black/30 hover:text-black">
+                          {item.uploadedAssetUrl ? 'Replace' : 'Upload'}
+                          <input
+                            type="file"
+                            accept="image/*,.pdf,.ai,.svg"
+                            className="hidden"
+                            disabled={busy}
+                            onChange={(e) => {
+                              const file = e.target.files?.[0]
+                              if (file) handleItemDesignUpload(item.localKey, file)
+                              e.target.value = ''
+                            }}
+                          />
+                        </label>
+                        {item.uploadedAssetUrl && (
+                          <button
+                            type="button"
+                            disabled={busy}
+                            onClick={() => updateItem(item.localKey, { uploadedAssetId: null, uploadedAssetUrl: null })}
+                            className="inline-flex items-center rounded-[50px] border border-black/[0.10] px-2.5 py-1 font-mono text-[10px] uppercase tracking-[0.54px] text-black/40 transition-colors hover:border-red-200 hover:text-red-600 disabled:opacity-40"
+                          >
+                            Clear
+                          </button>
+                        )}
+                      </div>
+
+                      {/* Validity hints */}
+                      {belowMin && (
+                        <p className="mt-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-1.5 text-[11px] text-amber-800">
+                          Minimum order quantity for this product is {minQty}.
+                        </p>
+                      )}
+                      {designMissing && (
+                        <p className="mt-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-1.5 text-[11px] text-amber-800">
+                          This product requires a design upload before it can be saved.
+                        </p>
+                      )}
+                    </div>
+                  </div>
+                )}
+
+                {/* Prints — garment only */}
+                {!nonGarment && (
                 <div className="mt-3 space-y-3">
                   {item.prints.map((print) => {
                     const fileName = getFileName(print.uploadedAssetUrl)
@@ -639,6 +799,7 @@ export function OrderContentEditModal({ order, open, onClose, onSaved }: Props) 
                     + Add print
                   </button>
                 </div>
+                )}
               </div>
             )
           })}
@@ -689,6 +850,28 @@ export function OrderContentEditModal({ order, open, onClose, onSaved }: Props) 
                 </div>
                 <ImpactRow label="Payment status" oldValue={quote.payment.currentPaymentStatus} newValue={quote.payment.previewPaymentStatus} />
               </div>
+
+              {/* Custom-product (Badge, Jira 9505) line summary from the repriced preview order. Display
+                  only — never treat preview ids as stable. */}
+              {quote.previewOrder.items.some((it) => (it.productKind ?? 'Garment') !== 'Garment') && (
+                <div className="space-y-1.5 rounded-xl border border-black/[0.08] bg-white px-3 py-2.5">
+                  <p className="font-mono text-[10px] uppercase tracking-[0.54px] text-black/45">Custom product items</p>
+                  {quote.previewOrder.items
+                    .filter((it) => (it.productKind ?? 'Garment') !== 'Garment')
+                    .map((it, i) => (
+                      <div key={it.id || `badge-${i}`} className="flex items-center justify-between gap-3 text-xs">
+                        <span className="min-w-0 flex-1 truncate text-black/70" style={{ letterSpacing: '-0.14px' }}>
+                          {it.productName}
+                          {it.appliedQuantityTierMinQuantity != null && (
+                            <span className="ml-1 text-black/40">· Tier {it.appliedQuantityTierMinQuantity}+</span>
+                          )}
+                        </span>
+                        <span className="shrink-0 text-black/50">×{it.quantity}</span>
+                        <span className="shrink-0 text-black" style={{ fontWeight: 540 }}>{money(it.lineTotal)}</span>
+                      </div>
+                    ))}
+                </div>
+              )}
 
               {/* Blocking reasons */}
               {blocked && (

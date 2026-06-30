@@ -86,7 +86,7 @@ export const useCartStore = create<CartStore>()(
     }),
     {
       name: 'teenova-cart',
-      version: 4,
+      version: 5,
       migrate: (persistedState) => {
         const state = persistedState as {
           items?: Array<CartItem & { cartItemKey?: string }>
@@ -94,18 +94,27 @@ export const useCartStore = create<CartStore>()(
         return {
           // printPricingGroupId is intentionally left undefined for legacy items so useCartPricing
           // backfills it from product metadata (Jira 9207) rather than assuming "ungrouped".
-          items: (state?.items ?? []).map(({ cartItemKey, productId, productVariantId, productName, variantLabel, color, size, unitPrice, quantity, printPricingGroupId, prints }) => ({
-            cartItemKey: cartItemKey ?? `${productVariantId}__blank`,
-            productId,
-            productVariantId,
-            productName,
-            variantLabel,
-            color,
-            size,
-            unitPrice,
-            quantity,
-            printPricingGroupId,
-            prints: prints ?? [],
+          // Badge fields (kind/pricingModel/design) are preserved as-is; legacy garment items simply
+          // have them undefined, which the cart/checkout treat as a garment line.
+          items: (state?.items ?? []).map((item) => ({
+            cartItemKey: item.cartItemKey ?? `${item.productVariantId}__blank`,
+            productId: item.productId,
+            productVariantId: item.productVariantId,
+            productName: item.productName,
+            variantLabel: item.variantLabel,
+            color: item.color,
+            size: item.size,
+            unitPrice: item.unitPrice,
+            quantity: item.quantity,
+            printPricingGroupId: item.printPricingGroupId,
+            kind: item.kind,
+            pricingModel: item.pricingModel,
+            minimumQuantity: item.minimumQuantity,
+            uploadedAssetId: item.uploadedAssetId,
+            uploadedAssetUrl: item.uploadedAssetUrl,
+            designNote: item.designNote,
+            configurationJson: item.configurationJson,
+            prints: item.prints ?? [],
           })),
         }
       },

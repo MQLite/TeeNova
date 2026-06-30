@@ -4,8 +4,8 @@ using System.Linq;
 using System.Threading.Tasks;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
+using TeeNova.Catalog;
 using TeeNova.Pricing;
-using TeeNova.PrintConfig;
 using Volo.Abp;
 using Volo.Abp.DependencyInjection;
 using Volo.Abp.Domain.Entities;
@@ -14,58 +14,51 @@ using Volo.Abp.Domain.Repositories;
 namespace TeeNova.Orders;
 
 /// <summary>
-/// Shared, authoritative whole-order pricing orchestration (Jira 9405). Extracted from
-/// <c>OrderAppService.CreateAsync</c> so order creation, the admin content-edit quote, and the
-/// admin content-edit save all resolve prices through ONE code path and cannot drift (Epic 9200:
-/// backend pricing is authoritative; client prices are never trusted).
+/// Shared, authoritative whole-order pricing orchestration (Jira 9405, extended for multi-model pricing
+/// in Jira 9503). Used by order creation, the admin content-edit quote, and the admin content-edit save
+/// so every path resolves prices through ONE code path and cannot drift (Epic 9200: backend pricing is
+/// authoritative; client prices are never trusted).
 ///
-/// It accepts a draft (product/variant ids, quantities, print selections — NO prices), then:
-///  1. Loads every referenced product (with variants) once.
-///  2. Computes <see cref="Catalog.PrintPricingGroup"/> TOTAL quantities across the WHOLE draft
-///     (group-aware tier coupling — one line's quantity change can reprice other lines).
-///  3. Loads the active groups' tiers.
-///  4. Validates each variant/print (active area + size, global matrix, product/size scoped options).
-///  5. Resolves every print via <see cref="PrintTierPriceResolver"/> and prices each item via
-///     <see cref="PriceCalculator"/>, returning fully-snapshotted priced rows.
-///
-/// Pure pricing only — it performs NO persistence and builds no domain entities; callers map the
-/// <see cref="PricedOrderDraft"/> onto new/updated <see cref="OrderItem"/>s.
+/// It accepts a draft (product/variant ids, quantities, print/design selections — NO prices), loads the
+/// referenced products once, computes garment <see cref="PrintPricingGroup"/> totals for the GarmentPrint
+/// items only, then dispatches each item to the matching <see cref="IItemPricingStrategy"/> by the
+/// product's <see cref="Product.PricingModel"/>. Pure pricing only — no persistence; callers map the
+/// returned <see cref="PricedOrderDraft"/> onto <see cref="OrderItem"/>s.
 /// </summary>
 public class OrderContentPricingService : ITransientDependency
 {
     private readonly IRepository<Catalog.Product, Guid>               _productRepository;
     private readonly IRepository<Catalog.PrintPricingGroup, Guid>     _printPricingGroupRepository;
     private readonly IRepository<Catalog.ProductPrintPriceTier, Guid> _printPriceTierRepository;
-    private readonly IRepository<PrintArea, Guid>                     _printAreaRepository;
-    private readonly IRepository<PrintSize, Guid>                     _printSizeRepository;
-    private readonly PrintConfigValidator                             _printConfigValidator;
-    private readonly Catalog.ProductPrintConfigOptionResolver         _printConfigOptionResolver;
+    private readonly IReadOnlyDictionary<PricingModel, IItemPricingStrategy> _strategies;
     private readonly ILogger<OrderContentPricingService>              _logger;
 
     public OrderContentPricingService(
         IRepository<Catalog.Product, Guid>               productRepository,
         IRepository<Catalog.PrintPricingGroup, Guid>     printPricingGroupRepository,
         IRepository<Catalog.ProductPrintPriceTier, Guid> printPriceTierRepository,
-        IRepository<PrintArea, Guid>                     printAreaRepository,
-        IRepository<PrintSize, Guid>                     printSizeRepository,
-        PrintConfigValidator                             printConfigValidator,
-        Catalog.ProductPrintConfigOptionResolver         printConfigOptionResolver,
+        IEnumerable<IItemPricingStrategy>                strategies,
         ILogger<OrderContentPricingService>              logger)
     {
         _productRepository           = productRepository;
         _printPricingGroupRepository = printPricingGroupRepository;
         _printPriceTierRepository    = printPriceTierRepository;
-        _printAreaRepository         = printAreaRepository;
-        _printSizeRepository         = printSizeRepository;
-        _printConfigValidator        = printConfigValidator;
-        _printConfigOptionResolver   = printConfigOptionResolver;
+        _strategies                  = BuildStrategyMap(strategies);
         _logger                      = logger;
+    }
+
+    private static IReadOnlyDictionary<PricingModel, IItemPricingStrategy> BuildStrategyMap(
+        IEnumerable<IItemPricingStrategy> strategies)
+    {
+        var map = new Dictionary<PricingModel, IItemPricingStrategy>();
+        foreach (var strategy in strategies)
+            map[strategy.Model] = strategy; // last registration wins; one per model expected
+        return map;
     }
 
     /// <summary>
     /// Prices a whole-order draft. Throws <see cref="EntityNotFoundException"/> /
-    /// <see cref="BusinessException"/> on invalid product/variant/print selections, mirroring the
-    /// validation order of <c>CreateAsync</c>.
+    /// <see cref="BusinessException"/> on invalid product/variant/print/quantity selections.
     /// </summary>
     public async Task<PricedOrderDraft> PriceAsync(IReadOnlyList<OrderDraftItem> items)
     {
@@ -85,19 +78,21 @@ public class OrderContentPricingService : ITransientDependency
             if (!products.ContainsKey(id))
                 throw new EntityNotFoundException(typeof(Catalog.Product), id);
 
-        // Print-tier quantity scope (Jira 9203): the PrintPricingGroup TOTAL quantity across the WHOLE
-        // draft. Products that share a group combine; ungrouped products are isolated. Each item's
-        // garment quantity counts ONCE for the group, regardless of how many prints it carries.
+        // Garment print-tier quantity scope (Jira 9203): the PrintPricingGroup TOTAL quantity across the
+        // WHOLE draft, counting GARMENT-PRINT items only (Jira 9503: Badge/non-garment never aggregate).
         var groupQuantities = new Dictionary<string, int>();
         foreach (var item in items)
         {
-            var key = PrintPricingGroupKey(products[item.ProductId]);
+            var product = products[item.ProductId];
+            if (product.PricingModel != PricingModel.GarmentPrint)
+                continue;
+            var key = PrintPricingGroupKey(product);
             groupQuantities[key] = groupQuantities.GetValueOrDefault(key) + item.Quantity;
         }
 
-        // Load all tiers for the real (active) groups referenced by this draft, grouped for resolution.
+        // Load all tiers for the real (active) groups referenced by GarmentPrint products in this draft.
         var groupIds = products.Values
-            .Where(p => p.PrintPricingGroupId.HasValue)
+            .Where(p => p.PricingModel == PricingModel.GarmentPrint && p.PrintPricingGroupId.HasValue)
             .Select(p => p.PrintPricingGroupId!.Value)
             .Distinct()
             .ToList();
@@ -118,121 +113,48 @@ public class OrderContentPricingService : ITransientDependency
 
         foreach (var item in items)
         {
-            var product = products[item.ProductId];
+            var product  = products[item.ProductId];
+            var strategy = ResolveStrategy(product);
 
-            var variant = product.Variants.FirstOrDefault(v => v.Id == item.ProductVariantId)
-                ?? throw new BusinessException("TeeNova:Catalog:VariantNotFound");
-
-            // Load + validate prints first (global active-state + matrix), then narrow by the
-            // product/size scoped allowed options (Jira 9204); a no-op for unconfigured products.
-            var loadedPrints = item.Prints?.Count > 0
-                ? await LoadPrintsAsync(item.Prints)
-                : new List<LoadedDraftPrint>();
-
-            await _printConfigOptionResolver.ValidateSelectionAsync(
-                product.Id,
-                variant.Size,
-                loadedPrints.Select(p => (p.Area.Id, p.Size.Id)).ToList());
-
-            // Resolve each print against the effective group's tiers + group quantity, then price
-            // through the shared PriceCalculator (print-only formula: garment fixed + Σ resolved prints).
-            var groupQuantity = groupQuantities[PrintPricingGroupKey(product)];
-            var groupTiers = product.PrintPricingGroupId.HasValue
+            var isGarment = product.PricingModel == PricingModel.GarmentPrint;
+            var groupTiers = isGarment
+                && product.PrintPricingGroupId.HasValue
                 && tiersByGroup.TryGetValue(product.PrintPricingGroupId.Value, out var gt)
                     ? gt
                     : null;
+            var groupQuantity = isGarment ? groupQuantities[PrintPricingGroupKey(product)] : 0;
 
-            var resolvedByPrint = loadedPrints
-                .Select(p => PrintTierPriceResolver.Resolve(
-                    groupTiers, variant.Size, p.Size.Id, groupQuantity, p.Size.BasePrice))
-                .ToList();
+            var priced = await strategy.PriceItemAsync(new ItemPricingContext
+            {
+                Product              = product,
+                Item                 = item,
+                GarmentGroupQuantity = groupQuantity,
+                GarmentGroupTiers    = groupTiers,
+            });
 
-            var resolvedPrints = loadedPrints
-                .Select((p, idx) => new ResolvedPrintAddOn(
-                    new PrintPricingEntry(
-                        p.Area.Id, p.Area.Name, p.Area.BasePrice,
-                        p.Size.Id, p.Size.Name, p.Size.BasePrice),
-                    resolvedByPrint[idx]))
-                .ToList();
-
-            var unitPrice = PriceCalculator
-                .Calculate(product.BasePrice, variant.PriceAdjustment, resolvedPrints, item.Quantity)
-                .UnitPrice;
-
-            var variantLabel = $"{variant.Color} / {variant.Size}";
-
-            var pricedPrints = loadedPrints
-                .Select((p, idx) => new PricedOrderPrint(
-                    p.Id,
-                    p.Area.Id, p.Area.Name, p.Area.Code, p.Area.BasePrice,
-                    p.Size.Id, p.Size.Name, p.Size.Code, p.Size.BasePrice,
-                    ResolvedUnitPrintPrice: resolvedByPrint[idx].UnitPrintPrice,
-                    AppliedPrintTierMinQuantity: resolvedByPrint[idx].AppliedMinQuantity,
-                    SortOrder: idx,
-                    UploadedAssetId: p.UploadedAssetId,
-                    UploadedAssetUrl: p.UploadedAssetUrl,
-                    DesignNote: p.DesignNote,
-                    PrintNotes: p.PrintNotes))
-                .ToList();
-
-            pricedItems.Add(new PricedOrderItem(
-                item.Id,
-                product.Id, product.Name,
-                variant.Id, variantLabel,
-                item.Quantity, unitPrice,
-                pricedPrints));
+            pricedItems.Add(priced);
 
             _logger.LogInformation(
-                "[OrderContentPricing] ProductId={ProductId} ProductVariantId={ProductVariantId} Quantity={Quantity} GroupQuantity={GroupQuantity} PrintCount={PrintCount} UnitPrice={UnitPrice} LineTotal={LineTotal}",
+                "[OrderContentPricing] ProductId={ProductId} PricingModel={PricingModel} Quantity={Quantity} PrintCount={PrintCount} UnitPrice={UnitPrice} LineTotal={LineTotal}",
                 product.Id,
-                variant.Id,
+                product.PricingModel,
                 item.Quantity,
-                groupQuantity,
-                loadedPrints.Count,
-                unitPrice,
-                unitPrice * item.Quantity);
+                priced.Prints.Count,
+                priced.UnitPrice,
+                priced.UnitPrice * item.Quantity);
         }
 
         return new PricedOrderDraft(pricedItems);
     }
 
-    /// <summary>
-    /// Loads and validates PrintArea + PrintSize for each requested print (active-state + global matrix),
-    /// preserving each draft print's design/note metadata. Mirrors <c>LoadOrderItemPrintsAsync</c>.
-    /// </summary>
-    private async Task<List<LoadedDraftPrint>> LoadPrintsAsync(IReadOnlyList<OrderDraftPrint> prints)
+    private IItemPricingStrategy ResolveStrategy(Catalog.Product product)
     {
-        var result = new List<LoadedDraftPrint>();
-        var pairs  = new List<(PrintArea Area, PrintSize Size)>();
+        if (_strategies.TryGetValue(product.PricingModel, out var strategy))
+            return strategy;
 
-        foreach (var dto in prints)
-        {
-            var area = await _printAreaRepository.FindAsync(dto.PrintAreaId)
-                ?? throw new EntityNotFoundException(typeof(PrintArea), dto.PrintAreaId);
-
-            if (!area.IsActive)
-                throw new BusinessException("TeeNova:PrintConfig:PrintAreaInactive")
-                    .WithData("PrintAreaId", dto.PrintAreaId)
-                    .WithData("PrintAreaName", area.Name);
-
-            var size = await _printSizeRepository.FindAsync(dto.PrintSizeId)
-                ?? throw new EntityNotFoundException(typeof(PrintSize), dto.PrintSizeId);
-
-            if (!size.IsActive)
-                throw new BusinessException("TeeNova:PrintConfig:PrintSizeInactive")
-                    .WithData("PrintSizeId", dto.PrintSizeId)
-                    .WithData("PrintSizeName", size.Name);
-
-            pairs.Add((area, size));
-            result.Add(new LoadedDraftPrint(
-                dto.Id, area, size,
-                dto.UploadedAssetId, dto.UploadedAssetUrl, dto.DesignNote, dto.PrintNotes));
-        }
-
-        // Validate every (PrintArea, PrintSize) pair against an active PrintAreaSizeOption (batch query).
-        await _printConfigValidator.ValidatePrintCombinationsAsync(pairs);
-
-        return result;
+        throw new BusinessException("TeeNova:Pricing:UnsupportedPricingModel")
+            .WithData("ProductId", product.Id)
+            .WithData("PricingModel", product.PricingModel);
     }
 
     /// <summary>
@@ -243,27 +165,23 @@ public class OrderContentPricingService : ITransientDependency
         => product.PrintPricingGroupId.HasValue
             ? $"g:{product.PrintPricingGroupId.Value}"
             : $"p:{product.Id}";
-
-    private sealed record LoadedDraftPrint(
-        Guid? Id,
-        PrintArea Area,
-        PrintSize Size,
-        Guid? UploadedAssetId,
-        string? UploadedAssetUrl,
-        string? DesignNote,
-        string? PrintNotes);
 }
 
 // ── Draft input (IDs + quantities + design/notes only — never prices) ───────────────────────────────
 
 /// <summary>A whole-order draft item to be priced. <see cref="Id"/> identifies an existing OrderItem
-/// (edit) or is null (new). Carries NO price fields.</summary>
+/// (edit) or is null (new). Carries NO price fields. <see cref="ProductVariantId"/> is null for
+/// non-garment items (Badge); item-level design fields are used by non-garment items (Jira 9503).</summary>
 public sealed record OrderDraftItem(
     Guid? Id,
     Guid ProductId,
-    Guid ProductVariantId,
+    Guid? ProductVariantId,
     int Quantity,
-    IReadOnlyList<OrderDraftPrint> Prints);
+    IReadOnlyList<OrderDraftPrint> Prints,
+    Guid? UploadedAssetId = null,
+    string? UploadedAssetUrl = null,
+    string? DesignNote = null,
+    string? ConfigurationJson = null);
 
 /// <summary>A draft print selection. <see cref="Id"/> identifies an existing OrderItemPrint or is null.</summary>
 public sealed record OrderDraftPrint(
@@ -286,11 +204,18 @@ public sealed record PricedOrderItem(
     Guid? Id,
     Guid ProductId,
     string ProductName,
-    Guid ProductVariantId,
-    string VariantLabel,
+    Guid? ProductVariantId,
+    string? VariantLabel,
     int Quantity,
     decimal UnitPrice,
-    IReadOnlyList<PricedOrderPrint> Prints);
+    IReadOnlyList<PricedOrderPrint> Prints,
+    PricingModel PricingModel,
+    ProductKind ProductKind,
+    Guid? UploadedAssetId = null,
+    string? UploadedAssetUrl = null,
+    string? DesignNote = null,
+    int? AppliedQuantityTierMinQuantity = null,
+    string? ConfigurationJson = null);
 
 public sealed record PricedOrderPrint(
     Guid? Id,

@@ -37,7 +37,15 @@ public class InventoryDeductionService : IInventoryDeductionService
             if (!item.InventoryDeductionEligible || item.InventoryDeductedAt != null)
                 continue;
 
-            var variant = await _variantRepository.FindAsync(item.ProductVariantId);
+            // Non-garment items (Badge, Jira 9503) have no variant / tracked stock: mark processed
+            // (production step has passed) without deducting, so later transitions don't re-attempt.
+            if (item.ProductVariantId == null)
+            {
+                item.InventoryDeductedAt = _clock.Now;
+                continue;
+            }
+
+            var variant = await _variantRepository.FindAsync(item.ProductVariantId.Value);
 
             // NotRecorded / null stock / missing variant: nothing to deduct. We still stamp the
             // item as processed because the production step has passed — leaving it unprocessed

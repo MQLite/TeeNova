@@ -49,4 +49,8 @@ public interface ICatalogAppService : IApplicationService
     // ── Print Config Options (Jira 9204, product-scoped single-writer) ────────────
     Task<List<ProductPrintConfigOptionDto>> GetPrintConfigOptionsAsync(Guid productId);
     Task<List<ProductPrintConfigOptionDto>> SetPrintConfigOptionsAsync(Guid productId, SetProductPrintConfigOptionsDto input);
+
+    // ── Badge Quantity Price Tiers (Jira 9503, product-scoped single-writer) ──────
+    Task<List<ProductQuantityPriceTierDto>> GetQuantityPriceTiersAsync(Guid productId);
+    Task<List<ProductQuantityPriceTierDto>> SetQuantityPriceTiersAsync(Guid productId, SetProductQuantityPriceTiersDto input);
 }

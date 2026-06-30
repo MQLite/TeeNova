@@ -2,6 +2,7 @@ using System;
 using System.Globalization;
 using System.Net;
 using System.Text;
+using TeeNova.Catalog;
 using TeeNova.Orders;
 
 namespace TeeNova.Email;
@@ -183,14 +184,30 @@ public static class OrderEmailTemplates
 
         foreach (var item in order.Items)
         {
+            // Non-garment items (Badge, Jira 9505) have no variant and no prints; the design is item-level.
+            // Render them without a variant dash or print position/size rows.
+            var isNonGarment = item.ProductKind != ProductKind.Garment;
+            var variantSuffix = !isNonGarment && !string.IsNullOrWhiteSpace(item.VariantLabel)
+                ? $"&nbsp;—&nbsp;{WebUtility.HtmlEncode(item.VariantLabel)}"
+                : string.Empty;
+
             sb.Append($"""
                 <div style="border:1px solid #ddd;border-radius:4px;padding:12px;margin-bottom:12px;">
-                  <strong>{WebUtility.HtmlEncode(item.ProductName)}</strong>
-                  &nbsp;—&nbsp;{WebUtility.HtmlEncode(item.VariantLabel)}<br>
+                  <strong>{WebUtility.HtmlEncode(item.ProductName)}</strong>{variantSuffix}<br>
                   <span style="color:#666;font-size:12px;">Qty: {item.Quantity} &nbsp;|&nbsp; Unit price: {FormatCurrency(item.UnitPrice)} &nbsp;|&nbsp; Line total: {FormatCurrency(item.UnitPrice * item.Quantity)}</span>
                 """);
 
-            if (item.Prints.Count > 0)
+            if (isNonGarment)
+            {
+                sb.Append("<ul style=\"margin:8px 0 0 0;padding-left:20px;font-size:12px;color:#555;\"><li>");
+                sb.Append(item.UploadedAssetId.HasValue
+                    ? "<span style=\"color:#27ae60;\">&#10003; Design file uploaded</span>"
+                    : "<span style=\"color:#999;\">No design file provided</span>");
+                if (includeDesignNotes && !string.IsNullOrWhiteSpace(item.DesignNote))
+                    sb.Append($"<br><em style=\"color:#777;\">Design note: {WebUtility.HtmlEncode(item.DesignNote)}</em>");
+                sb.Append("</li></ul>");
+            }
+            else if (item.Prints.Count > 0)
             {
                 sb.Append("<ul style=\"margin:8px 0 0 0;padding-left:20px;font-size:12px;color:#555;\">");
                 foreach (var print in item.Prints)
@@ -329,7 +346,19 @@ public static class OrderEmailTemplates
     {
         foreach (var item in order.Items)
         {
-            sb.AppendLine($"  {item.ProductName} ({item.VariantLabel}) x{item.Quantity} @ {FormatCurrency(item.UnitPrice)}");
+            // Non-garment items (Badge, Jira 9505): no variant, no prints — item-level design only.
+            if (item.ProductKind != ProductKind.Garment)
+            {
+                sb.AppendLine($"  {item.ProductName} x{item.Quantity} @ {FormatCurrency(item.UnitPrice)}");
+                var fileStatus = item.UploadedAssetId.HasValue ? "Design file uploaded" : "No design file";
+                sb.AppendLine($"    - [{fileStatus}]");
+                if (!string.IsNullOrWhiteSpace(item.DesignNote))
+                    sb.AppendLine($"      Design note: {item.DesignNote}");
+                continue;
+            }
+
+            var variantPart = string.IsNullOrWhiteSpace(item.VariantLabel) ? string.Empty : $" ({item.VariantLabel})";
+            sb.AppendLine($"  {item.ProductName}{variantPart} x{item.Quantity} @ {FormatCurrency(item.UnitPrice)}");
             foreach (var print in item.Prints)
             {
                 var fileStatus = print.UploadedAssetId.HasValue ? "Design file uploaded" : "No design file";

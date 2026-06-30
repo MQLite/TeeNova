@@ -15,7 +15,8 @@ function getPrintSummary(item: CartItem) {
 }
 
 function getUploadedDesignUrl(item: CartItem) {
-  return item.prints?.find((print) => print.uploadedAssetUrl)?.uploadedAssetUrl
+  // Badge carries its design at item level; garments carry it per-print.
+  return item.uploadedAssetUrl ?? item.prints?.find((print) => print.uploadedAssetUrl)?.uploadedAssetUrl
 }
 
 type SubmitPhase = 'idle' | 'creating-order' | 'creating-session' | 'redirecting'
@@ -100,18 +101,30 @@ export default function CheckoutPage() {
           country: form.country,
           phone: form.phone || undefined,
         },
-        items: items.map((item) => ({
-          productId: item.productId,
-          productVariantId: item.productVariantId,
-          quantity: item.quantity,
-          prints: (item.prints ?? []).map((print) => ({
-            printAreaId: print.printAreaId,
-            printSizeId: print.printSizeId,
-            uploadedAssetId: print.uploadedAssetId,
-            uploadedAssetUrl: print.uploadedAssetUrl,
-            designNote: print.designNote,
-          })),
-        })),
+        // Badge sends item-level design + no variant + no prints; garment unchanged (Jira 9504).
+        // Neither path sends price fields — the backend is the sole pricing authority.
+        items: items.map((item) =>
+          item.kind === 'Badge'
+            ? {
+                productId: item.productId,
+                quantity: item.quantity,
+                uploadedAssetId: item.uploadedAssetId,
+                uploadedAssetUrl: item.uploadedAssetUrl,
+                designNote: item.designNote,
+              }
+            : {
+                productId: item.productId,
+                productVariantId: item.productVariantId,
+                quantity: item.quantity,
+                prints: (item.prints ?? []).map((print) => ({
+                  printAreaId: print.printAreaId,
+                  printSizeId: print.printSizeId,
+                  uploadedAssetId: print.uploadedAssetId,
+                  uploadedAssetUrl: print.uploadedAssetUrl,
+                  designNote: print.designNote,
+                })),
+              },
+        ),
         deliveryMethod,
       })
 
@@ -445,19 +458,30 @@ export default function CheckoutPage() {
                           {item.productName}
                         </p>
                         <p className="text-xs text-black/55" style={{ letterSpacing: '-0.14px' }}>
-                          {item.variantLabel} - x{item.quantity}
+                          {item.kind === 'Badge' ? `Badge - x${item.quantity}` : `${item.variantLabel ?? ''} - x${item.quantity}`}
                         </p>
-                        {getPrintSummary(item).length > 0 && (
-                          <div className="mt-1 flex flex-wrap gap-1">
-                            {getPrintSummary(item).map((print) => (
-                              <span key={`${print.printAreaId}:${print.printSizeId}`}
-                                className="inline-flex flex-col rounded-lg border border-black/[0.08] px-2 py-1 text-[10px] text-black/50">
-                                {print.printAreaName} - {print.printSizeName}
-                                {print.uploadedAssetUrl && <span className="text-green-600">Design uploaded</span>}
-                                {print.designNote && <span className="normal-case tracking-normal text-black/45">{print.designNote}</span>}
+                        {item.kind === 'Badge' ? (
+                          (getUploadedDesignUrl(item) || item.designNote) && (
+                            <div className="mt-1 flex flex-wrap gap-1">
+                              <span className="inline-flex flex-col rounded-lg border border-black/[0.08] px-2 py-1 text-[10px] text-black/50">
+                                {getUploadedDesignUrl(item) && <span className="text-green-600">Design uploaded</span>}
+                                {item.designNote && <span className="normal-case tracking-normal text-black/45">{item.designNote}</span>}
                               </span>
-                            ))}
-                          </div>
+                            </div>
+                          )
+                        ) : (
+                          getPrintSummary(item).length > 0 && (
+                            <div className="mt-1 flex flex-wrap gap-1">
+                              {getPrintSummary(item).map((print) => (
+                                <span key={`${print.printAreaId}:${print.printSizeId}`}
+                                  className="inline-flex flex-col rounded-lg border border-black/[0.08] px-2 py-1 text-[10px] text-black/50">
+                                  {print.printAreaName} - {print.printSizeName}
+                                  {print.uploadedAssetUrl && <span className="text-green-600">Design uploaded</span>}
+                                  {print.designNote && <span className="normal-case tracking-normal text-black/45">{print.designNote}</span>}
+                                </span>
+                              ))}
+                            </div>
+                          )
                         )}
                       </div>
                       <span className="text-sm text-black" style={{ fontWeight: 480 }}>

@@ -10,6 +10,16 @@ public class ProductListItemDto
     public string Name { get; set; } = default!;
     public decimal BasePrice { get; set; }
     public string ProductType { get; set; } = default!;
+
+    /// <summary>Business category (Jira 9503). Lets list/grid views branch without a detail fetch.</summary>
+    public ProductKind Kind { get; set; }
+
+    /// <summary>Pricing behavior (Jira 9503).</summary>
+    public PricingModel PricingModel { get; set; }
+
+    /// <summary>Minimum sellable quantity (Jira 9503).</summary>
+    public int MinimumQuantity { get; set; }
+
     public bool IsActive { get; set; }
     public string? ThumbnailUrl { get; set; }
     public string? PrimaryImageUrl { get; set; }

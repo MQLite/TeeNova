@@ -3,6 +3,7 @@
 import { useRef, useState } from 'react'
 import { Button } from '@/components/ui/Button'
 import { PrintPricingGroupField } from './PrintPricingGroupField'
+import type { PricingModel, ProductKind } from '@/types'
 
 export interface ProductFormValues {
   name: string
@@ -12,6 +13,37 @@ export interface ProductFormValues {
   isActive: boolean
   /** Print-pricing group id, or '' for ungrouped (Jira 9203). */
   printPricingGroupId: string
+  // ── Product kind / pricing model (Jira 9503/9504) ───────────────────────────
+  kind: ProductKind
+  pricingModel: PricingModel
+  /** Minimum sellable quantity as a string (form input). Parsed to int ≥ 1 on submit. */
+  minimumQuantity: string
+  designUploadRequired: boolean
+}
+
+// Product kinds offered in the admin. Banner/Other have no storefront pricing yet (placeholder).
+const KIND_OPTIONS: { value: ProductKind; label: string; hint: string }[] = [
+  { value: 'Garment', label: 'Garment',  hint: 'Color/size variants + print placements (the existing model).' },
+  { value: 'Badge',   label: 'Badge',    hint: 'Quantity-tier unit pricing, item-level design, no variants/prints.' },
+  { value: 'Banner',  label: 'Banner',   hint: 'Dimensions/material — pricing not yet implemented (placeholder).' },
+  { value: 'Other',   label: 'Other',    hint: 'Any other category. Manual quote only for now.' },
+]
+
+// Each kind selects its pricing model automatically (Jira 9504). The backend is authoritative; this is
+// purely UX so admins don't pair an unsupported model. Banner/Other map to CustomQuoteOnly (no auto price).
+const PRICING_MODEL_FOR_KIND: Record<ProductKind, PricingModel> = {
+  Garment: 'GarmentPrint',
+  Badge:   'QuantityTierUnit',
+  Banner:  'CustomQuoteOnly',
+  Other:   'CustomQuoteOnly',
+}
+
+const PRICING_MODEL_LABEL: Record<PricingModel, string> = {
+  GarmentPrint:     'Garment + Print',
+  QuantityTierUnit: 'Quantity-Tier Unit',
+  FixedSize:        'Fixed Size',
+  AreaBased:        'Area Based',
+  CustomQuoteOnly:  'Custom Quote Only',
 }
 
 interface ProductFormProps {
@@ -66,6 +98,7 @@ export function ProductForm({
   showPrintPricingGroup = true,
 }: ProductFormProps) {
   // Resolve prop defaults once — used both as form seed and dirty baseline
+  const resolvedKind: ProductKind = initialValues?.kind ?? 'Garment'
   const resolved: ProductFormValues = {
     name:        initialValues?.name        ?? '',
     description: initialValues?.description ?? '',
@@ -73,6 +106,11 @@ export function ProductForm({
     productType: initialValues?.productType ?? 'tshirt',
     isActive:    initialValues?.isActive    ?? true,
     printPricingGroupId: initialValues?.printPricingGroupId ?? '',
+    kind:        resolvedKind,
+    // Trust an explicit incoming model; otherwise derive from kind so the pairing stays valid.
+    pricingModel: initialValues?.pricingModel ?? PRICING_MODEL_FOR_KIND[resolvedKind],
+    minimumQuantity: initialValues?.minimumQuantity ?? '1',
+    designUploadRequired: initialValues?.designUploadRequired ?? false,
   }
 
   const [values,     setValues]     = useState<ProductFormValues>(resolved)
@@ -112,6 +150,14 @@ export function ProductForm({
     set('productType', val)
   }
 
+  // ── Product kind ──────────────────────────────────────────────────────────
+  // Changing kind auto-selects the matching pricing model so the pairing is always valid (Jira 9504).
+  function handleKindChange(kind: ProductKind) {
+    setValues((prev) => ({ ...prev, kind, pricingModel: PRICING_MODEL_FOR_KIND[kind] }))
+  }
+
+  const isBadge = values.kind === 'Badge'
+
   // ── Dirty detection ───────────────────────────────────────────────────────
 
   const init = initialRef.current
@@ -121,7 +167,11 @@ export function ProductForm({
     values.basePrice   !== init.basePrice   ||
     values.productType !== init.productType ||
     values.isActive    !== init.isActive    ||
-    values.printPricingGroupId !== init.printPricingGroupId
+    values.printPricingGroupId !== init.printPricingGroupId ||
+    values.kind                !== init.kind ||
+    values.pricingModel        !== init.pricingModel ||
+    values.minimumQuantity     !== init.minimumQuantity ||
+    values.designUploadRequired !== init.designUploadRequired
 
   // ── Submit ────────────────────────────────────────────────────────────────
 
@@ -140,6 +190,11 @@ export function ProductForm({
     }
     if (!values.productType.trim()) {
       setError('Product type is required.')
+      return
+    }
+    const minQty = parseInt(values.minimumQuantity, 10)
+    if (isNaN(minQty) || minQty < 1) {
+      setError('Minimum quantity must be a whole number of at least 1.')
       return
     }
 
@@ -281,13 +336,100 @@ export function ProductForm({
           </button>
         </div>
 
-        {showPrintPricingGroup && (
+        {/* Print pricing group is a garment-only concept; Badge prices via quantity tiers instead. */}
+        {showPrintPricingGroup && values.kind === 'Garment' && (
           <PrintPricingGroupField
             value={values.printPricingGroupId}
             onChange={(v) => set('printPricingGroupId', v)}
             disabled={saving}
           />
         )}
+      </div>
+
+      {/* ── Section 3: Product Kind & Selling Model (Jira 9504) ──────────────── */}
+      <div className="space-y-4">
+        <SectionLabel>Product Kind &amp; Selling Model</SectionLabel>
+
+        <div>
+          <label className={LABEL}>
+            Product Kind <span className="text-red-500">*</span>
+          </label>
+          <select
+            value={values.kind}
+            onChange={(e) => handleKindChange(e.target.value as ProductKind)}
+            disabled={saving}
+            className={FIELD_BASE}
+          >
+            {KIND_OPTIONS.map((k) => (
+              <option key={k.value} value={k.value}>{k.label}</option>
+            ))}
+          </select>
+          <p className="mt-1.5 text-xs text-black/50" style={{ letterSpacing: '-0.14px' }}>
+            {KIND_OPTIONS.find((k) => k.value === values.kind)?.hint}
+          </p>
+          {(values.kind === 'Banner' || values.kind === 'Other') && (
+            <p className="mt-2 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-2.5 text-xs text-amber-800" style={{ letterSpacing: '-0.14px' }}>
+              {values.kind} storefront pricing is not implemented yet. The product saves with a
+              manual-quote pricing model and has no automated price.
+            </p>
+          )}
+        </div>
+
+        {/* Pricing model is auto-selected from kind; shown read-only so the pairing stays valid. */}
+        <div>
+          <label className={LABEL}>Pricing Model</label>
+          <div className="inline-flex items-center gap-2 rounded-2xl border border-black/[0.08] bg-black/[0.02] px-4 py-3 text-sm text-black/70" style={{ letterSpacing: '-0.14px' }}>
+            <span className="h-2 w-2 rounded-full bg-black/30" />
+            {PRICING_MODEL_LABEL[values.pricingModel]}
+            <span className="font-mono text-[10px] uppercase tracking-[0.54px] text-black/40">auto from kind</span>
+          </div>
+        </div>
+
+        {/* Minimum quantity + design-upload required: most relevant to Badge but valid for any kind. */}
+        <div className="grid grid-cols-2 gap-4">
+          <div>
+            <label className={LABEL}>
+              Minimum Quantity <span className="text-red-500">*</span>
+            </label>
+            <input
+              type="number"
+              min={1}
+              step={1}
+              value={values.minimumQuantity}
+              onChange={(e) => set('minimumQuantity', e.target.value)}
+              placeholder="1"
+              disabled={saving}
+              className={FIELD_BASE}
+            />
+            <p className="mt-1.5 text-xs text-black/50" style={{ letterSpacing: '-0.14px' }}>
+              Smallest order quantity. {isBadge ? 'Badge orders below this are rejected.' : 'Usually 1 for garments.'}
+            </p>
+          </div>
+
+          <div>
+            <label className={LABEL}>Design Upload</label>
+            <button
+              type="button"
+              role="switch"
+              aria-checked={values.designUploadRequired}
+              disabled={saving}
+              onClick={() => set('designUploadRequired', !values.designUploadRequired)}
+              className={[
+                'flex w-full items-center gap-2.5 rounded-2xl border px-4 py-3 text-sm transition-colors',
+                values.designUploadRequired
+                  ? 'border-black/30 bg-black/[0.03] text-black'
+                  : 'border-black/[0.08] bg-black/[0.02] text-black/55',
+              ].join(' ')}
+              style={{ letterSpacing: '-0.14px', fontWeight: 480 }}
+            >
+              <span className={[
+                'h-2 w-2 rounded-full',
+                values.designUploadRequired ? 'bg-black' : 'bg-black/25',
+              ].join(' ')} />
+              {values.designUploadRequired ? 'Design required at item level' : 'Design optional'}
+            </button>
+          </div>
+        </div>
       </div>
 
       {/* Error banner */}

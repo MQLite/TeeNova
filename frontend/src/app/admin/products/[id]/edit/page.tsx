@@ -40,7 +40,12 @@ export default function EditProductPage() {
         basePrice: parseFloat(values.basePrice),
         productType: values.productType,
         isActive: values.isActive,
-        printPricingGroupId: values.printPricingGroupId || null,
+        // Badge prices via quantity tiers, not a print pricing group — never send a group for it.
+        printPricingGroupId: values.kind === 'Garment' ? values.printPricingGroupId || null : null,
+        kind: values.kind,
+        pricingModel: values.pricingModel,
+        minimumQuantity: parseInt(values.minimumQuantity, 10),
+        designUploadRequired: values.designUploadRequired,
       })
       router.push(backHref)
     } finally {
@@ -79,6 +84,10 @@ export default function EditProductPage() {
     productType: product.productType,
     isActive: product.isActive,
     printPricingGroupId: product.printPricingGroupId ?? '',
+    kind: product.kind,
+    pricingModel: product.pricingModel,
+    minimumQuantity: product.minimumQuantity.toString(),
+    designUploadRequired: product.designUploadRequired,
   }
 
   return (

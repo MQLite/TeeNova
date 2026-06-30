@@ -22,6 +22,7 @@ public class CatalogAppService : ApplicationService, ICatalogAppService
     private readonly IRepository<ProductVariant, Guid>        _variantRepository;
     private readonly IRepository<ProductImage, Guid>          _imageRepository;
     private readonly IRepository<ProductPriceTier, Guid>      _priceTierRepository;
+    private readonly IRepository<ProductQuantityPriceTier, Guid>   _quantityPriceTierRepository;
     private readonly IRepository<PrintPricingGroup, Guid>          _printPricingGroupRepository;
     private readonly IRepository<ProductPrintPriceTier, Guid>      _printPriceTierRepository;
     private readonly IRepository<ProductPrintConfigOption, Guid>   _printConfigOptionRepository;
@@ -35,6 +36,7 @@ public class CatalogAppService : ApplicationService, ICatalogAppService
         IRepository<ProductVariant, Guid>           variantRepository,
         IRepository<ProductImage, Guid>             imageRepository,
         IRepository<ProductPriceTier, Guid>         priceTierRepository,
+        IRepository<ProductQuantityPriceTier, Guid> quantityPriceTierRepository,
         IRepository<PrintPricingGroup, Guid>        printPricingGroupRepository,
         IRepository<ProductPrintPriceTier, Guid>    printPriceTierRepository,
         IRepository<ProductPrintConfigOption, Guid> printConfigOptionRepository,
@@ -47,6 +49,7 @@ public class CatalogAppService : ApplicationService, ICatalogAppService
         _variantRepository           = variantRepository;
         _imageRepository             = imageRepository;
         _priceTierRepository         = priceTierRepository;
+        _quantityPriceTierRepository = quantityPriceTierRepository;
         _printPricingGroupRepository = printPricingGroupRepository;
         _printPriceTierRepository    = printPriceTierRepository;
         _printConfigOptionRepository = printConfigOptionRepository;
@@ -223,7 +226,23 @@ public class CatalogAppService : ApplicationService, ICatalogAppService
             .Where(o => o.IsActive)
             .ToList();
 
+        // Badge quantity-tier unit prices (Jira 9503), active rows only (public-safe). Empty for non-Badge.
+        dto.QuantityPriceTiers = (await LoadQuantityTierDtosAsync(product.Id))
+            .Where(t => t.IsActive)
+            .ToList();
+
         return dto;
+    }
+
+    /// <summary>Loads a product's Badge quantity-tier unit prices as DTOs (incl. inactive), ordered for display.</summary>
+    private async Task<List<ProductQuantityPriceTierDto>> LoadQuantityTierDtosAsync(Guid productId)
+    {
+        var tiers = await _quantityPriceTierRepository.GetListAsync(t => t.ProductId == productId);
+
+        return tiers
+            .OrderBy(t => t.MinQuantity)
+            .Select(t => ObjectMapper.Map<ProductQuantityPriceTier, ProductQuantityPriceTierDto>(t))
+            .ToList();
     }
 
     /// <summary>Loads a product's scoped print options as DTOs (incl. inactive), ordered for display.</summary>
@@ -272,12 +291,17 @@ public class CatalogAppService : ApplicationService, ICatalogAppService
     public async Task<ProductDto> CreateAsync(CreateProductDto input)
     {
         await EnsurePrintPricingGroupValidAsync(input.PrintPricingGroupId);
+        EnsureKindPricingModelValid(input.Kind, input.PricingModel);
 
         var product = new Product(GuidGenerator.Create(), input.Name, input.BasePrice, input.ProductType)
         {
             Description = input.Description,
             IsActive = input.IsActive,
             PrintPricingGroupId = input.PrintPricingGroupId,
+            Kind = input.Kind,
+            PricingModel = input.PricingModel,
+            MinimumQuantity = input.MinimumQuantity < 1 ? 1 : input.MinimumQuantity,
+            DesignUploadRequired = input.DesignUploadRequired,
         };
 
         await _productRepository.InsertAsync(product, autoSave: true);
@@ -287,6 +311,7 @@ public class CatalogAppService : ApplicationService, ICatalogAppService
     public async Task<ProductDto> UpdateAsync(Guid id, UpdateProductDto input)
     {
         await EnsurePrintPricingGroupValidAsync(input.PrintPricingGroupId);
+        EnsureKindPricingModelValid(input.Kind, input.PricingModel);
 
         var product = await _productRepository.GetAsync(id);
         product.Name = input.Name;
@@ -295,8 +320,35 @@ public class CatalogAppService : ApplicationService, ICatalogAppService
         product.ProductType = input.ProductType;
         product.IsActive = input.IsActive;
         product.PrintPricingGroupId = input.PrintPricingGroupId;
+        product.Kind = input.Kind;
+        product.PricingModel = input.PricingModel;
+        product.MinimumQuantity = input.MinimumQuantity < 1 ? 1 : input.MinimumQuantity;
+        product.DesignUploadRequired = input.DesignUploadRequired;
         await _productRepository.UpdateAsync(product, autoSave: true);
         return await GetAsync(id);
+    }
+
+    /// <summary>
+    /// Validates the ProductKind/PricingModel pairing (Jira 9503): Garment→GarmentPrint;
+    /// Badge→QuantityTierUnit; Banner→FixedSize/AreaBased/CustomQuoteOnly; Other→CustomQuoteOnly.
+    /// Keeps category and pricing behavior coherent so UI/pricing dispatch stay sane.
+    /// </summary>
+    private static void EnsureKindPricingModelValid(ProductKind kind, PricingModel pricingModel)
+    {
+        var ok = kind switch
+        {
+            ProductKind.Garment => pricingModel == PricingModel.GarmentPrint,
+            ProductKind.Badge   => pricingModel == PricingModel.QuantityTierUnit,
+            ProductKind.Banner  => pricingModel is PricingModel.FixedSize
+                                                or PricingModel.AreaBased
+                                                or PricingModel.CustomQuoteOnly,
+            ProductKind.Other   => pricingModel == PricingModel.CustomQuoteOnly,
+            _ => false,
+        };
+
+        if (!ok)
+            throw new UserFriendlyException(
+                $"Pricing model '{pricingModel}' is not valid for product kind '{kind}'.");
     }
 
     public async Task<ProductDto> UpdateStatusAsync(Guid id, UpdateProductStatusDto input)
@@ -957,5 +1009,67 @@ public class CatalogAppService : ApplicationService, ICatalogAppService
         }
 
         return await LoadPrintConfigOptionDtosAsync(productId);
+    }
+
+    // Admin: Badge Quantity Price Tiers (Jira 9503, product-scoped single-writer)
+
+    public async Task<List<ProductQuantityPriceTierDto>> GetQuantityPriceTiersAsync(Guid productId)
+    {
+        if (!await _productRepository.AnyAsync(p => p.Id == productId))
+            throw new EntityNotFoundException(typeof(Product), productId);
+
+        return await LoadQuantityTierDtosAsync(productId);
+    }
+
+    /// <summary>
+    /// Replaces the full set of Badge quantity-tier unit prices for a product (dedicated single-writer
+    /// endpoint, Jira 9503). Never touches Product/Variant/inventory fields, print tiers, group
+    /// assignment, scoped print options, or the legacy ProductPriceTier rows. An empty list clears the
+    /// product's quantity tiers (the product then has no resolvable Badge price until tiers are set).
+    /// </summary>
+    public async Task<List<ProductQuantityPriceTierDto>> SetQuantityPriceTiersAsync(
+        Guid productId, SetProductQuantityPriceTiersDto input)
+    {
+        if (!await _productRepository.AnyAsync(p => p.Id == productId))
+            throw new EntityNotFoundException(typeof(Product), productId);
+
+        // Per-row validation
+        foreach (var tier in input.Tiers)
+        {
+            if (tier.MinQuantity < 1)
+                throw new UserFriendlyException("Tier minimum quantity must be at least 1.");
+
+            if (tier.UnitPrice <= 0)
+                throw new UserFriendlyException("Tier unit price must be greater than zero.");
+
+            if (decimal.Round(tier.UnitPrice, 2) != tier.UnitPrice)
+                throw new UserFriendlyException("Tier unit price cannot have more than 2 decimal places.");
+        }
+
+        // No duplicate MinQuantity across the product's tiers.
+        var minQuantities = input.Tiers.Select(t => t.MinQuantity).ToList();
+        if (minQuantities.Count != minQuantities.Distinct().Count())
+            throw new UserFriendlyException("Duplicate minimum quantities are not allowed.");
+
+        // Replace the full set for this product. Delete flushed before inserts so a re-used natural key
+        // cannot collide with the unique index inside the same transaction (same approach as print tiers).
+        var existing = await _quantityPriceTierRepository.GetListAsync(t => t.ProductId == productId);
+        if (existing.Count > 0)
+            await _quantityPriceTierRepository.DeleteManyAsync(existing, autoSave: true);
+
+        foreach (var tier in input.Tiers)
+        {
+            await _quantityPriceTierRepository.InsertAsync(
+                new ProductQuantityPriceTier(
+                    GuidGenerator.Create(),
+                    productId,
+                    tier.MinQuantity,
+                    tier.UnitPrice,
+                    tier.IsActive,
+                    tier.SortOrder),
+                autoSave: true);
+        }
+
+        return await LoadQuantityTierDtosAsync(productId);
     }
 }
