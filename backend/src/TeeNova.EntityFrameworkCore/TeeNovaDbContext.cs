@@ -2,6 +2,7 @@ using Microsoft.EntityFrameworkCore;
 using TeeNova.Auth;
 using TeeNova.Catalog;
 using TeeNova.Customization;
+using TeeNova.Enquiries;
 using TeeNova.Inventory;
 using TeeNova.Notifications;
 using TeeNova.Orders;
@@ -58,6 +59,9 @@ public class TeeNovaDbContext : AbpDbContext<TeeNovaDbContext>
 
     // Inventory
     public DbSet<InventorySettings>    InventorySettings     { get; set; }
+
+    // Enquiries (Jira 9512)
+    public DbSet<BannerQuoteRequest>   BannerQuoteRequests   { get; set; }
 
     public TeeNovaDbContext(DbContextOptions<TeeNovaDbContext> options)
         : base(options)

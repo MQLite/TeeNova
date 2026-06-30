@@ -61,6 +61,14 @@ export default function CheckoutPage() {
 
   const isSubmitting = submitPhase !== 'idle'
 
+  // Enquiry-first guard (Jira 9511/9512): Banner / CustomQuoteOnly products are quote-only and must never
+  // go through paid checkout. They don't enter the cart in the normal flow, but if one somehow does we
+  // block payment here (the backend guard in CreateAsync stays authoritative regardless).
+  const quoteOnlyItems = items.filter(
+    (item) => item.kind === 'Banner' || item.pricingModel === 'CustomQuoteOnly',
+  )
+  const hasQuoteOnlyItems = quoteOnlyItems.length > 0
+
   useEffect(() => {
     if (items.length === 0 && !submitted) {
       router.replace('/cart')
@@ -74,6 +82,12 @@ export default function CheckoutPage() {
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
     if (isSubmitting || submitted) return
+
+    // Quote-only products (Banner) cannot be paid for online — they must go through the enquiry flow.
+    if (hasQuoteOnlyItems) {
+      setError('Your cart contains a quote-only product (e.g. a banner). Please request a quote for it instead of paying online.')
+      return
+    }
 
     // Never submit on stale/unknown prices: require a clean, fresh recalculation first.
     if (pricingLoading || !pricingComplete) {
@@ -406,6 +420,17 @@ export default function CheckoutPage() {
                 </div>
               </div>
 
+              {/* Quote-only (Banner) guard: payment disabled; direct to the enquiry flow. */}
+              {hasQuoteOnlyItems && (
+                <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800 space-y-2">
+                  <p>
+                    Your cart contains a quote-only product (e.g. a banner) that can’t be paid for online.
+                    Please open it from the products page and use “Request a quote” instead.
+                  </p>
+                  <Link href="/products" className="inline-block underline">Browse products</Link>
+                </div>
+              )}
+
               {/* Order creation error */}
               {error && (
                 <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
@@ -527,7 +552,7 @@ export default function CheckoutPage() {
                     className="w-full"
                     size="lg"
                     loading={isSubmitting}
-                    disabled={isSubmitting || pricingLoading || !pricingComplete || (submitted && !!sessionError)}
+                    disabled={isSubmitting || pricingLoading || !pricingComplete || hasQuoteOnlyItems || (submitted && !!sessionError)}
                   >
                     {getSubmitLabel()}
                   </Button>

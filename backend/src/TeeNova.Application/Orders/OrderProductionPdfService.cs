@@ -274,15 +274,20 @@ public class OrderProductionPdfService : IOrderProductionPdfService, ITransientD
                 // Non-garment / design-only items (Badge, Jira 9505). These carry no print placements, so
                 // they never appear in the print-production list above. Each is rendered with its product,
                 // quantity, pricing, applied quantity tier, design file name and design note — no variant,
-                // print position, print size, or blank " / " artifacts.
+                // print position, print size, or blank " / " artifacts. Banner items are excluded here and
+                // rendered with their full structured detail in ComposeBannerItems (Jira 9514).
                 ComposeDesignOnlyItems(col, order);
+                ComposeBannerItems(col, order);
             });
         });
     }
 
     private void ComposeDesignOnlyItems(ColumnDescriptor col, OrderDto order)
     {
-        var designOnly = order.Items.Where(i => i.ProductKind != ProductKind.Garment).ToList();
+        // Badge (and any future non-garment, non-banner design-only kind). Banner has its own section.
+        var designOnly = order.Items
+            .Where(i => i.ProductKind != ProductKind.Garment && i.ProductKind != ProductKind.Banner)
+            .ToList();
         if (designOnly.Count == 0)
             return;
 
@@ -307,6 +312,67 @@ public class OrderProductionPdfService : IOrderProductionPdfService, ITransientD
 
                     ic.Item().Text($"Design: {DesignDisplayName(item.UploadedAssetUrl)}").FontSize(8).FontColor(Colors.Grey.Darken1);
 
+                    if (!string.IsNullOrWhiteSpace(item.DesignNote))
+                        ic.Item().Text($"Design note: {item.DesignNote}").FontSize(8).FontColor(Colors.Grey.Darken1);
+                });
+        }
+    }
+
+    /// <summary>
+    /// Banner production details (Jira 9514). Dimensions / material / finishing are made prominent for the
+    /// production team. No print area/size, no variant, no Badge label. Falls back gracefully when the
+    /// structured detail is missing.
+    /// </summary>
+    private void ComposeBannerItems(ColumnDescriptor col, OrderDto order)
+    {
+        var banners = order.Items.Where(i => i.ProductKind == ProductKind.Banner).ToList();
+        if (banners.Count == 0)
+            return;
+
+        col.Item().PaddingTop(8).Text("Banner production details").SemiBold().FontSize(10);
+
+        foreach (var item in banners)
+        {
+            col.Item().PaddingTop(4).PaddingLeft(8).BorderLeft(2).BorderColor(Colors.Grey.Lighten1)
+                .PaddingLeft(6).Column(ic =>
+                {
+                    ic.Item().Text(t =>
+                    {
+                        t.Span(item.ProductName).SemiBold().FontSize(9);
+                        t.Span($"  ·  Qty {item.Quantity.ToString(CultureInfo.InvariantCulture)}").FontSize(9);
+                        t.Span($"  ·  Line {FormatMoney(item.UnitPrice * item.Quantity)}").FontSize(9).FontColor(Colors.Grey.Darken1);
+                    });
+
+                    var d = item.BannerDetail;
+                    if (d == null)
+                    {
+                        ic.Item().Text("Banner details unavailable").FontSize(8).FontColor(Colors.Grey.Darken1);
+                    }
+                    else
+                    {
+                        ic.Item().Text(t =>
+                        {
+                            t.Span("Size: ").SemiBold().FontSize(9);
+                            t.Span(BannerDetailFormatter.SizeSummary(
+                                d.SizeMode, d.Width, d.Height, d.Unit, d.AreaSquareMetres, d.SizeLabel)).FontSize(9);
+                        });
+                        ic.Item().Text(t =>
+                        {
+                            t.Span("Material: ").SemiBold().FontSize(9);
+                            t.Span(BannerDetailFormatter.MaterialSummary(d.Material, d.MaterialDisplayName)).FontSize(9);
+                        });
+                        ic.Item().Text(t =>
+                        {
+                            t.Span("Finishing: ").SemiBold().FontSize(9);
+                            t.Span(BannerDetailFormatter.FinishingSummary(
+                                d.FinishingEyelets, d.FinishingHemming, d.FinishingPolePocket,
+                                d.FinishingOther, d.StandIncluded, d.StandReplacementOnly)).FontSize(9);
+                        });
+                        if (!string.IsNullOrWhiteSpace(d.Notes))
+                            ic.Item().Text($"Banner notes: {d.Notes}").FontSize(8).FontColor(Colors.Grey.Darken1);
+                    }
+
+                    ic.Item().Text($"Design: {DesignDisplayName(item.UploadedAssetUrl)}").FontSize(8).FontColor(Colors.Grey.Darken1);
                     if (!string.IsNullOrWhiteSpace(item.DesignNote))
                         ic.Item().Text($"Design note: {item.DesignNote}").FontSize(8).FontColor(Colors.Grey.Darken1);
                 });

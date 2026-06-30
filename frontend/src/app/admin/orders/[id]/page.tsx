@@ -26,6 +26,7 @@ import { AdjustOrderPriceModal } from '@/components/admin/AdjustOrderPriceModal'
 import { OrderContentEditModal } from '@/components/admin/OrderContentEditModal'
 import { DownloadDesignButton } from '@/components/orders/DownloadDesignButton'
 import { DownloadProductionPdfButton } from '@/components/admin/DownloadProductionPdfButton'
+import { BannerDetailSummary } from '@/components/products/BannerDetailSummary'
 import type { AdjustOrderPriceInput, Order, OrderItem, OrderPrintGroup, OrderPrintGroupRow, OrderStatus, RecordPaymentInput } from '@/types'
 import clsx from 'clsx'
 
@@ -528,6 +529,12 @@ export default function AdminOrderDetailPage() {
   // also have no prints but belong in their own section above.
   const garmentOnlyItems = order.items.filter((item) => itemHasNoPrints(item) && !isNonGarmentItem(item))
 
+  // Content edit is blocked server-side for CustomQuoteOnly/Banner items (9511) to avoid resetting a
+  // manually-quoted total to $0. Disable the edit button and explain, rather than letting the save fail.
+  const hasQuoteOnlyItem = order.items.some(
+    (item) => item.productKind === 'Banner' || item.pricingModel === 'CustomQuoteOnly',
+  )
+
   return (
     <div className="admin-page admin-stack">
       {/* Toast */}
@@ -805,13 +812,15 @@ export default function AdminOrderDetailPage() {
               <p className="mt-0.5 text-[11px] text-black/45" style={{ letterSpacing: '-0.14px' }}>
                 {isTerminal
                   ? `Editing is disabled while the order is ${isCancelled ? 'cancelled' : 'completed'}.`
-                  : 'Edit items, variants, prints and notes. The server reprices and rehydrates the order.'}
+                  : hasQuoteOnlyItem
+                    ? 'Content editing is disabled for quote-only (Banner) orders. Use Adjust price to change the total.'
+                    : 'Edit items, variants, prints and notes. The server reprices and rehydrates the order.'}
               </p>
             </div>
             <Button
               size="sm"
               variant="white"
-              disabled={isTerminal}
+              disabled={isTerminal || hasQuoteOnlyItem}
               onClick={() => setEditContentOpen(true)}
             >
               Edit order content
@@ -865,6 +874,12 @@ export default function AdminOrderDetailPage() {
                               </span>
                             )}
                           </div>
+                          {/* Banner structured detail (Jira 9514): dimensions/material/finishing — no variant/prints. */}
+                          {item.productKind === 'Banner' && (
+                            <div className="mt-2">
+                              <BannerDetailSummary detail={item.bannerDetail} variant="admin" />
+                            </div>
+                          )}
                           {item.designNote && (
                             <p className="mt-1.5 text-[11px] leading-snug text-black/45" style={{ letterSpacing: '-0.14px' }}>
                               Design note: {item.designNote}

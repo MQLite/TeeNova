@@ -12,6 +12,7 @@ import { PrintAreaSelector } from '@/components/products/PrintAreaSelector'
 import { PrintSizeSelector } from '@/components/products/PrintSizeSelector'
 import { PrintPriceTierTable } from '@/components/products/PrintPriceTierTable'
 import { BadgeProductDetail } from '@/components/products/BadgeProductDetail'
+import { BannerProductDetail } from '@/components/products/BannerProductDetail'
 import { ProductImageGallery } from '@/components/products/ProductImageGallery'
 import { ProductDetailsSection } from '@/components/products/ProductDetailsSection'
 import { ProductHeroPrice } from '@/components/products/ProductHeroPrice'
@@ -760,6 +761,12 @@ export default function ProductDetailPage() {
   // hooks above run unconditionally (stable hook order); for a Badge they no-op (no variants/prints).
   if (product.kind === 'Badge') {
     return <BadgeProductDetail product={product} />
+  }
+
+  // Banner is CustomQuoteOnly / enquiry-first (Jira 9512): its own quote-request UX, no variant/print
+  // controls, no live price, no add-to-cart. It submits a Banner enquiry instead of paid checkout.
+  if (product.kind === 'Banner') {
+    return <BannerProductDetail product={product} />
   }
 
   const activeImage =

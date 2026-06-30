@@ -2,6 +2,7 @@ import Link from 'next/link'
 import { ordersApi } from '@/api/orders'
 import { Badge } from '@/components/ui/Badge'
 import { DownloadDesignButton } from '@/components/orders/DownloadDesignButton'
+import { BannerDetailSummary } from '@/components/products/BannerDetailSummary'
 import { PayOnlinePanel } from '@/components/orders/PayOnlinePanel'
 import type { OrderItem, OrderStatus, PaymentStatus } from '@/types'
 
@@ -140,6 +141,13 @@ export default async function OrderDetailPage({ params }: PageProps) {
                     <p className="text-sm text-black/55" style={{ letterSpacing: '-0.14px' }}>
                       {item.variantLabel ? `${item.variantLabel} × ${item.quantity}` : `Qty ${item.quantity}`}
                     </p>
+
+                    {/* Banner configuration summary (Jira 9514): size/material/finishing — no variant/prints. */}
+                    {item.productKind === 'Banner' && (
+                      <div className="mt-3 rounded-lg border border-black/[0.08] bg-black/[0.02] p-3">
+                        <BannerDetailSummary detail={item.bannerDetail} variant="customer" />
+                      </div>
+                    )}
 
                     {/* Badge / non-garment item-level design (Jira 9505): no print position/size rows. */}
                     {isNonGarmentItem(item) && (item.uploadedAssetUrl || item.designNote) && (

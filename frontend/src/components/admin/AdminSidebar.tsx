@@ -33,6 +33,15 @@ const navItems = [
     ),
   },
   {
+    href: '/admin/banner-enquiries',
+    label: 'Banner Quotes',
+    icon: (
+      <svg viewBox="0 0 20 20" fill="currentColor" className="h-4 w-4 shrink-0">
+        <path fillRule="evenodd" d="M18 5v8a2 2 0 01-2 2h-5l-5 4v-4H4a2 2 0 01-2-2V5a2 2 0 012-2h12a2 2 0 012 2zM7 8H5v2h2V8zm2 0h6v2H9V8zm-4 4h2v2H5v-2zm4 0h6v2H9v-2z" clipRule="evenodd" />
+      </svg>
+    ),
+  },
+  {
     href: '/admin/inventory',
     label: 'Stock',
     icon: (

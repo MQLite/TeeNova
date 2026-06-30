@@ -2,6 +2,8 @@ using AutoMapper;
 using TeeNova.Catalog;
 using TeeNova.Catalog.Dtos;
 using TeeNova.Customization;
+using TeeNova.Enquiries;
+using TeeNova.Enquiries.Dtos;
 using TeeNova.Orders;
 using TeeNova.Orders.Dtos;
 using TeeNova.Payments;
@@ -71,6 +73,9 @@ public class TeeNovaApplicationAutoMapperProfile : Profile
             .ForMember(d => d.DesignNote, o => o.MapFrom(s => s.DesignNote));
         CreateMap<ShippingAddress, ShippingAddressDto>();
         CreateMap<OnlinePaymentSession, OnlinePaymentSessionDto>();
+
+        // Enquiries (Jira 9512)
+        CreateMap<BannerQuoteRequest, BannerQuoteRequestDto>();
 
         // UploadedAsset
         CreateMap<UploadedAsset, Files.Dtos.UploadFileOutput>()

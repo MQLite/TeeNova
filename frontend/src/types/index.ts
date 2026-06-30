@@ -417,6 +417,142 @@ export interface UploadedAsset {
   fileSizeBytes: number
 }
 
+// Banner quote enquiries (Jira 9511/9512) — enquiry-first; no price, no order, no payment.
+
+/** How a banner size is specified. Mirrors backend `BannerSizeMode` (Preset=0, Custom=1). */
+export type BannerSizeMode = 'Preset' | 'Custom'
+
+/** Unit of banner width/height. Mirrors backend `BannerDimensionUnit` (Mm=0, Cm=1, M=2). */
+export type BannerDimensionUnit = 'Mm' | 'Cm' | 'M'
+
+/** Banner material. Mirrors backend `BannerMaterial` (PullUp=0, Pvc=1, Mesh=2, Fabric=3, Other=4). */
+export type BannerMaterial = 'PullUp' | 'Pvc' | 'Mesh' | 'Fabric' | 'Other'
+
+/** Banner quote enquiry workflow status. Mirrors backend `BannerQuoteRequestStatus`. */
+export type BannerQuoteRequestStatus = 'New' | 'Reviewed' | 'ConvertedToOrder' | 'Cancelled'
+
+/**
+ * Banner configuration input (Jira 9511/9512). Mirrors the backend `BannerDetailInputDto`. Carries no
+ * price and no area — the server computes `areaSquareMetres`.
+ */
+export interface BannerDetailInput {
+  sizeMode: BannerSizeMode
+  sizePresetId?: string | null
+  sizeLabel?: string | null
+  width?: number | null
+  height?: number | null
+  unit?: BannerDimensionUnit | null
+  material: BannerMaterial
+  materialDisplayName?: string | null
+  finishingEyelets: boolean
+  finishingHemming: boolean
+  finishingPolePocket: boolean
+  finishingOther?: string | null
+  standIncluded: boolean
+  standReplacementOnly: boolean
+  notes?: string | null
+}
+
+/**
+ * Banner configuration snapshot returned on an order item (Jira 9511/9514). Mirrors the backend
+ * `BannerDetailDto`. `areaSquareMetres` is server-computed. No price fields.
+ */
+export interface BannerDetail {
+  id: string
+  sizeMode: BannerSizeMode
+  sizePresetId?: string | null
+  sizeLabel?: string | null
+  width?: number | null
+  height?: number | null
+  unit?: BannerDimensionUnit | null
+  areaSquareMetres?: number | null
+  material: BannerMaterial
+  materialDisplayName?: string | null
+  finishingEyelets: boolean
+  finishingHemming: boolean
+  finishingPolePocket: boolean
+  finishingOther?: string | null
+  standIncluded: boolean
+  standReplacementOnly: boolean
+  notes?: string | null
+}
+
+/** Banner quote enquiry submission payload (Jira 9512). No price fields, no variant, no prints. */
+export interface BannerEnquiryRequest {
+  productId: string
+  quantity: number
+  customerName: string
+  customerEmail: string
+  customerPhone?: string | null
+  message?: string | null
+  uploadedAssetId?: string | null
+  uploadedAssetUrl?: string | null
+  designNote?: string | null
+  bannerDetail: BannerDetailInput
+}
+
+/** Result of submitting a Banner enquiry (Jira 9512). No payment URL. */
+export interface BannerEnquiryResult {
+  id: string
+  status: BannerQuoteRequestStatus
+  productId: string
+  productName: string
+  quantity: number
+  areaSquareMetres?: number | null
+  message: string
+}
+
+/** Full Banner enquiry for the admin review surface (Jira 9512). */
+export interface BannerQuoteRequest {
+  id: string
+  productId: string
+  productNameSnapshot: string
+  quantity: number
+  customerName: string
+  customerEmail: string
+  customerPhone?: string | null
+  message?: string | null
+  uploadedAssetId?: string | null
+  uploadedAssetUrl?: string | null
+  designNote?: string | null
+  sizeMode: BannerSizeMode
+  sizePresetId?: string | null
+  sizeLabel?: string | null
+  width?: number | null
+  height?: number | null
+  unit?: BannerDimensionUnit | null
+  areaSquareMetres?: number | null
+  material: BannerMaterial
+  materialDisplayName?: string | null
+  finishingEyelets: boolean
+  finishingHemming: boolean
+  finishingPolePocket: boolean
+  finishingOther?: string | null
+  standIncluded: boolean
+  standReplacementOnly: boolean
+  bannerNotes?: string | null
+  status: BannerQuoteRequestStatus
+  convertedOrderId?: string | null
+  creationTime: string
+}
+
+/** Admin conversion of a Banner enquiry to an unpaid priced order (Jira 9513). No price from customer. */
+export interface ConvertBannerQuoteRequest {
+  quotedTotal: number
+  adminNote?: string | null
+  customerNote?: string | null
+  deliveryMethod?: DeliveryMethod | null
+}
+
+/** Result of converting a Banner enquiry to an order (Jira 9513). No payment URL. */
+export interface ConvertBannerQuoteRequestResult {
+  quoteRequestId: string
+  status: BannerQuoteRequestStatus
+  orderId: string
+  orderNumber: string
+  orderTotal: number
+}
+
 // Orders
 
 export type OrderStatus =
@@ -587,8 +723,10 @@ export interface OrderItem {
   designNote?: string | null
   /** Applied Badge quantity-tier MinQuantity snapshot (Jira 9503); null when not applicable. */
   appliedQuantityTierMinQuantity?: number | null
-  /** Reserved non-garment configuration snapshot (Banner); null for now. */
+  /** Legacy reserved JSON config (superseded by {@link bannerDetail}); null for Banner. */
   configurationJson?: string | null
+  /** Banner configuration snapshot (Jira 9511/9514). Non-null only for Banner items. */
+  bannerDetail?: BannerDetail | null
   prints?: OrderItemPrint[]
 }
 

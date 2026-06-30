@@ -25,7 +25,7 @@ export interface ProductFormValues {
 const KIND_OPTIONS: { value: ProductKind; label: string; hint: string }[] = [
   { value: 'Garment', label: 'Garment',  hint: 'Color/size variants + print placements (the existing model).' },
   { value: 'Badge',   label: 'Badge',    hint: 'Quantity-tier unit pricing, item-level design, no variants/prints.' },
-  { value: 'Banner',  label: 'Banner',   hint: 'Dimensions/material — pricing not yet implemented (placeholder).' },
+  { value: 'Banner',  label: 'Banner',   hint: 'Quote-only: customers submit dimensions/material/finishing + design as a quote request. No online price/payment is taken.' },
   { value: 'Other',   label: 'Other',    hint: 'Any other category. Manual quote only for now.' },
 ]
 
@@ -367,10 +367,17 @@ export function ProductForm({
           <p className="mt-1.5 text-xs text-black/50" style={{ letterSpacing: '-0.14px' }}>
             {KIND_OPTIONS.find((k) => k.value === values.kind)?.hint}
           </p>
-          {(values.kind === 'Banner' || values.kind === 'Other') && (
+          {values.kind === 'Banner' && (
             <p className="mt-2 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-2.5 text-xs text-amber-800" style={{ letterSpacing: '-0.14px' }}>
-              {values.kind} storefront pricing is not implemented yet. The product saves with a
-              manual-quote pricing model and has no automated price.
+              Banner is quote-only. Customers submit requirements (size, material, finishing) and a design;
+              no online price or payment is taken. You quote it manually from the enquiry afterwards. Set a
+              minimum quantity and turn on Design Upload if artwork is required.
+            </p>
+          )}
+          {values.kind === 'Other' && (
+            <p className="mt-2 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-2.5 text-xs text-amber-800" style={{ letterSpacing: '-0.14px' }}>
+              Other storefront pricing is not implemented yet. The product saves with a manual-quote
+              pricing model and has no automated price.
             </p>
           )}
         </div>

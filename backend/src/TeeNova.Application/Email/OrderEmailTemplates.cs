@@ -184,6 +184,13 @@ public static class OrderEmailTemplates
 
         foreach (var item in order.Items)
         {
+            // Banner items (Jira 9514): render the structured config summary, no variant, no prints.
+            if (item.ProductKind == ProductKind.Banner)
+            {
+                AppendHtmlBannerItem(sb, item, includeDesignNotes);
+                continue;
+            }
+
             // Non-garment items (Badge, Jira 9505) have no variant and no prints; the design is item-level.
             // Render them without a variant dash or print position/size rows.
             var isNonGarment = item.ProductKind != ProductKind.Garment;
@@ -229,6 +236,38 @@ public static class OrderEmailTemplates
 
             sb.Append("</div>");
         }
+    }
+
+    /// <summary>Banner item block for item-listing emails (Jira 9514). Structured config, no variant/prints.</summary>
+    private static void AppendHtmlBannerItem(StringBuilder sb, OrderItem item, bool includeDesignNotes)
+    {
+        sb.Append($"""
+            <div style="border:1px solid #ddd;border-radius:4px;padding:12px;margin-bottom:12px;">
+              <strong>{WebUtility.HtmlEncode(item.ProductName)}</strong><br>
+              <span style="color:#666;font-size:12px;">Qty: {item.Quantity} &nbsp;|&nbsp; Unit price: {FormatCurrency(item.UnitPrice)} &nbsp;|&nbsp; Line total: {FormatCurrency(item.UnitPrice * item.Quantity)}</span>
+            """);
+
+        sb.Append("<ul style=\"margin:8px 0 0 0;padding-left:20px;font-size:12px;color:#555;\">");
+        var d = item.BannerDetail;
+        if (d == null)
+        {
+            sb.Append("<li>Banner details unavailable</li>");
+        }
+        else
+        {
+            sb.Append($"<li>Size: {WebUtility.HtmlEncode(BannerDetailFormatter.SizeSummary(d.SizeMode, d.Width, d.Height, d.Unit, d.AreaSquareMetres, d.SizeLabel))}</li>");
+            sb.Append($"<li>Material: {WebUtility.HtmlEncode(BannerDetailFormatter.MaterialSummary(d.Material, d.MaterialDisplayName))}</li>");
+            sb.Append($"<li>Finishing: {WebUtility.HtmlEncode(BannerDetailFormatter.FinishingSummary(d.FinishingEyelets, d.FinishingHemming, d.FinishingPolePocket, d.FinishingOther, d.StandIncluded, d.StandReplacementOnly))}</li>");
+            if (!string.IsNullOrWhiteSpace(d.Notes))
+                sb.Append($"<li>Notes: {WebUtility.HtmlEncode(d.Notes)}</li>");
+        }
+        sb.Append("<li>");
+        sb.Append(item.UploadedAssetId.HasValue || !string.IsNullOrWhiteSpace(item.UploadedAssetUrl)
+            ? "<span style=\"color:#27ae60;\">&#10003; Design file uploaded</span>"
+            : "<span style=\"color:#999;\">No design file provided</span>");
+        if (includeDesignNotes && !string.IsNullOrWhiteSpace(item.DesignNote))
+            sb.Append($"<br><em style=\"color:#777;\">Design note: {WebUtility.HtmlEncode(item.DesignNote)}</em>");
+        sb.Append("</li></ul></div>");
     }
 
     private static void AppendHtmlTotalRow(StringBuilder sb, decimal total)
@@ -346,6 +385,31 @@ public static class OrderEmailTemplates
     {
         foreach (var item in order.Items)
         {
+            // Banner items (Jira 9514): structured config summary, no variant/prints.
+            if (item.ProductKind == ProductKind.Banner)
+            {
+                sb.AppendLine($"  {item.ProductName} x{item.Quantity} @ {FormatCurrency(item.UnitPrice)}");
+                var d = item.BannerDetail;
+                if (d == null)
+                {
+                    sb.AppendLine("    - Banner details unavailable");
+                }
+                else
+                {
+                    sb.AppendLine($"    - Size: {BannerDetailFormatter.SizeSummary(d.SizeMode, d.Width, d.Height, d.Unit, d.AreaSquareMetres, d.SizeLabel)}");
+                    sb.AppendLine($"    - Material: {BannerDetailFormatter.MaterialSummary(d.Material, d.MaterialDisplayName)}");
+                    sb.AppendLine($"    - Finishing: {BannerDetailFormatter.FinishingSummary(d.FinishingEyelets, d.FinishingHemming, d.FinishingPolePocket, d.FinishingOther, d.StandIncluded, d.StandReplacementOnly)}");
+                    if (!string.IsNullOrWhiteSpace(d.Notes))
+                        sb.AppendLine($"      Notes: {d.Notes}");
+                }
+                var bannerFileStatus = item.UploadedAssetId.HasValue || !string.IsNullOrWhiteSpace(item.UploadedAssetUrl)
+                    ? "Design file uploaded" : "No design file";
+                sb.AppendLine($"    - [{bannerFileStatus}]");
+                if (!string.IsNullOrWhiteSpace(item.DesignNote))
+                    sb.AppendLine($"      Design note: {item.DesignNote}");
+                continue;
+            }
+
             // Non-garment items (Badge, Jira 9505): no variant, no prints — item-level design only.
             if (item.ProductKind != ProductKind.Garment)
             {
