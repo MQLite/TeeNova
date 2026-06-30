@@ -28,8 +28,9 @@ public class FileController : TeeNovaControllerBase
     [HttpPost("upload")]
     [AllowAnonymous]
     [RequestSizeLimit(10 * 1024 * 1024)]
+    [Consumes("multipart/form-data")]
     public async Task<UploadFileOutput> UploadAsync(
-        IFormFile file,
+        [FromForm] IFormFile file,
         CancellationToken cancellationToken)
         => await _fileAppService.UploadAsync(file, cancellationToken);
 
