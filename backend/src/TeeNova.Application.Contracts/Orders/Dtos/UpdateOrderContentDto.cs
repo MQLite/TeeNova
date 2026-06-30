@@ -41,8 +41,11 @@ public class UpdateOrderItemContentDto
     public string? UploadedAssetUrl { get; set; }
     public string? DesignNote       { get; set; }
 
-    /// <summary>Reserved non-garment configuration (Banner). Ignored for Garment/Badge MVP.</summary>
+    /// <summary>Legacy reserved JSON config (superseded by <see cref="BannerDetail"/>); ignored by Banner MVP.</summary>
     public string? ConfigurationJson { get; set; }
+
+    /// <summary>Banner configuration (Jira 9511). Required for Banner products (enforced server-side); null otherwise.</summary>
+    public BannerDetailInputDto? BannerDetail { get; set; }
 
     public List<UpdateOrderItemPrintContentDto> Prints { get; set; } = new();
 }

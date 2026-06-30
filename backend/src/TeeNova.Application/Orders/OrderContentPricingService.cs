@@ -181,7 +181,8 @@ public sealed record OrderDraftItem(
     Guid? UploadedAssetId = null,
     string? UploadedAssetUrl = null,
     string? DesignNote = null,
-    string? ConfigurationJson = null);
+    string? ConfigurationJson = null,
+    Dtos.BannerDetailInputDto? BannerDetail = null);
 
 /// <summary>A draft print selection. <see cref="Id"/> identifies an existing OrderItemPrint or is null.</summary>
 public sealed record OrderDraftPrint(
@@ -215,7 +216,8 @@ public sealed record PricedOrderItem(
     string? UploadedAssetUrl = null,
     string? DesignNote = null,
     int? AppliedQuantityTierMinQuantity = null,
-    string? ConfigurationJson = null);
+    string? ConfigurationJson = null,
+    BannerDetailSnapshot? BannerDetail = null);
 
 public sealed record PricedOrderPrint(
     Guid? Id,

@@ -42,8 +42,18 @@ public class OrderItem : Entity<Guid>
     /// <summary>Applied Badge quantity-tier MinQuantity snapshot (Jira 9503); null when not applicable.</summary>
     public int? AppliedQuantityTierMinQuantity { get; set; }
 
-    /// <summary>Reserved for non-garment configuration snapshots (e.g. Banner dimensions). Null for now.</summary>
+    /// <summary>
+    /// Legacy reserved field for non-garment configuration snapshots. Superseded for Banner by the
+    /// structured one-to-one <see cref="BannerDetail"/> (Jira 9511); left in place for backward
+    /// compatibility but not used by Banner MVP. Null for Garment/Badge.
+    /// </summary>
     public string? ConfigurationJson { get; set; }
+
+    /// <summary>
+    /// Banner configuration snapshot (Jira 9511). Present only for <see cref="Catalog.ProductKind.Banner"/>
+    /// items; null for Garment and Badge. One-to-one, cascade-deleted with this item.
+    /// </summary>
+    public OrderItemBannerDetail? BannerDetail { get; set; }
 
     /// <summary>
     /// Idempotency marker for the optional post-production stock deduction (Jira 9005).

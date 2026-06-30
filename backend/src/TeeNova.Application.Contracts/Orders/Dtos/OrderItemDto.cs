@@ -31,8 +31,11 @@ public class OrderItemDto
     /// <summary>Applied Badge quantity-tier MinQuantity snapshot (Jira 9503); null when not applicable.</summary>
     public int? AppliedQuantityTierMinQuantity { get; set; }
 
-    /// <summary>Reserved non-garment configuration snapshot (Banner); null for now.</summary>
+    /// <summary>Legacy reserved JSON config (superseded by <see cref="BannerDetail"/>); null for Banner MVP.</summary>
     public string? ConfigurationJson { get; set; }
+
+    /// <summary>Banner configuration snapshot (Jira 9511). Non-null only for Banner items.</summary>
+    public BannerDetailDto? BannerDetail { get; set; }
 
     public List<OrderItemPrintDto> Prints { get; set; } = new();
 }

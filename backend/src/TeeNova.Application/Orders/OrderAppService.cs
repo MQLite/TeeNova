@@ -109,10 +109,16 @@ public class OrderAppService : ApplicationService, IOrderAppService
                 UploadedAssetId: i.UploadedAssetId,
                 UploadedAssetUrl: i.UploadedAssetUrl,
                 DesignNote: i.DesignNote,
-                ConfigurationJson: i.ConfigurationJson))
+                ConfigurationJson: i.ConfigurationJson,
+                BannerDetail: i.BannerDetail))
             .ToList();
 
         var priced = await _orderContentPricingService.PriceAsync(draft);
+
+        // Enquiry-first guard (Jira 9511): CustomQuoteOnly products (Banner) are NOT auto-priced and must
+        // never enter the normal paid customer checkout as a $0 paid order. They are validated/normalized
+        // above (so the enquiry data is sound) but blocked here. A dedicated enquiry path is a follow-up.
+        EnsureNoCustomQuoteOnlyItems(priced, "TeeNova:Order:CustomQuoteOnlyRequiresEnquiry");
 
         foreach (var pricedItem in priced.Items)
             order.AddItem(BuildOrderItem(order.Id, pricedItem, inventoryDeductionEligible));
@@ -156,6 +162,8 @@ public class OrderAppService : ApplicationService, IOrderAppService
         var order = await query
             .Include(o => o.Items)
             .ThenInclude(i => i.Prints)
+            .Include(o => o.Items)
+            .ThenInclude(i => i.BannerDetail)
             .FirstOrDefaultAsync(o => o.Id == id);
 
         if (order == null)
@@ -250,6 +258,13 @@ public class OrderAppService : ApplicationService, IOrderAppService
         var draft = BuildAndValidateDraft(order, input);
 
         var priced   = await _orderContentPricingService.PriceAsync(draft);
+
+        // CustomQuoteOnly (Banner) is not supported in the admin content-edit/repricing flow yet: re-running
+        // the strategy would reset a manually-set Banner total to the $0 placeholder. Block it explicitly
+        // until a Banner-aware admin edit exists (follow-up). Admins still set the Banner total via
+        // AdjustPriceAsync, which is untouched here.
+        EnsureNoCustomQuoteOnlyItems(priced, "TeeNova:Order:CustomQuoteOnlyEditNotSupported");
+
         var newTotal = priced.TotalAmount;
         var oldTotal = order.TotalAmount;
 
@@ -290,6 +305,9 @@ public class OrderAppService : ApplicationService, IOrderAppService
 
         var draft  = BuildAndValidateDraft(order, input);
         var priced = await _orderContentPricingService.PriceAsync(draft);
+
+        // See QuoteContentUpdateAsync: CustomQuoteOnly (Banner) repricing is blocked in admin edit for now.
+        EnsureNoCustomQuoteOnlyItems(priced, "TeeNova:Order:CustomQuoteOnlyEditNotSupported");
 
         var oldTotal = order.TotalAmount;
 
@@ -365,7 +383,9 @@ public class OrderAppService : ApplicationService, IOrderAppService
         var query = await _orderRepository.GetQueryableAsync();
         query = query
             .Include(o => o.Items)
-            .ThenInclude(i => i.Prints);
+            .ThenInclude(i => i.Prints)
+            .Include(o => o.Items)
+            .ThenInclude(i => i.BannerDetail);
 
         // TODO: apply input.Status, input.Search, input.DateFrom, input.DateTo filters
 
@@ -392,6 +412,8 @@ public class OrderAppService : ApplicationService, IOrderAppService
         var order = await query
             .Include(o => o.Items)
             .ThenInclude(i => i.Prints)
+            .Include(o => o.Items)
+            .ThenInclude(i => i.BannerDetail)
             .FirstOrDefaultAsync(o => o.Id == orderId)
             ?? throw new Volo.Abp.Domain.Entities.EntityNotFoundException(typeof(Order), orderId);
 
@@ -748,6 +770,17 @@ public class OrderAppService : ApplicationService, IOrderAppService
 
     // Private helpers
 
+    /// <summary>
+    /// Enquiry-first safety guard (Jira 9511): rejects a priced draft that contains any
+    /// <see cref="PricingModel.CustomQuoteOnly"/> item, so such products (Banner) can never be persisted
+    /// as a normal $0 paid order through the customer checkout or repriced to $0 through admin edit.
+    /// </summary>
+    private static void EnsureNoCustomQuoteOnlyItems(PricedOrderDraft priced, string errorCode)
+    {
+        if (priced.Items.Any(i => i.PricingModel == Catalog.PricingModel.CustomQuoteOnly))
+            throw new Volo.Abp.BusinessException(errorCode);
+    }
+
     private static (PaymentPurpose purpose, decimal amount) CalculatePaymentPurposeAndAmount(
         Order order, PaymentPurpose? requestedPurpose)
     {
@@ -895,6 +928,31 @@ public class OrderAppService : ApplicationService, IOrderAppService
             ConfigurationJson              = priced.ConfigurationJson,
         };
 
+        // Banner configuration snapshot (Jira 9511): structured one-to-one detail, not JSON. Present only
+        // for Banner items; the validator already normalized it and computed the area server-side.
+        if (priced.BannerDetail is { } banner)
+        {
+            item.BannerDetail = new OrderItemBannerDetail(GuidGenerator.Create(), item.Id)
+            {
+                SizeMode             = banner.SizeMode,
+                SizePresetId         = banner.SizePresetId,
+                SizeLabel            = banner.SizeLabel,
+                Width                = banner.Width,
+                Height               = banner.Height,
+                Unit                 = banner.Unit,
+                AreaSquareMetres     = banner.AreaSquareMetres,
+                Material             = banner.Material,
+                MaterialDisplayName  = banner.MaterialDisplayName,
+                FinishingEyelets     = banner.FinishingEyelets,
+                FinishingHemming     = banner.FinishingHemming,
+                FinishingPolePocket  = banner.FinishingPolePocket,
+                FinishingOther       = banner.FinishingOther,
+                StandIncluded        = banner.StandIncluded,
+                StandReplacementOnly = banner.StandReplacementOnly,
+                Notes                = banner.Notes,
+            };
+        }
+
         foreach (var print in priced.Prints)
         {
             item.AddPrint(
@@ -921,6 +979,8 @@ public class OrderAppService : ApplicationService, IOrderAppService
         return await query
             .Include(o => o.Items)
             .ThenInclude(i => i.Prints)
+            .Include(o => o.Items)
+            .ThenInclude(i => i.BannerDetail)
             .FirstOrDefaultAsync(o => o.Id == id)
             ?? throw new Volo.Abp.Domain.Entities.EntityNotFoundException(typeof(Order), id);
     }
@@ -1012,7 +1072,8 @@ public class OrderAppService : ApplicationService, IOrderAppService
                 UploadedAssetId: itemDto.UploadedAssetId,
                 UploadedAssetUrl: itemDto.UploadedAssetUrl,
                 DesignNote: itemDto.DesignNote,
-                ConfigurationJson: itemDto.ConfigurationJson));
+                ConfigurationJson: itemDto.ConfigurationJson,
+                BannerDetail: itemDto.BannerDetail));
         }
 
         return draft;

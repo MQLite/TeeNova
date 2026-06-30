@@ -9,6 +9,7 @@ public class OrderEntityTypeConfiguration :
     IEntityTypeConfiguration<Order>,
     IEntityTypeConfiguration<OrderItem>,
     IEntityTypeConfiguration<OrderItemPrint>,
+    IEntityTypeConfiguration<OrderItemBannerDetail>,
     IEntityTypeConfiguration<OrderTimelineEntry>,
     IEntityTypeConfiguration<OrderPriceAdjustment>
 {
@@ -142,6 +143,46 @@ public class OrderEntityTypeConfiguration :
             .WithOne()
             .HasForeignKey(p => p.OrderItemId)
             .OnDelete(DeleteBehavior.Cascade);
+
+        // One-to-one Banner configuration snapshot (Jira 9511). Present only for Banner items;
+        // cascade-deleted with the item. FK lives on the dependent (OrderItemBannerDetail.OrderItemId).
+        builder.HasOne(i => i.BannerDetail)
+            .WithOne()
+            .HasForeignKey<OrderItemBannerDetail>(d => d.OrderItemId)
+            .OnDelete(DeleteBehavior.Cascade);
+    }
+
+    public void Configure(EntityTypeBuilder<OrderItemBannerDetail> builder)
+    {
+        builder.ToTable("OrderItemBannerDetails");
+
+        // Enum-backed columns stored as strings, consistent with the rest of the project.
+        builder.Property(d => d.SizeMode)
+            .HasConversion<string>()
+            .IsRequired()
+            .HasMaxLength(32);
+
+        builder.Property(d => d.Unit)
+            .HasConversion<string>()
+            .HasMaxLength(32)
+            .IsRequired(false);
+
+        builder.Property(d => d.Material)
+            .HasConversion<string>()
+            .IsRequired()
+            .HasMaxLength(32);
+
+        builder.Property(d => d.Width).HasColumnType("decimal(18,4)");
+        builder.Property(d => d.Height).HasColumnType("decimal(18,4)");
+        builder.Property(d => d.AreaSquareMetres).HasColumnType("decimal(18,4)");
+
+        builder.Property(d => d.SizeLabel).HasMaxLength(256);
+        builder.Property(d => d.MaterialDisplayName).HasMaxLength(128);
+        builder.Property(d => d.FinishingOther).HasMaxLength(512);
+        builder.Property(d => d.Notes).HasMaxLength(2000);
+
+        // One-to-one: a unique index on the FK enforces at most one detail per order item.
+        builder.HasIndex(d => d.OrderItemId).IsUnique();
     }
 
     public void Configure(EntityTypeBuilder<OrderItemPrint> builder)
