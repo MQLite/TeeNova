@@ -1,6 +1,7 @@
 import { apiClient, type ApiClient } from '@/lib/api-client'
 import type {
   AdjustOrderPriceInput,
+  BannerDetailInput,
   CreateOnlinePaymentSessionInput,
   DeliveryMethod,
   OnlinePaymentSession,
@@ -31,8 +32,14 @@ export interface CreateOrderItemPayload {
   uploadedAssetId?: string
   uploadedAssetUrl?: string
   designNote?: string
-  /** Reserved non-garment configuration (Banner). Ignored for Garment/Badge MVP. */
+  /** Reserved non-garment configuration (legacy; superseded by {@link bannerDetail}). */
   configurationJson?: string
+  /**
+   * Banner configuration (Jira 9517). Required for a FixedSize Banner item — carries `sizeMode='Preset'`
+   * + the selected `sizePresetId` plus non-priced material/finishing/stand/notes. The backend prices the
+   * line from the resolved option (unit × quantity) and snapshots trusted size values. No price fields.
+   */
+  bannerDetail?: BannerDetailInput
   prints?: CreateOrderItemPrintPayload[]
 }
 
@@ -117,7 +124,7 @@ export function makeOrdersApi(client: ApiClient) {
       orderId: string,
       input: CreateOnlinePaymentSessionInput,
     ): Promise<OnlinePaymentSession> {
-      return client.post(`/api/app/order/${orderId}/online-payment-session`, input)
+      return client.post(`/api/orders/${orderId}/online-payment-session`, input)
     },
 
     updatePrintDesign(

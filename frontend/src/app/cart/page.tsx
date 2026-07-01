@@ -3,6 +3,7 @@
 import Link from 'next/link'
 import { useCartStore } from '@/features/cart/cart-store'
 import { tierHint, useCartPricing } from '@/features/cart/useCartPricing'
+import { BannerDetailSummary } from '@/components/products/BannerDetailSummary'
 import type { CartItem } from '@/types'
 
 function getPrintSummary(item: CartItem) {
@@ -67,7 +68,10 @@ export default function CartPage() {
               const groupKey = groupKeyByItemKey[item.cartItemKey]
               const groupQuantity = (groupKey ? groupTotals[groupKey] : undefined) ?? item.quantity
               const hint = tierHint(linePricing, groupQuantity)
+              const isFixedSizeBanner = item.kind === 'Banner' && item.pricingModel === 'FixedSize'
               const isBadge = item.kind === 'Badge'
+              // Badge and FixedSize Banner both price as a single unit × quantity with item-level design.
+              const isSimpleUnit = isBadge || isFixedSizeBanner
               return (
               <div key={item.cartItemKey} className="card overflow-hidden">
                 <div className="flex gap-4 p-5">
@@ -92,7 +96,24 @@ export default function CartPage() {
                         <h3 className="text-base text-black" style={{ fontWeight: 480, letterSpacing: '-0.14px' }}>
                           {item.productName}
                         </h3>
-                        {isBadge ? (
+                        {isFixedSizeBanner ? (
+                          <>
+                            <p className="mt-0.5 font-mono text-[10px] uppercase tracking-[0.54px] text-black/45">
+                              Banner · Fixed size · {item.quantity} pcs
+                            </p>
+                            {item.bannerDetail && (
+                              <BannerDetailSummary detail={item.bannerDetail} className="mt-2" />
+                            )}
+                            {(getUploadedDesignUrl(item) || item.designNote) && (
+                              <div className="mt-2 flex flex-wrap gap-1">
+                                <span className="inline-flex flex-col rounded-lg border border-black/[0.08] px-2 py-1 text-[10px] text-black/55">
+                                  {getUploadedDesignUrl(item) && <span className="text-green-600">Design uploaded</span>}
+                                  {item.designNote && <span className="normal-case tracking-normal text-black/45">{item.designNote}</span>}
+                                </span>
+                              </div>
+                            )}
+                          </>
+                        ) : isBadge ? (
                           <>
                             <p className="mt-0.5 font-mono text-[10px] uppercase tracking-[0.54px] text-black/45">
                               Badge · {item.quantity} pcs
@@ -158,14 +179,14 @@ export default function CartPage() {
                       </span>
                     </div>
 
-                    {/* Badge price breakdown: a single quantity-tier unit price (Jira 9504). */}
-                    {isBadge && linePricing && !lineError && (
+                    {/* Badge / FixedSize Banner price breakdown: a single backend unit price (Jira 9504/9517). */}
+                    {isSimpleUnit && linePricing && !lineError && (
                       <div className="mt-3 space-y-1 rounded-lg bg-black/[0.02] px-3 py-2 text-xs text-black/60">
                         <div className="flex items-center justify-between" style={{ letterSpacing: '-0.14px' }}>
                           <span>Unit price</span>
                           <span className="text-black/75">${linePricing.unitPrice.toFixed(2)}</span>
                         </div>
-                        {linePricing.appliedTierMinQuantity != null && (
+                        {isBadge && linePricing.appliedTierMinQuantity != null && (
                           <div className="flex items-center justify-between" style={{ letterSpacing: '-0.14px' }}>
                             <span>Quantity tier</span>
                             <span className="text-black/75">{linePricing.appliedTierMinQuantity}+</span>
@@ -175,7 +196,7 @@ export default function CartPage() {
                     )}
 
                     {/* Print-only price breakdown: fixed garment + summed print prices (Jira 9207) */}
-                    {!isBadge && linePricing && !lineError && (
+                    {!isSimpleUnit && linePricing && !lineError && (
                       <div className="mt-3 space-y-1 rounded-lg bg-black/[0.02] px-3 py-2 text-xs text-black/60">
                         <div className="flex items-center justify-between" style={{ letterSpacing: '-0.14px' }}>
                           <span>Garment</span>
@@ -199,7 +220,7 @@ export default function CartPage() {
                     )}
 
                     {/* Print volume tier note (garment only) */}
-                    {!isBadge && linePricing && !lineError && linePricing.pricingMode === 'Tiered' && (
+                    {!isSimpleUnit && linePricing && !lineError && linePricing.pricingMode === 'Tiered' && (
                       <div className="mt-2 flex flex-wrap items-center gap-1.5">
                         {linePricing.appliedTierMinQuantity != null && (
                           <span className="rounded-full bg-black/[0.05] px-2 py-0.5 text-[10px] uppercase tracking-[0.54px] text-black/55">

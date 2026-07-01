@@ -9,7 +9,8 @@ public class ProductEntityTypeConfiguration :
     IEntityTypeConfiguration<ProductVariant>,
     IEntityTypeConfiguration<ProductImage>,
     IEntityTypeConfiguration<ProductPriceTier>,
-    IEntityTypeConfiguration<ProductQuantityPriceTier>
+    IEntityTypeConfiguration<ProductQuantityPriceTier>,
+    IEntityTypeConfiguration<ProductFixedSizePriceOption>
 {
     public void Configure(EntityTypeBuilder<Product> builder)
     {
@@ -74,6 +75,12 @@ public class ProductEntityTypeConfiguration :
         builder.HasMany(p => p.QuantityPriceTiers)
             .WithOne()
             .HasForeignKey(t => t.ProductId)
+            .OnDelete(DeleteBehavior.Cascade);
+
+        // Banner fixed-size price options (Jira 9516). Product-owned; cascade with the product.
+        builder.HasMany(p => p.FixedSizePriceOptions)
+            .WithOne()
+            .HasForeignKey(o => o.ProductId)
             .OnDelete(DeleteBehavior.Cascade);
 
         // Print-pricing group (Jira 9203). Plain nullable column with an index, no FK navigation;
@@ -158,5 +165,37 @@ public class ProductEntityTypeConfiguration :
         // Natural key: one unit price per (product, quantity break). No variant / print-size scope.
         builder.HasIndex(t => new { t.ProductId, t.MinQuantity })
             .IsUnique();
+    }
+
+    public void Configure(EntityTypeBuilder<ProductFixedSizePriceOption> builder)
+    {
+        builder.ToTable("ProductFixedSizePriceOptions");
+
+        builder.Property(o => o.Label)
+            .IsRequired()
+            .HasMaxLength(256);
+
+        // Dimensions match the OrderItemBannerDetail snapshot precision (decimal(18,4)) so option
+        // values copy losslessly into the order snapshot.
+        builder.Property(o => o.Width).HasColumnType("decimal(18,4)");
+        builder.Property(o => o.Height).HasColumnType("decimal(18,4)");
+
+        // Unit stored as string (mirrors OrderItemBannerDetail.Unit / other enums) for DB readability.
+        builder.Property(o => o.Unit)
+            .HasConversion<string>()
+            .IsRequired()
+            .HasMaxLength(32);
+
+        // Money precision (2 decimals), consistent with the other price-tier tables; flows losslessly
+        // into the decimal(18,4) OrderItem.UnitPrice snapshot.
+        builder.Property(o => o.UnitPrice)
+            .HasColumnType("decimal(18,2)");
+
+        builder.HasIndex(o => o.ProductId);
+
+        // Common read order is (product, sort order); a non-unique composite index supports it.
+        // No uniqueness on (ProductId, Label/dimensions) — duplicate sizes are an admin concern, and the
+        // Badge/print-config tables only enforce uniqueness on true natural keys, which this table lacks.
+        builder.HasIndex(o => new { o.ProductId, o.SortOrder });
     }
 }

@@ -76,6 +76,14 @@ public class Product : FullAuditedAggregateRoot<Guid>
     /// </summary>
     public ICollection<ProductQuantityPriceTier> QuantityPriceTiers { get; set; } = new List<ProductQuantityPriceTier>();
 
+    /// <summary>
+    /// Banner fixed-size price options (Jira 9516). Empty for non-Banner / non-FixedSize products.
+    /// Written exclusively through the dedicated fixed-size-price-options endpoint so normal
+    /// product/variant edits never clobber them (mirrors <see cref="QuantityPriceTiers"/> single-writer
+    /// discipline). Each active option is a customer-selectable standard size priced as unit × quantity.
+    /// </summary>
+    public ICollection<ProductFixedSizePriceOption> FixedSizePriceOptions { get; set; } = new List<ProductFixedSizePriceOption>();
+
     // Future: public ICollection<TemplateLayout> SupportedLayouts { get; set; }
 
     protected Product() { }

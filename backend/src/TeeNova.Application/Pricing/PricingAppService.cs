@@ -23,6 +23,7 @@ public class PricingAppService : ApplicationService, IPricingAppService
     private readonly IRepository<Catalog.PrintPricingGroup, Guid>     _printPricingGroupRepository;
     private readonly IRepository<Catalog.ProductPrintPriceTier, Guid> _printPriceTierRepository;
     private readonly IRepository<Catalog.ProductQuantityPriceTier, Guid> _quantityPriceTierRepository;
+    private readonly IRepository<Catalog.ProductFixedSizePriceOption, Guid> _fixedSizeOptionRepository;
     private readonly IRepository<PrintArea, Guid>                     _printAreaRepository;
     private readonly IRepository<PrintSize, Guid>                     _printSizeRepository;
     private readonly PrintConfigValidator                             _printConfigValidator;
@@ -33,6 +34,7 @@ public class PricingAppService : ApplicationService, IPricingAppService
         IRepository<Catalog.PrintPricingGroup, Guid>     printPricingGroupRepository,
         IRepository<Catalog.ProductPrintPriceTier, Guid> printPriceTierRepository,
         IRepository<Catalog.ProductQuantityPriceTier, Guid> quantityPriceTierRepository,
+        IRepository<Catalog.ProductFixedSizePriceOption, Guid> fixedSizeOptionRepository,
         IRepository<PrintArea, Guid>                     printAreaRepository,
         IRepository<PrintSize, Guid>                     printSizeRepository,
         PrintConfigValidator                             printConfigValidator,
@@ -42,6 +44,7 @@ public class PricingAppService : ApplicationService, IPricingAppService
         _printPricingGroupRepository = printPricingGroupRepository;
         _printPriceTierRepository  = printPriceTierRepository;
         _quantityPriceTierRepository = quantityPriceTierRepository;
+        _fixedSizeOptionRepository = fixedSizeOptionRepository;
         _printAreaRepository       = printAreaRepository;
         _printSizeRepository       = printSizeRepository;
         _printConfigValidator      = printConfigValidator;
@@ -73,9 +76,72 @@ public class PricingAppService : ApplicationService, IPricingAppService
         {
             Catalog.PricingModel.GarmentPrint     => await CalculateGarmentAsync(product, input),
             Catalog.PricingModel.QuantityTierUnit => await CalculateQuantityTierUnitAsync(product, input),
+            Catalog.PricingModel.FixedSize        => await CalculateFixedSizeAsync(product, input),
+            // CustomQuoteOnly (Banner enquiry-first) and AreaBased have no automatic storefront quote.
             _ => throw new BusinessException("TeeNova:Pricing:QuoteNotSupportedForPricingModel")
                     .WithData("ProductId", product.Id)
                     .WithData("PricingModel", product.PricingModel),
+        };
+    }
+
+    /// <summary>
+    /// Banner FixedSize quote (Jira 9516): resolves the selected <see cref="Catalog.ProductFixedSizePriceOption"/>
+    /// unit price (no variant, no prints). The client sends only the selected option id via
+    /// <c>BannerDetail.SizePresetId</c>; the server ignores any client dimensions and prices as
+    /// unit × quantity. Enforces the product minimum quantity and that the option is active + belongs to
+    /// the product. Design upload is not needed to quote (mirrors the Badge quote).
+    /// </summary>
+    private async Task<PriceCalculationResponseDto> CalculateFixedSizeAsync(
+        Catalog.Product product, PriceCalculationRequestDto input)
+    {
+        if (input.Quantity < product.MinimumQuantity)
+            throw new BusinessException("TeeNova:Pricing:BelowMinimumQuantity")
+                .WithData("ProductId", product.Id)
+                .WithData("MinimumQuantity", product.MinimumQuantity)
+                .WithData("Quantity", input.Quantity);
+
+        var presetId = input.BannerDetail?.SizePresetId
+            ?? throw new BusinessException("TeeNova:Pricing:FixedSizeOptionRequired")
+                .WithData("ProductId", product.Id);
+
+        var option = await _fixedSizeOptionRepository.FindAsync(presetId)
+            ?? throw new BusinessException("TeeNova:Pricing:FixedSizeOptionNotFound")
+                .WithData("ProductId", product.Id)
+                .WithData("SizePresetId", presetId);
+
+        if (option.ProductId != product.Id)
+            throw new BusinessException("TeeNova:Pricing:FixedSizeOptionProductMismatch")
+                .WithData("ProductId", product.Id)
+                .WithData("SizePresetId", presetId);
+
+        if (!option.IsActive)
+            throw new BusinessException("TeeNova:Pricing:FixedSizeOptionInactive")
+                .WithData("ProductId", product.Id)
+                .WithData("SizePresetId", presetId);
+
+        var unit = option.UnitPrice;
+
+        Logger.LogInformation(
+            "[PricingQuote] ProductId={ProductId} PricingModel=FixedSize SizePresetId={SizePresetId} Quantity={Quantity} UnitPrice={UnitPrice} LineTotal={LineTotal}",
+            product.Id, presetId, input.Quantity, unit, unit * input.Quantity);
+
+        return new PriceCalculationResponseDto
+        {
+            ProductBasePrice            = 0m,
+            VariantAdjustment           = 0m,
+            PrintAddOns                 = new(),
+            GarmentUnitPrice            = unit,  // whole unit price (no garment/print split for Banner)
+            PrintUnitPrice              = 0m,
+            UnitPrice                   = unit,
+            Quantity                    = input.Quantity,
+            LineTotal                   = unit * input.Quantity,
+            Currency                    = "NZD",
+            PricingMode                 = "FixedSize",
+            AppliedTierMinQuantity      = null,
+            AppliedTierUnitPrice        = null,
+            NextTierMinQuantity         = null,
+            NextTierUnitPrice           = null,
+            IncludedStandardPrintAmount = 0m,
         };
     }
 

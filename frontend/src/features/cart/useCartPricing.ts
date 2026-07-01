@@ -155,6 +155,7 @@ export function useCartPricing(items: CartItem[]): CartPricingResult {
           v: i.productVariantId,
           q: i.quantity,
           tq: groupTotals[groupKeyByItemKey[i.cartItemKey]] ?? i.quantity,
+          sp: i.bannerDetail?.sizePresetId ?? null,
           prints: (i.prints ?? []).map((pr) => `${pr.printAreaId}:${pr.printSizeId}`).sort(),
         })),
       ),
@@ -179,6 +180,9 @@ export function useCartPricing(items: CartItem[]): CartPricingResult {
       // Snapshot the lines for this run so indexes line up with results.
       const lines = items.map((item) => {
         const groupKey = groupKeyByItemKey[item.cartItemKey]
+        // FixedSize Banner lines quote from the selected size option: no variant, no prints, but a
+        // bannerDetail carrying the sizePresetId (Jira 9517). The backend reads only that id for price.
+        const isFixedSizeBanner = item.kind === 'Banner' && item.pricingModel === 'FixedSize'
         return {
           key: item.cartItemKey,
           request: {
@@ -191,6 +195,7 @@ export function useCartPricing(items: CartItem[]): CartPricingResult {
               printAreaId: pr.printAreaId,
               printSizeId: pr.printSizeId,
             })),
+            ...(isFixedSizeBanner && item.bannerDetail ? { bannerDetail: item.bannerDetail } : {}),
           },
         }
       })

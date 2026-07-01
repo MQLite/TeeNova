@@ -18,9 +18,10 @@ public class TeeNovaApplicationAutoMapperProfile : Profile
     {
         // Catalog
         CreateMap<Product, ProductDto>()
-            .ForMember(d => d.PrintPriceTiers, o => o.Ignore())       // group-scoped; populated in app service
-            .ForMember(d => d.PrintConfigOptions, o => o.Ignore())    // populated in app service
-            .ForMember(d => d.QuantityPriceTiers, o => o.Ignore());   // populated in app service (Jira 9503)
+            .ForMember(d => d.PrintPriceTiers, o => o.Ignore())          // group-scoped; populated in app service
+            .ForMember(d => d.PrintConfigOptions, o => o.Ignore())       // populated in app service
+            .ForMember(d => d.QuantityPriceTiers, o => o.Ignore())       // populated in app service (Jira 9503)
+            .ForMember(d => d.FixedSizePriceOptions, o => o.Ignore());   // populated in app service (Jira 9516)
         CreateMap<Product, ProductListItemDto>()
             .ForMember(d => d.VariantCount, o => o.MapFrom(s => s.Variants.Count))
             .ForMember(d => d.ThumbnailUrl,
@@ -39,6 +40,7 @@ public class TeeNovaApplicationAutoMapperProfile : Profile
         CreateMap<ProductImage, ProductImageDto>();
         CreateMap<ProductPriceTier, ProductPriceTierDto>();
         CreateMap<ProductQuantityPriceTier, ProductQuantityPriceTierDto>();
+        CreateMap<ProductFixedSizePriceOption, ProductFixedSizePriceOptionDto>();
         CreateMap<PrintPricingGroup, PrintPricingGroupDto>();
         CreateMap<ProductPrintPriceTier, ProductPrintPriceTierDto>();
         CreateMap<ProductPrintConfigOption, ProductPrintConfigOptionDto>();

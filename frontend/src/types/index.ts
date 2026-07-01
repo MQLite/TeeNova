@@ -255,6 +255,49 @@ export interface SetProductQuantityPriceTiersPayload {
   tiers: CreateUpdateProductQuantityPriceTier[]
 }
 
+// Banner fixed-size price options (Jira 9516/9517)
+
+/**
+ * A Banner fixed-size price option (Jira 9516): a catalogued standard size (e.g. "Pull-up 850×2000 mm")
+ * with a known unit price. The customer selects one active option; the line prices authoritatively as
+ * UnitPrice × quantity. Written only via the dedicated fixed-size-price-options endpoint (single-writer);
+ * ordinary product save never touches these. Active rows only on the public product GET.
+ */
+export interface ProductFixedSizePriceOption {
+  id: string
+  productId: string
+  label: string
+  width: number
+  height: number
+  unit: BannerDimensionUnit
+  unitPrice: number
+  isActive: boolean
+  sortOrder: number
+}
+
+/** One option row in a {@link SetProductFixedSizePriceOptionsPayload} replace payload. */
+export interface CreateUpdateProductFixedSizePriceOption {
+  /** Existing option id (ignored — the set endpoint replaces the whole set). Optional. */
+  id?: string | null
+  label: string
+  width: number
+  height: number
+  unit: BannerDimensionUnit
+  unitPrice: number
+  isActive: boolean
+  sortOrder: number
+}
+
+/**
+ * Replace-the-whole-set payload for a product's Banner fixed-size price options (single-writer
+ * endpoint, Jira 9516). Allowed only for Banner + FixedSize products. Empty list clears the product's
+ * options (no selectable fixed-size price until configured again). No resolved price is ever sent
+ * beyond the per-option unit price.
+ */
+export interface SetProductFixedSizePriceOptionsPayload {
+  options: CreateUpdateProductFixedSizePriceOption[]
+}
+
 export interface Product {
   id: string
   name: string
@@ -286,6 +329,12 @@ export interface Product {
    * the public GET; written via the dedicated quantity-price-tiers endpoint.
    */
   quantityPriceTiers: ProductQuantityPriceTier[]
+  /**
+   * Banner fixed-size price options (Jira 9516/9517). Empty for non-Banner / non-FixedSize products.
+   * Active rows only on the public GET (customer-selectable standard sizes); written via the dedicated
+   * fixed-size-price-options endpoint. Each option prices its line as unit × quantity.
+   */
+  fixedSizePriceOptions: ProductFixedSizePriceOption[]
 }
 
 // Customization
@@ -358,6 +407,12 @@ export interface PriceCalculationRequest {
    */
   tierQuantity?: number
   prints: PriceCalculationPrintItem[]
+  /**
+   * Banner configuration (Jira 9516/9517). Required for a FixedSize Banner live quote — the server
+   * reads only `sizePresetId` (the selected fixed-size option) for pricing; all other size fields are
+   * ignored. Omitted for Garment/Badge quotes. Carries no price fields (backend is authoritative).
+   */
+  bannerDetail?: BannerDetailInput
 }
 
 export type PricingMode = 'Additive' | 'Tiered'
@@ -885,8 +940,14 @@ export interface CartItem {
   uploadedAssetId?: string
   uploadedAssetUrl?: string
   designNote?: string
-  /** Reserved non-garment configuration (Banner). Ignored for Garment/Badge MVP. */
+  /** Reserved non-garment configuration (legacy; superseded by {@link bannerDetail}). */
   configurationJson?: string
+  /**
+   * Banner configuration (Jira 9517). Non-null only for FixedSize Banner lines: carries
+   * `sizeMode='Preset'` + the selected `sizePresetId` plus the non-priced material/finishing/stand/notes.
+   * Sent to the backend quote and create-order (never any price). Undefined for Garment/Badge lines.
+   */
+  bannerDetail?: BannerDetailInput
   prints?: CartItemPrint[]
 }
 

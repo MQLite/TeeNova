@@ -62,6 +62,13 @@ public class ProductDto
     /// the public GET; written via the dedicated quantity-price-tiers endpoint.
     /// </summary>
     public List<ProductQuantityPriceTierDto> QuantityPriceTiers { get; set; } = new();
+
+    /// <summary>
+    /// Banner fixed-size price options (Jira 9516). Empty for non-Banner / non-FixedSize products.
+    /// Active rows only on the public GET (customer-selectable standard sizes); written via the
+    /// dedicated fixed-size-price-options endpoint. Each option prices its line as unit × quantity.
+    /// </summary>
+    public List<ProductFixedSizePriceOptionDto> FixedSizePriceOptions { get; set; } = new();
 }
 
 public class ProductVariantDto

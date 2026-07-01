@@ -10,10 +10,12 @@ import type {
   ProductImage,
   ProductKind,
   ProductListItem,
+  ProductFixedSizePriceOption,
   ProductPrintConfigOption,
   ProductPrintPriceTier,
   ProductQuantityPriceTier,
   ProductVariant,
+  SetProductFixedSizePriceOptionsPayload,
   SetProductPrintConfigOptionsPayload,
   SetProductPrintPriceTiersPayload,
   SetProductPriceTiersPayload,
@@ -182,6 +184,25 @@ export function makeCatalogApi(client: ApiClient) {
      */
     setQuantityPriceTiers(productId: string, payload: SetProductQuantityPriceTiersPayload): Promise<ProductQuantityPriceTier[]> {
       return client.put(`/api/catalog/products/${productId}/quantity-price-tiers`, payload)
+    },
+
+    // ── Banner fixed-size price options (Jira 9516/9517) ───────────────────────
+    // Dedicated single-writer endpoint: the ordinary product update never reads or writes these, so
+    // saving product fields can't clobber the options and vice versa. Writing is gated server-side to
+    // Banner + FixedSize products and to the Admin role. Call GET/PUT through the admin client in admin.
+
+    /** Reads a Banner product's fixed-size price options (admin GET includes inactive rows). */
+    getFixedSizePriceOptions(productId: string): Promise<ProductFixedSizePriceOption[]> {
+      return client.get(`/api/catalog/products/${productId}/fixed-size-price-options`)
+    },
+
+    /**
+     * Replaces a Banner product's full fixed-size option set (single-writer). Empty list clears the
+     * product's options (no selectable fixed-size price until configured again). Does not touch product
+     * scalar fields, variants, print pricing, or Badge tiers. Admin-only (backend enforced).
+     */
+    setFixedSizePriceOptions(productId: string, payload: SetProductFixedSizePriceOptionsPayload): Promise<ProductFixedSizePriceOption[]> {
+      return client.put(`/api/catalog/products/${productId}/fixed-size-price-options`, payload)
     },
 
     // ── Print pricing groups (Jira 9203) ──────────────────────────────────────

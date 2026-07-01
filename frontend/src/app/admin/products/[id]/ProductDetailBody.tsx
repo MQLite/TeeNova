@@ -5,6 +5,7 @@ import { ProductStatusToggle } from '@/components/admin/products/ProductStatusTo
 import { VariantSection } from '@/components/admin/products/VariantSection'
 import { ColorImageManager } from '@/components/admin/products/ColorImageManager'
 import { BadgeQuantityPricesSection } from '@/components/admin/products/BadgeQuantityPricesSection'
+import { FixedSizePriceOptionsSection } from '@/components/admin/products/FixedSizePriceOptionsSection'
 import type { Product } from '@/types'
 
 function getPriceRange(basePrice: number, adjustments: number[]): string {
@@ -45,6 +46,8 @@ export function ProductDetailBody({ product }: Props) {
 
   const adjustments = currentProduct.variants.map((v) => v.priceAdjustment)
   const isBadge = currentProduct.kind === 'Badge'
+  const isFixedSizeBanner =
+    currentProduct.kind === 'Banner' && currentProduct.pricingModel === 'FixedSize'
 
   return (
     <>
@@ -180,10 +183,16 @@ export function ProductDetailBody({ product }: Props) {
         </div>
       </div>
 
-      {/* Badge sells by quantity-tier unit price with no color/size variants (Jira 9504): show the
-          dedicated tier editor in place of the garment variant matrix. */}
+      {/* Badge sells by quantity-tier unit price and FixedSize Banner by preset size options — neither
+          uses color/size variants (Jira 9504/9517): show the dedicated editor in place of the garment
+          variant matrix. Other Banner models (CustomQuoteOnly) keep the existing variant section. */}
       {isBadge ? (
         <BadgeQuantityPricesSection
+          productId={currentProduct.id}
+          minimumQuantity={currentProduct.minimumQuantity}
+        />
+      ) : isFixedSizeBanner ? (
+        <FixedSizePriceOptionsSection
           productId={currentProduct.id}
           minimumQuantity={currentProduct.minimumQuantity}
         />

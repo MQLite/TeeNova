@@ -13,6 +13,7 @@ import { PrintSizeSelector } from '@/components/products/PrintSizeSelector'
 import { PrintPriceTierTable } from '@/components/products/PrintPriceTierTable'
 import { BadgeProductDetail } from '@/components/products/BadgeProductDetail'
 import { BannerProductDetail } from '@/components/products/BannerProductDetail'
+import { FixedSizeBannerProductDetail } from '@/components/products/FixedSizeBannerProductDetail'
 import { ProductImageGallery } from '@/components/products/ProductImageGallery'
 import { ProductDetailsSection } from '@/components/products/ProductDetailsSection'
 import { ProductHeroPrice } from '@/components/products/ProductHeroPrice'
@@ -763,10 +764,27 @@ export default function ProductDetailPage() {
     return <BadgeProductDetail product={product} />
   }
 
-  // Banner is CustomQuoteOnly / enquiry-first (Jira 9512): its own quote-request UX, no variant/print
-  // controls, no live price, no add-to-cart. It submits a Banner enquiry instead of paid checkout.
+  // Banner dispatch by pricing model (Jira 9512/9517). CustomQuoteOnly = enquiry-first (no live price,
+  // no cart); FixedSize = automatically priced from preset size options (live quote + cart + checkout);
+  // AreaBased is not implemented yet — show a request-a-quote message rather than a broken price flow.
   if (product.kind === 'Banner') {
-    return <BannerProductDetail product={product} />
+    if (product.pricingModel === 'FixedSize') {
+      return <FixedSizeBannerProductDetail product={product} />
+    }
+    if (product.pricingModel === 'CustomQuoteOnly') {
+      return <BannerProductDetail product={product} />
+    }
+    return (
+      <div className="flex min-h-[60vh] flex-col items-center justify-center gap-4 px-4 text-center">
+        <h2 className="text-lg text-black" style={{ fontWeight: 540, letterSpacing: '-0.26px' }}>
+          {product.name}
+        </h2>
+        <p className="max-w-md text-sm text-black/55" style={{ letterSpacing: '-0.14px' }}>
+          This banner isn’t available to price online yet. Please contact the shop for a quote.
+        </p>
+        <Link href="/products" className="btn-glass btn-sm">Back to Products</Link>
+      </div>
+    )
   }
 
   const activeImage =

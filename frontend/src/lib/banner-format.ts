@@ -1,6 +1,29 @@
-import type { BannerDetail, BannerDimensionUnit, BannerMaterial } from '@/types'
+import type { BannerDimensionUnit, BannerMaterial, BannerSizeMode } from '@/types'
 
 /** Mirrors the backend BannerDetailFormatter (Jira 9514) so Banner detail reads identically everywhere. */
+
+/**
+ * Structural shape shared by the order snapshot (`BannerDetail`) and the config input (`BannerDetailInput`,
+ * Jira 9517), so the same summary helpers format cart lines and converted orders identically.
+ * `areaSquareMetres` is only present on the server snapshot.
+ */
+export interface BannerDetailLike {
+  sizeMode: BannerSizeMode
+  sizeLabel?: string | null
+  width?: number | null
+  height?: number | null
+  unit?: BannerDimensionUnit | null
+  areaSquareMetres?: number | null
+  material: BannerMaterial
+  materialDisplayName?: string | null
+  finishingEyelets: boolean
+  finishingHemming: boolean
+  finishingPolePocket: boolean
+  finishingOther?: string | null
+  standIncluded: boolean
+  standReplacementOnly: boolean
+  notes?: string | null
+}
 
 const MATERIAL_LABEL: Record<BannerMaterial, string> = {
   PullUp: 'Pull-up', Pvc: 'PVC', Mesh: 'Mesh', Fabric: 'Fabric', Other: 'Other',
@@ -16,7 +39,7 @@ export function unitLabel(unit?: BannerDimensionUnit | null): string {
 }
 
 /** "850×2000 mm (1.7 m²)" for custom sizes, the preset label otherwise, or "—". */
-export function bannerSizeSummary(d: BannerDetail): string {
+export function bannerSizeSummary(d: BannerDetailLike): string {
   if (d.sizeMode === 'Custom' && d.width && d.height && d.width > 0 && d.height > 0) {
     const u = unitLabel(d.unit)
     const area = d.areaSquareMetres && d.areaSquareMetres > 0 ? ` (${d.areaSquareMetres} m²)` : ''
@@ -26,13 +49,13 @@ export function bannerSizeSummary(d: BannerDetail): string {
 }
 
 /** Friendly material name; the free-text name when material is Other. */
-export function bannerMaterialSummary(d: BannerDetail): string {
+export function bannerMaterialSummary(d: BannerDetailLike): string {
   if (d.material === 'Other' && d.materialDisplayName?.trim()) return d.materialDisplayName.trim()
   return MATERIAL_LABEL[d.material] ?? d.material
 }
 
 /** Comma-joined finishing/stand options, or "None". */
-export function bannerFinishingSummary(d: BannerDetail): string {
+export function bannerFinishingSummary(d: BannerDetailLike): string {
   const parts: string[] = []
   if (d.finishingEyelets) parts.push('Eyelets')
   if (d.finishingHemming) parts.push('Hemming')

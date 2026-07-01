@@ -130,6 +130,61 @@ public class BannerDetailValidator : ITransientDependency
             Notes:                notes);
     }
 
+    /// <summary>
+    /// Normalizes Banner input for a FixedSize preset selection (Jira 9516). The size is authoritative
+    /// from the resolved <c>ProductFixedSizePriceOption</c> — the client-supplied size mode / dimensions /
+    /// unit / label are ignored for pricing. Only the non-priced Banner fields (material, finishing,
+    /// stand, notes) are taken from the client and validated. The area is server-computed from the
+    /// trusted preset dimensions. The caller (FixedSize strategy) has already resolved and authorized the
+    /// option (belongs to product + active).
+    /// </summary>
+    public BannerDetailSnapshot NormalizeForFixedSizePreset(
+        BannerDetailInputDto? input,
+        Guid presetId,
+        string presetLabel,
+        decimal presetWidth,
+        decimal presetHeight,
+        BannerDimensionUnit presetUnit)
+    {
+        if (input == null)
+            throw new BusinessException("TeeNova:Banner:BannerDetailRequired");
+
+        if (!Enum.IsDefined(typeof(BannerMaterial), input.Material))
+            throw new BusinessException("TeeNova:Banner:BannerMaterialRequired")
+                .WithData("Material", input.Material);
+
+        var materialDisplayName = Clean(input.MaterialDisplayName);
+        if (input.Material == BannerMaterial.Other && materialDisplayName == null)
+            throw new BusinessException("TeeNova:Banner:BannerMaterialRequired")
+                .WithData("Reason", "MaterialDisplayName is required when Material is Other");
+
+        var notes = Clean(input.Notes);
+        if (notes is { Length: > MaxNotesLength })
+            throw new BusinessException("TeeNova:Banner:BannerNotesTooLong")
+                .WithData("MaxLength", MaxNotesLength);
+
+        // Trusted server dimensions from the resolved option; area computed server-side, never client.
+        var area = ComputeAreaSquareMetres(presetWidth, presetHeight, presetUnit);
+
+        return new BannerDetailSnapshot(
+            SizeMode:             BannerSizeMode.Preset,
+            SizePresetId:         presetId,
+            SizeLabel:            Clean(presetLabel),
+            Width:                presetWidth,
+            Height:               presetHeight,
+            Unit:                 presetUnit,
+            AreaSquareMetres:     area,
+            Material:             input.Material,
+            MaterialDisplayName:  materialDisplayName,
+            FinishingEyelets:     input.FinishingEyelets,
+            FinishingHemming:     input.FinishingHemming,
+            FinishingPolePocket:  input.FinishingPolePocket,
+            FinishingOther:       Clean(input.FinishingOther),
+            StandIncluded:        input.StandIncluded,
+            StandReplacementOnly: input.StandReplacementOnly,
+            Notes:                notes);
+    }
+
     /// <summary>Computes area in m² when width, height and unit are all present; otherwise null.</summary>
     public static decimal? ComputeAreaSquareMetres(decimal? width, decimal? height, BannerDimensionUnit? unit)
     {

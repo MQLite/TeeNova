@@ -28,6 +28,16 @@ const FRIENDLY_BY_CODE: Record<string, string> = {
   // Checkout guards (9511)
   QuoteOnlyProductCannotCheckout: 'Banners are quote-only. Submit a quote request instead of paying online.',
   CustomQuoteOnlyRequiresEnquiry: 'Banners are quote-only. Submit a quote request instead of paying online.',
+  // FixedSize Banner pricing/quote/checkout (9516/9517)
+  FixedSizeOptionRequired: 'Please choose a fixed size before requesting a price.',
+  FixedSizeOptionNotFound: 'That size option is no longer available. Please refresh and choose another size.',
+  FixedSizeOptionInactive: 'That size option is no longer available. Please choose another size.',
+  FixedSizeOptionProductMismatch: 'That size option doesn’t belong to this product. Please refresh and try again.',
+  FixedSizeDoesNotSupportPrints: 'Fixed-size banners are priced by size only and don’t take print placements.',
+  BelowMinimumQuantity: 'The quantity is below this banner’s minimum order quantity. Increase it and try again.',
+  DesignRequired: 'Please upload your artwork before continuing.',
+  QuoteNotSupportedForPricingModel: 'This banner can’t be priced online yet. Please request a quote instead.',
+  UnsupportedPricingModel: 'This banner can’t be priced online yet. Please contact the shop for a quote.',
   // Admin conversion (9513)
   BannerQuoteRequestNotFound: 'This quote request could not be found. It may have been removed.',
   BannerQuoteRequestAlreadyConverted: 'This quote request has already been converted to an order.',

@@ -25,18 +25,28 @@ export interface ProductFormValues {
 const KIND_OPTIONS: { value: ProductKind; label: string; hint: string }[] = [
   { value: 'Garment', label: 'Garment',  hint: 'Color/size variants + print placements (the existing model).' },
   { value: 'Badge',   label: 'Badge',    hint: 'Quantity-tier unit pricing, item-level design, no variants/prints.' },
-  { value: 'Banner',  label: 'Banner',   hint: 'Quote-only: customers submit dimensions/material/finishing + design as a quote request. No online price/payment is taken.' },
+  { value: 'Banner',  label: 'Banner',   hint: 'Custom Quote (enquiry-first, no online price) or Fixed Size (auto-priced from preset size options, normal checkout). Choose the pricing model below.' },
   { value: 'Other',   label: 'Other',    hint: 'Any other category. Manual quote only for now.' },
 ]
 
 // Each kind selects its pricing model automatically (Jira 9504). The backend is authoritative; this is
-// purely UX so admins don't pair an unsupported model. Banner/Other map to CustomQuoteOnly (no auto price).
+// purely UX so admins don't pair an unsupported model. Banner defaults to CustomQuoteOnly but may also
+// use FixedSize (auto-priced, Jira 9517) — see BANNER_PRICING_MODELS. Other maps to CustomQuoteOnly.
 const PRICING_MODEL_FOR_KIND: Record<ProductKind, PricingModel> = {
   Garment: 'GarmentPrint',
   Badge:   'QuantityTierUnit',
   Banner:  'CustomQuoteOnly',
   Other:   'CustomQuoteOnly',
 }
+
+// Pricing models an admin may pick for a Banner product (Jira 9517). CustomQuoteOnly = enquiry-first
+// (no online price/payment); FixedSize = automatically priced from preset size options (paid checkout).
+// AreaBased is listed as not-yet-implemented so the option is visible but cannot be selected.
+const BANNER_PRICING_MODELS: { value: PricingModel; label: string; disabled?: boolean }[] = [
+  { value: 'CustomQuoteOnly', label: 'Custom Quote Only — enquiry-first, no online price' },
+  { value: 'FixedSize',       label: 'Fixed Size — auto-priced from preset size options' },
+  { value: 'AreaBased',       label: 'Area Based — not implemented yet', disabled: true },
+]
 
 const PRICING_MODEL_LABEL: Record<PricingModel, string> = {
   GarmentPrint:     'Garment + Print',
@@ -367,11 +377,18 @@ export function ProductForm({
           <p className="mt-1.5 text-xs text-black/50" style={{ letterSpacing: '-0.14px' }}>
             {KIND_OPTIONS.find((k) => k.value === values.kind)?.hint}
           </p>
-          {values.kind === 'Banner' && (
+          {values.kind === 'Banner' && values.pricingModel === 'CustomQuoteOnly' && (
             <p className="mt-2 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-2.5 text-xs text-amber-800" style={{ letterSpacing: '-0.14px' }}>
-              Banner is quote-only. Customers submit requirements (size, material, finishing) and a design;
-              no online price or payment is taken. You quote it manually from the enquiry afterwards. Set a
-              minimum quantity and turn on Design Upload if artwork is required.
+              Custom Quote banners are quote-only. Customers submit requirements (size, material, finishing)
+              and a design; no online price or payment is taken. You quote it manually from the enquiry
+              afterwards. Set a minimum quantity and turn on Design Upload if artwork is required.
+            </p>
+          )}
+          {values.kind === 'Banner' && values.pricingModel === 'FixedSize' && (
+            <p className="mt-2 rounded-2xl border border-black/[0.10] bg-black/[0.02] px-4 py-2.5 text-xs text-black/65" style={{ letterSpacing: '-0.14px' }}>
+              Fixed-size Banner products are automatically priced from preset size options. Save the product
+              first, then configure the fixed-size options (label, dimensions, unit price) from the product
+              detail page. Customers select one active size, get a live price, and can check out normally.
             </p>
           )}
           {values.kind === 'Other' && (
@@ -382,14 +399,28 @@ export function ProductForm({
           )}
         </div>
 
-        {/* Pricing model is auto-selected from kind; shown read-only so the pairing stays valid. */}
+        {/* Pricing model: auto-selected from kind for Garment/Badge/Other (read-only so the pairing stays
+            valid); Banner lets the admin choose Custom Quote vs Fixed Size (Jira 9517). */}
         <div>
           <label className={LABEL}>Pricing Model</label>
-          <div className="inline-flex items-center gap-2 rounded-2xl border border-black/[0.08] bg-black/[0.02] px-4 py-3 text-sm text-black/70" style={{ letterSpacing: '-0.14px' }}>
-            <span className="h-2 w-2 rounded-full bg-black/30" />
-            {PRICING_MODEL_LABEL[values.pricingModel]}
-            <span className="font-mono text-[10px] uppercase tracking-[0.54px] text-black/40">auto from kind</span>
-          </div>
+          {values.kind === 'Banner' ? (
+            <select
+              value={values.pricingModel}
+              onChange={(e) => set('pricingModel', e.target.value as PricingModel)}
+              disabled={saving}
+              className={FIELD_BASE}
+            >
+              {BANNER_PRICING_MODELS.map((m) => (
+                <option key={m.value} value={m.value} disabled={m.disabled}>{m.label}</option>
+              ))}
+            </select>
+          ) : (
+            <div className="inline-flex items-center gap-2 rounded-2xl border border-black/[0.08] bg-black/[0.02] px-4 py-3 text-sm text-black/70" style={{ letterSpacing: '-0.14px' }}>
+              <span className="h-2 w-2 rounded-full bg-black/30" />
+              {PRICING_MODEL_LABEL[values.pricingModel]}
+              <span className="font-mono text-[10px] uppercase tracking-[0.54px] text-black/40">auto from kind</span>
+            </div>
+          )}
         </div>
 
         {/* Minimum quantity + design-upload required: most relevant to Badge but valid for any kind. */}

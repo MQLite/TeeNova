@@ -1,8 +1,13 @@
-import type { BannerDetail } from '@/types'
-import { bannerFinishingSummary, bannerMaterialSummary, bannerSizeSummary } from '@/lib/banner-format'
+import {
+  bannerFinishingSummary,
+  bannerMaterialSummary,
+  bannerSizeSummary,
+  type BannerDetailLike,
+} from '@/lib/banner-format'
 
 interface Props {
-  detail?: BannerDetail | null
+  /** Order snapshot (`BannerDetail`) or config input (`BannerDetailInput`) — both satisfy BannerDetailLike. */
+  detail?: BannerDetailLike | null
   /** Show the customer-facing subset only (hides nothing internal here, but kept for intent/clarity). */
   variant?: 'admin' | 'customer'
   className?: string

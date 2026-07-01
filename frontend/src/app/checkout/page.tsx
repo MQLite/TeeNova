@@ -61,11 +61,14 @@ export default function CheckoutPage() {
 
   const isSubmitting = submitPhase !== 'idle'
 
-  // Enquiry-first guard (Jira 9511/9512): Banner / CustomQuoteOnly products are quote-only and must never
-  // go through paid checkout. They don't enter the cart in the normal flow, but if one somehow does we
+  // Enquiry-first guard (Jira 9511/9512/9517): CustomQuoteOnly products (and any non-FixedSize Banner)
+  // are quote-only and must never go through paid checkout. FixedSize Banner IS auto-priced, so it is
+  // explicitly allowed through. They don't enter the cart in the normal flow, but if one somehow does we
   // block payment here (the backend guard in CreateAsync stays authoritative regardless).
   const quoteOnlyItems = items.filter(
-    (item) => item.kind === 'Banner' || item.pricingModel === 'CustomQuoteOnly',
+    (item) =>
+      item.pricingModel === 'CustomQuoteOnly' ||
+      (item.kind === 'Banner' && item.pricingModel !== 'FixedSize'),
   )
   const hasQuoteOnlyItems = quoteOnlyItems.length > 0
 
@@ -115,30 +118,42 @@ export default function CheckoutPage() {
           country: form.country,
           phone: form.phone || undefined,
         },
-        // Badge sends item-level design + no variant + no prints; garment unchanged (Jira 9504).
-        // Neither path sends price fields — the backend is the sole pricing authority.
-        items: items.map((item) =>
-          item.kind === 'Badge'
-            ? {
-                productId: item.productId,
-                quantity: item.quantity,
-                uploadedAssetId: item.uploadedAssetId,
-                uploadedAssetUrl: item.uploadedAssetUrl,
-                designNote: item.designNote,
-              }
-            : {
-                productId: item.productId,
-                productVariantId: item.productVariantId,
-                quantity: item.quantity,
-                prints: (item.prints ?? []).map((print) => ({
-                  printAreaId: print.printAreaId,
-                  printSizeId: print.printSizeId,
-                  uploadedAssetId: print.uploadedAssetId,
-                  uploadedAssetUrl: print.uploadedAssetUrl,
-                  designNote: print.designNote,
-                })),
-              },
-        ),
+        // Badge and FixedSize Banner send item-level design + no variant + no prints; garment unchanged
+        // (Jira 9504/9517). FixedSize Banner additionally carries its bannerDetail (sizePresetId + config).
+        // No path sends price fields — the backend is the sole pricing authority.
+        items: items.map((item) => {
+          if (item.kind === 'Banner' && item.pricingModel === 'FixedSize') {
+            return {
+              productId: item.productId,
+              quantity: item.quantity,
+              uploadedAssetId: item.uploadedAssetId,
+              uploadedAssetUrl: item.uploadedAssetUrl,
+              designNote: item.designNote,
+              bannerDetail: item.bannerDetail,
+            }
+          }
+          if (item.kind === 'Badge') {
+            return {
+              productId: item.productId,
+              quantity: item.quantity,
+              uploadedAssetId: item.uploadedAssetId,
+              uploadedAssetUrl: item.uploadedAssetUrl,
+              designNote: item.designNote,
+            }
+          }
+          return {
+            productId: item.productId,
+            productVariantId: item.productVariantId,
+            quantity: item.quantity,
+            prints: (item.prints ?? []).map((print) => ({
+              printAreaId: print.printAreaId,
+              printSizeId: print.printSizeId,
+              uploadedAssetId: print.uploadedAssetId,
+              uploadedAssetUrl: print.uploadedAssetUrl,
+              designNote: print.designNote,
+            })),
+          }
+        }),
         deliveryMethod,
       })
 
@@ -483,9 +498,13 @@ export default function CheckoutPage() {
                           {item.productName}
                         </p>
                         <p className="text-xs text-black/55" style={{ letterSpacing: '-0.14px' }}>
-                          {item.kind === 'Badge' ? `Badge - x${item.quantity}` : `${item.variantLabel ?? ''} - x${item.quantity}`}
+                          {item.kind === 'Banner' && item.pricingModel === 'FixedSize'
+                            ? `Banner · Fixed size - x${item.quantity}`
+                            : item.kind === 'Badge'
+                            ? `Badge - x${item.quantity}`
+                            : `${item.variantLabel ?? ''} - x${item.quantity}`}
                         </p>
-                        {item.kind === 'Badge' ? (
+                        {item.kind === 'Badge' || (item.kind === 'Banner' && item.pricingModel === 'FixedSize') ? (
                           (getUploadedDesignUrl(item) || item.designNote) && (
                             <div className="mt-1 flex flex-wrap gap-1">
                               <span className="inline-flex flex-col rounded-lg border border-black/[0.08] px-2 py-1 text-[10px] text-black/50">

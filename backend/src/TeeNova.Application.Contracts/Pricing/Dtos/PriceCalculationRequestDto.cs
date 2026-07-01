@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.ComponentModel.DataAnnotations;
+using TeeNova.Orders.Dtos;
 
 namespace TeeNova.Pricing.Dtos;
 
@@ -27,4 +28,11 @@ public class PriceCalculationRequestDto
     public int? TierQuantity { get; set; }
 
     public List<PrintCalculationItemDto> Prints { get; set; } = new();
+
+    /// <summary>
+    /// Banner configuration (Jira 9516). Required for a FixedSize Banner live quote — the server reads
+    /// only <c>SizePresetId</c> (the selected fixed-size option) for pricing; all other size fields are
+    /// ignored. Null for Garment/Badge quotes. Carries no price fields (backend is authoritative).
+    /// </summary>
+    public BannerDetailInputDto? BannerDetail { get; set; }
 }

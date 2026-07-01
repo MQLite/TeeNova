@@ -23,6 +23,7 @@ public class CatalogAppService : ApplicationService, ICatalogAppService
     private readonly IRepository<ProductImage, Guid>          _imageRepository;
     private readonly IRepository<ProductPriceTier, Guid>      _priceTierRepository;
     private readonly IRepository<ProductQuantityPriceTier, Guid>   _quantityPriceTierRepository;
+    private readonly IRepository<ProductFixedSizePriceOption, Guid> _fixedSizePriceOptionRepository;
     private readonly IRepository<PrintPricingGroup, Guid>          _printPricingGroupRepository;
     private readonly IRepository<ProductPrintPriceTier, Guid>      _printPriceTierRepository;
     private readonly IRepository<ProductPrintConfigOption, Guid>   _printConfigOptionRepository;
@@ -37,6 +38,7 @@ public class CatalogAppService : ApplicationService, ICatalogAppService
         IRepository<ProductImage, Guid>             imageRepository,
         IRepository<ProductPriceTier, Guid>         priceTierRepository,
         IRepository<ProductQuantityPriceTier, Guid> quantityPriceTierRepository,
+        IRepository<ProductFixedSizePriceOption, Guid> fixedSizePriceOptionRepository,
         IRepository<PrintPricingGroup, Guid>        printPricingGroupRepository,
         IRepository<ProductPrintPriceTier, Guid>    printPriceTierRepository,
         IRepository<ProductPrintConfigOption, Guid> printConfigOptionRepository,
@@ -50,6 +52,7 @@ public class CatalogAppService : ApplicationService, ICatalogAppService
         _imageRepository             = imageRepository;
         _priceTierRepository         = priceTierRepository;
         _quantityPriceTierRepository = quantityPriceTierRepository;
+        _fixedSizePriceOptionRepository = fixedSizePriceOptionRepository;
         _printPricingGroupRepository = printPricingGroupRepository;
         _printPriceTierRepository    = printPriceTierRepository;
         _printConfigOptionRepository = printConfigOptionRepository;
@@ -231,7 +234,25 @@ public class CatalogAppService : ApplicationService, ICatalogAppService
             .Where(t => t.IsActive)
             .ToList();
 
+        // Banner fixed-size price options (Jira 9516), active rows only (public-safe). Empty unless the
+        // product is Banner + FixedSize. The future storefront reads these to offer selectable sizes.
+        dto.FixedSizePriceOptions = (await LoadFixedSizeOptionDtosAsync(product.Id))
+            .Where(o => o.IsActive)
+            .ToList();
+
         return dto;
+    }
+
+    /// <summary>Loads a product's Banner fixed-size price options as DTOs (incl. inactive), ordered for display.</summary>
+    private async Task<List<ProductFixedSizePriceOptionDto>> LoadFixedSizeOptionDtosAsync(Guid productId)
+    {
+        var options = await _fixedSizePriceOptionRepository.GetListAsync(o => o.ProductId == productId);
+
+        return options
+            .OrderBy(o => o.SortOrder)
+            .ThenBy(o => o.Label)
+            .Select(o => ObjectMapper.Map<ProductFixedSizePriceOption, ProductFixedSizePriceOptionDto>(o))
+            .ToList();
     }
 
     /// <summary>Loads a product's Badge quantity-tier unit prices as DTOs (incl. inactive), ordered for display.</summary>
@@ -1071,5 +1092,79 @@ public class CatalogAppService : ApplicationService, ICatalogAppService
         }
 
         return await LoadQuantityTierDtosAsync(productId);
+    }
+
+    // Admin: Banner Fixed-Size Price Options (Jira 9516, product-scoped single-writer)
+
+    public async Task<List<ProductFixedSizePriceOptionDto>> GetFixedSizePriceOptionsAsync(Guid productId)
+    {
+        if (!await _productRepository.AnyAsync(p => p.Id == productId))
+            throw new EntityNotFoundException(typeof(Product), productId);
+
+        return await LoadFixedSizeOptionDtosAsync(productId);
+    }
+
+    /// <summary>
+    /// Replaces the full set of Banner fixed-size price options for a product (dedicated single-writer
+    /// endpoint, Jira 9516). Never touches Product/Variant/inventory fields, print tiers, group
+    /// assignment, scoped print options, or Badge quantity tiers. An empty list clears the product's
+    /// options (the product then has no selectable fixed-size price until options are set again).
+    ///
+    /// Writing is gated to <see cref="ProductKind.Banner"/> + <see cref="PricingModel.FixedSize"/>:
+    /// these options are only meaningful for that combination, and gating avoids stray config on
+    /// Garment/Badge/CustomQuoteOnly products. Configure the kind/model first, then the options.
+    /// </summary>
+    public async Task<List<ProductFixedSizePriceOptionDto>> SetFixedSizePriceOptionsAsync(
+        Guid productId, SetProductFixedSizePriceOptionsDto input)
+    {
+        var product = await _productRepository.FindAsync(p => p.Id == productId)
+            ?? throw new EntityNotFoundException(typeof(Product), productId);
+
+        if (product.Kind != ProductKind.Banner || product.PricingModel != PricingModel.FixedSize)
+            throw new UserFriendlyException(
+                "Fixed-size price options can only be configured on a Banner product using the FixedSize pricing model.");
+
+        // Per-row validation.
+        foreach (var option in input.Options)
+        {
+            if (string.IsNullOrWhiteSpace(option.Label))
+                throw new UserFriendlyException("Fixed-size option label is required.");
+
+            if (option.Width <= 0 || option.Height <= 0)
+                throw new UserFriendlyException("Fixed-size option width and height must be greater than zero.");
+
+            if (!Enum.IsDefined(typeof(Orders.BannerDimensionUnit), option.Unit))
+                throw new UserFriendlyException("Fixed-size option unit is invalid.");
+
+            if (option.UnitPrice < 0.01m)
+                throw new UserFriendlyException("Fixed-size option unit price must be at least 0.01.");
+
+            if (decimal.Round(option.UnitPrice, 2) != option.UnitPrice)
+                throw new UserFriendlyException("Fixed-size option unit price cannot have more than 2 decimal places.");
+        }
+
+        // Replace the full set for this product. Delete flushed before inserts (same discipline as the
+        // other tier writers) so a re-used key cannot collide within the same transaction.
+        var existing = await _fixedSizePriceOptionRepository.GetListAsync(o => o.ProductId == productId);
+        if (existing.Count > 0)
+            await _fixedSizePriceOptionRepository.DeleteManyAsync(existing, autoSave: true);
+
+        foreach (var option in input.Options)
+        {
+            await _fixedSizePriceOptionRepository.InsertAsync(
+                new ProductFixedSizePriceOption(
+                    GuidGenerator.Create(),
+                    productId,
+                    option.Label.Trim(),
+                    option.Width,
+                    option.Height,
+                    option.Unit,
+                    option.UnitPrice,
+                    option.IsActive,
+                    option.SortOrder),
+                autoSave: true);
+        }
+
+        return await LoadFixedSizeOptionDtosAsync(productId);
     }
 }

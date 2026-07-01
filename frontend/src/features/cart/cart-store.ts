@@ -86,7 +86,7 @@ export const useCartStore = create<CartStore>()(
     }),
     {
       name: 'teenova-cart',
-      version: 5,
+      version: 6,
       migrate: (persistedState) => {
         const state = persistedState as {
           items?: Array<CartItem & { cartItemKey?: string }>
@@ -114,6 +114,8 @@ export const useCartStore = create<CartStore>()(
             uploadedAssetUrl: item.uploadedAssetUrl,
             designNote: item.designNote,
             configurationJson: item.configurationJson,
+            // FixedSize Banner config (Jira 9517); undefined for garment/badge lines.
+            bannerDetail: item.bannerDetail,
             prints: item.prints ?? [],
           })),
         }

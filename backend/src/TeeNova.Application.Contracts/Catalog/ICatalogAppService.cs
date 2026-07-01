@@ -53,4 +53,8 @@ public interface ICatalogAppService : IApplicationService
     // ── Badge Quantity Price Tiers (Jira 9503, product-scoped single-writer) ──────
     Task<List<ProductQuantityPriceTierDto>> GetQuantityPriceTiersAsync(Guid productId);
     Task<List<ProductQuantityPriceTierDto>> SetQuantityPriceTiersAsync(Guid productId, SetProductQuantityPriceTiersDto input);
+
+    // ── Banner Fixed-Size Price Options (Jira 9516, product-scoped single-writer) ──
+    Task<List<ProductFixedSizePriceOptionDto>> GetFixedSizePriceOptionsAsync(Guid productId);
+    Task<List<ProductFixedSizePriceOptionDto>> SetFixedSizePriceOptionsAsync(Guid productId, SetProductFixedSizePriceOptionsDto input);
 }

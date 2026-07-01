@@ -5,6 +5,7 @@ using System.Threading.Tasks;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
+using TeeNova.Auth;
 using TeeNova.Catalog.Dtos;
 using Volo.Abp.Application.Dtos;
 
@@ -36,16 +37,19 @@ public class CatalogController : TeeNovaControllerBase
 
     /// <summary>Creates a new product.</summary>
     [HttpPost("products")]
+    [Authorize(Roles = TeeNovaRoles.Admin)]
     public async Task<ProductDto> CreateAsync([FromBody] CreateProductDto input)
         => await _catalogAppService.CreateAsync(input);
 
     /// <summary>Updates name, description, base price, product type, and active status.</summary>
     [HttpPut("products/{id:guid}")]
+    [Authorize(Roles = TeeNovaRoles.Admin)]
     public async Task<ProductDto> UpdateAsync(Guid id, [FromBody] UpdateProductDto input)
         => await _catalogAppService.UpdateAsync(id, input);
 
     /// <summary>Toggles the active/inactive status of a product.</summary>
     [HttpPut("products/{id:guid}/status")]
+    [Authorize(Roles = TeeNovaRoles.Admin)]
     public async Task<ProductDto> UpdateStatusAsync(Guid id, [FromBody] UpdateProductStatusDto input)
         => await _catalogAppService.UpdateStatusAsync(id, input);
 
@@ -53,6 +57,7 @@ public class CatalogController : TeeNovaControllerBase
 
     /// <summary>Uploads a product catalog image (JPEG, PNG, or WebP) and links it to the product.</summary>
     [HttpPost("products/{id:guid}/images/upload")]
+    [Authorize(Roles = TeeNovaRoles.Admin)]
     [RequestSizeLimit(10 * 1024 * 1024)]
     [Consumes("multipart/form-data")]
     public async Task<ProductImageDto> UploadProductImageAsync(
@@ -63,16 +68,19 @@ public class CatalogController : TeeNovaControllerBase
 
     /// <summary>Updates metadata (e.g. color tag) of an existing product image.</summary>
     [HttpPut("products/{id:guid}/images/{imageId:guid}")]
+    [Authorize(Roles = TeeNovaRoles.Admin)]
     public async Task<ProductImageDto> UpdateProductImageAsync(Guid id, Guid imageId, [FromBody] UpdateProductImageDto input)
         => await _catalogAppService.UpdateProductImageAsync(id, imageId, input);
 
     /// <summary>Marks the specified image as the primary image for this product.</summary>
     [HttpPut("products/{id:guid}/images/{imageId:guid}/primary")]
+    [Authorize(Roles = TeeNovaRoles.Admin)]
     public async Task SetPrimaryProductImageAsync(Guid id, Guid imageId)
         => await _catalogAppService.SetPrimaryProductImageAsync(id, imageId);
 
     /// <summary>Deletes a product image. Auto-promotes the next image to primary if needed.</summary>
     [HttpDelete("products/{id:guid}/images/{imageId:guid}")]
+    [Authorize(Roles = TeeNovaRoles.Admin)]
     public async Task DeleteProductImageAsync(Guid id, Guid imageId)
         => await _catalogAppService.DeleteProductImageAsync(id, imageId);
 
@@ -80,16 +88,19 @@ public class CatalogController : TeeNovaControllerBase
 
     /// <summary>Creates a new variant (size/color combination) under a product.</summary>
     [HttpPost("products/{productId:guid}/variants")]
+    [Authorize(Roles = TeeNovaRoles.Admin)]
     public async Task<ProductVariantDto> CreateVariantAsync(Guid productId, [FromBody] CreateProductVariantDto input)
         => await _catalogAppService.CreateVariantAsync(productId, input);
 
     /// <summary>Updates an existing variant's fields.</summary>
     [HttpPut("products/{productId:guid}/variants/{variantId:guid}")]
+    [Authorize(Roles = TeeNovaRoles.Admin)]
     public async Task<ProductVariantDto> UpdateVariantAsync(Guid productId, Guid variantId, [FromBody] UpdateProductVariantDto input)
         => await _catalogAppService.UpdateVariantAsync(productId, variantId, input);
 
     /// <summary>Deletes a variant from a product.</summary>
     [HttpDelete("products/{productId:guid}/variants/{variantId:guid}")]
+    [Authorize(Roles = TeeNovaRoles.Admin)]
     public async Task DeleteVariantAsync(Guid productId, Guid variantId)
         => await _catalogAppService.DeleteVariantAsync(productId, variantId);
 
@@ -98,12 +109,14 @@ public class CatalogController : TeeNovaControllerBase
     /// customer availability, or stock deduction.
     /// </summary>
     [HttpPut("products/{productId:guid}/variants/{variantId:guid}/inventory")]
+    [Authorize(Roles = TeeNovaRoles.Admin)]
     public async Task<ProductVariantDto> UpdateVariantInventoryAsync(
         Guid productId, Guid variantId, [FromBody] UpdateVariantInventoryDto input)
         => await _catalogAppService.UpdateVariantInventoryAsync(productId, variantId, input);
 
     /// <summary>Bulk creates or updates variants for a product from a Size × Color matrix save.</summary>
     [HttpPut("products/{productId:guid}/variants/bulk")]
+    [Authorize(Roles = TeeNovaRoles.Admin)]
     public async Task<List<ProductVariantDto>> BulkSaveVariantsAsync(
         Guid productId, [FromBody] BulkSaveProductVariantsDto input)
         => await _catalogAppService.BulkSaveVariantsAsync(productId, input);
@@ -116,6 +129,7 @@ public class CatalogController : TeeNovaControllerBase
     /// list clears all tiers and reverts the product to additive pricing.
     /// </summary>
     [HttpPut("products/{productId:guid}/price-tiers")]
+    [Authorize(Roles = TeeNovaRoles.Admin)]
     public async Task<ProductDto> SetPriceTiersAsync(Guid productId, [FromBody] SetProductPriceTiersDto input)
         => await _catalogAppService.SetPriceTiersAsync(productId, input);
 
@@ -129,11 +143,13 @@ public class CatalogController : TeeNovaControllerBase
 
     /// <summary>Creates a print pricing group (admin).</summary>
     [HttpPost("print-pricing-groups")]
+    [Authorize(Roles = TeeNovaRoles.Admin)]
     public async Task<PrintPricingGroupDto> CreatePrintPricingGroupAsync([FromBody] CreateUpdatePrintPricingGroupDto input)
         => await _catalogAppService.CreatePrintPricingGroupAsync(input);
 
     /// <summary>Updates a print pricing group (admin).</summary>
     [HttpPut("print-pricing-groups/{groupId:guid}")]
+    [Authorize(Roles = TeeNovaRoles.Admin)]
     public async Task<PrintPricingGroupDto> UpdatePrintPricingGroupAsync(Guid groupId, [FromBody] CreateUpdatePrintPricingGroupDto input)
         => await _catalogAppService.UpdatePrintPricingGroupAsync(groupId, input);
 
@@ -150,6 +166,7 @@ public class CatalogController : TeeNovaControllerBase
     /// empty list clears the group's print tiers (printing falls back to PrintSize.BasePrice).
     /// </summary>
     [HttpPut("print-pricing-groups/{groupId:guid}/print-price-tiers")]
+    [Authorize(Roles = TeeNovaRoles.Admin)]
     public async Task<List<ProductPrintPriceTierDto>> SetPrintPriceTiersAsync(Guid groupId, [FromBody] SetProductPrintPriceTiersDto input)
         => await _catalogAppService.SetPrintPriceTiersAsync(groupId, input);
 
@@ -165,6 +182,7 @@ public class CatalogController : TeeNovaControllerBase
     /// Sending an empty list clears scoped options (the product reverts to the global matrix).
     /// </summary>
     [HttpPut("products/{productId:guid}/print-config-options")]
+    [Authorize(Roles = TeeNovaRoles.Admin)]
     public async Task<List<ProductPrintConfigOptionDto>> SetPrintConfigOptionsAsync(Guid productId, [FromBody] SetProductPrintConfigOptionsDto input)
         => await _catalogAppService.SetPrintConfigOptionsAsync(productId, input);
 
@@ -180,6 +198,23 @@ public class CatalogController : TeeNovaControllerBase
     /// Sending an empty list clears the product's quantity tiers.
     /// </summary>
     [HttpPut("products/{productId:guid}/quantity-price-tiers")]
+    [Authorize(Roles = TeeNovaRoles.Admin)]
     public async Task<List<ProductQuantityPriceTierDto>> SetQuantityPriceTiersAsync(Guid productId, [FromBody] SetProductQuantityPriceTiersDto input)
         => await _catalogAppService.SetQuantityPriceTiersAsync(productId, input);
+
+    // ── Banner Fixed-Size Price Options (Jira 9516, product-scoped single-writer) ──
+
+    /// <summary>Returns a product's Banner fixed-size price options (admin, incl. inactive rows).</summary>
+    [HttpGet("products/{productId:guid}/fixed-size-price-options")]
+    public async Task<List<ProductFixedSizePriceOptionDto>> GetFixedSizePriceOptionsAsync(Guid productId)
+        => await _catalogAppService.GetFixedSizePriceOptionsAsync(productId);
+
+    /// <summary>
+    /// Replaces the full set of Banner fixed-size price options for a product (admin, single-writer).
+    /// Allowed only for Banner + FixedSize products. Sending an empty list clears the options.
+    /// </summary>
+    [HttpPut("products/{productId:guid}/fixed-size-price-options")]
+    [Authorize(Roles = TeeNovaRoles.Admin)]
+    public async Task<List<ProductFixedSizePriceOptionDto>> SetFixedSizePriceOptionsAsync(Guid productId, [FromBody] SetProductFixedSizePriceOptionsDto input)
+        => await _catalogAppService.SetFixedSizePriceOptionsAsync(productId, input);
 }
