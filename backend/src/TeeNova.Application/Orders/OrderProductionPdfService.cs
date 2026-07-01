@@ -198,7 +198,20 @@ public class OrderProductionPdfService : IOrderProductionPdfService, ITransientD
                         HeaderCell(header.Cell(), "Finished", center: true);
                     });
 
-                    foreach (var item in order.Items)
+                    // Rows follow product name, then the natural garment size sequence (S, M, L, XL…)
+                    // rather than cart/insertion order, so a product's sizes read in order on the sheet.
+                    // Colour is the final tiebreak for deterministic output. Non-garment items (Badge,
+                    // Banner) have no size and sort among themselves by name.
+                    var itemsInDisplayOrder = order.Items
+                        .Select(i => new { Item = i, Parts = SplitVariantLabel(i.VariantLabel) })
+                        .OrderBy(x => x.Item.ProductName, StringComparer.OrdinalIgnoreCase)
+                        .ThenBy(x => SizeRank(x.Parts.Size))
+                        .ThenBy(x => x.Parts.Size, StringComparer.OrdinalIgnoreCase)
+                        .ThenBy(x => x.Parts.Color, StringComparer.OrdinalIgnoreCase)
+                        .Select(x => x.Item)
+                        .ToList();
+
+                    foreach (var item in itemsInDisplayOrder)
                     {
                         BodyCell(table.Cell()).Text(item.ProductName);
                         BodyCell(table.Cell()).Text(item.VariantLabel ?? "-");
@@ -255,7 +268,8 @@ public class OrderProductionPdfService : IOrderProductionPdfService, ITransientD
                             foreach (var garment in group.GroupBy(r => (r.ProductName, r.Color)))
                             {
                                 var g = garment.First();
-                                var sizes = garment.Select(r => r.Size).Where(s => s.Length > 0).Distinct().ToList();
+                                var sizes = garment.Select(r => r.Size).Where(s => s.Length > 0).Distinct()
+                                    .OrderBy(SizeRank).ThenBy(s => s, StringComparer.OrdinalIgnoreCase).ToList();
                                 var variantText = sizes.Count > 0
                                     ? $"{g.Color} / {string.Join(", ", sizes)}"
                                     : g.Color;
@@ -484,6 +498,39 @@ public class OrderProductionPdfService : IOrderProductionPdfService, ITransientD
         return idx < 0
             ? (label, string.Empty)
             : (label[..idx].Trim(), label[(idx + 3)..].Trim());
+    }
+
+    /// <summary>Canonical apparel size order used to sequence garment rows (index = rank).</summary>
+    private static readonly string[] SizeSequence =
+        { "XXS", "XS", "S", "M", "L", "XL", "XXL", "XXXL", "XXXXL", "XXXXXL", "XXXXXXL" };
+
+    private static readonly System.Text.RegularExpressions.Regex NumericXlSize =
+        new(@"^(\d+)\s*XL$", System.Text.RegularExpressions.RegexOptions.Compiled);
+
+    /// <summary>
+    /// Ranks a garment size for sorting: known apparel sizes in their natural sequence (XS…XXXL),
+    /// then purely numeric sizes in numeric order, then any other named size (alphabetical via the
+    /// caller's secondary sort), then blank/no-size last. Normalises "2XL"/"3XL" to "XXL"/"XXXL".
+    /// </summary>
+    private static int SizeRank(string size)
+    {
+        var s = size.Trim().ToUpperInvariant();
+        if (s.Length == 0)
+            return int.MaxValue;
+
+        var m = NumericXlSize.Match(s);
+        if (m.Success && int.TryParse(m.Groups[1].Value, out var xCount) && xCount >= 2)
+            s = new string('X', xCount) + "L";
+
+        var idx = Array.IndexOf(SizeSequence, s);
+        if (idx >= 0)
+            return idx;
+
+        // Kids/numeric sizes (e.g. "8", "10") after the letter sizes but in numeric order.
+        if (int.TryParse(s, NumberStyles.Integer, CultureInfo.InvariantCulture, out var numeric))
+            return 10_000 + numeric;
+
+        return int.MaxValue - 1; // unknown named size: before blanks, alphabetised by secondary sort
     }
 
     private static string FormatDateTime(DateTime utc)
