@@ -2,6 +2,7 @@ using System;
 using System.Threading.Tasks;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using TeeNova.Auth;
 using TeeNova.Orders.Dtos;
 
 namespace TeeNova.Orders;
@@ -15,7 +16,7 @@ namespace TeeNova.Orders;
 /// </summary>
 [ApiController]
 [Route("api/admin/orders")]
-[Authorize]
+[Authorize(Roles = TeeNovaRoles.Admin)]
 public class AdminOrderController : TeeNovaControllerBase
 {
     private readonly IOrderAppService _orderAppService;

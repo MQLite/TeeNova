@@ -1,6 +1,7 @@
 using System.Threading.Tasks;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using TeeNova.Auth;
 using TeeNova.Email.Dtos;
 
 namespace TeeNova.Email;
@@ -24,6 +25,7 @@ public class EmailSettingsController : TeeNovaControllerBase
 
     /// <summary>Saves admin-editable email notification settings. Does not accept SMTP credentials.</summary>
     [HttpPut]
+    [Authorize(Roles = TeeNovaRoles.Admin)]
     public async Task<EmailSettingsDto> UpdateAsync([FromBody] EmailSettingsDto input)
         => await _emailSettingsAppService.UpdateAsync(input);
 }

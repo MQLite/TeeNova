@@ -4,6 +4,7 @@ using System.Threading.Tasks;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
+using TeeNova.Auth;
 using TeeNova.Files.Dtos;
 using Volo.Abp.Application.Dtos;
 
@@ -52,6 +53,7 @@ public class FileController : TeeNovaControllerBase
 
     /// <summary>Deletes all uploaded assets that are not referenced by any order item.</summary>
     [HttpPost("assets/clean-orphans")]
+    [Authorize(Roles = TeeNovaRoles.Admin)]
     public async Task<CleanOrphanedAssetsResultDto> CleanOrphansAsync()
         => await _fileAppService.CleanOrphanedAssetsAsync();
 }

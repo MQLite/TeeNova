@@ -1,6 +1,7 @@
 using System.Threading.Tasks;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using TeeNova.Auth;
 using TeeNova.Inventory.Dtos;
 
 namespace TeeNova.Inventory;
@@ -24,6 +25,7 @@ public class InventorySettingsController : TeeNovaControllerBase
 
     /// <summary>Updates inventory settings (e.g. the auto-deduction toggle).</summary>
     [HttpPut]
+    [Authorize(Roles = TeeNovaRoles.Admin)]
     public async Task<InventorySettingsDto> UpdateAsync([FromBody] InventorySettingsDto input)
         => await _inventorySettingsAppService.UpdateAsync(input);
 }

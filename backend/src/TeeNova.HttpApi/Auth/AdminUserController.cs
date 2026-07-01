@@ -11,7 +11,7 @@ namespace TeeNova.HttpApi.Auth;
 
 [ApiController]
 [Route("api/admin-users")]
-[Authorize(Roles = "Admin")]
+[Authorize(Roles = TeeNovaRoles.Admin)]
 public class AdminUserController : TeeNovaControllerBase
 {
     private readonly IAdminUserAppService _service;

@@ -2,6 +2,7 @@ using System;
 using System.Threading.Tasks;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using TeeNova.Auth;
 using TeeNova.Enquiries.Dtos;
 using Volo.Abp.Application.Dtos;
 
@@ -43,11 +44,13 @@ public class BannerEnquiryController : TeeNovaControllerBase
 
     /// <summary>Admin: mark a Banner enquiry as reviewed.</summary>
     [HttpPost("{id:guid}/mark-reviewed")]
+    [Authorize(Roles = TeeNovaRoles.Admin)]
     public async Task<BannerQuoteRequestDto> MarkReviewedAsync(Guid id)
         => await _appService.MarkReviewedAsync(id);
 
     /// <summary>Admin: cancel a Banner enquiry.</summary>
     [HttpPost("{id:guid}/cancel")]
+    [Authorize(Roles = TeeNovaRoles.Admin)]
     public async Task<BannerQuoteRequestDto> CancelAsync(Guid id)
         => await _appService.CancelAsync(id);
 
@@ -56,6 +59,7 @@ public class BannerEnquiryController : TeeNovaControllerBase
     /// No payment is taken and no payment session is created.
     /// </summary>
     [HttpPost("{id:guid}/convert-to-order")]
+    [Authorize(Roles = TeeNovaRoles.Admin)]
     public async Task<ConvertBannerQuoteRequestResultDto> ConvertToOrderAsync(
         Guid id, [FromBody] ConvertBannerQuoteRequestDto input)
         => await _appService.ConvertToOrderAsync(id, input);

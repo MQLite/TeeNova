@@ -3,13 +3,17 @@ using System.Collections.Generic;
 using System.Threading.Tasks;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using TeeNova.Auth;
 using TeeNova.PrintConfig.Dtos;
 
 namespace TeeNova.PrintConfig;
 
+// Every authenticated action here is a write (create/update/delete area, size, area-size options);
+// all reads are [AllowAnonymous] storefront lookups. So the whole controller is Admin-only —
+// Viewer (read-only) needs none of these. Reads keep their per-action [AllowAnonymous] override.
 [ApiController]
 [Route("api/print-config")]
-[Authorize]
+[Authorize(Roles = TeeNovaRoles.Admin)]
 public class PrintConfigController : TeeNovaControllerBase
 {
     private readonly IPrintConfigAppService _printConfigAppService;

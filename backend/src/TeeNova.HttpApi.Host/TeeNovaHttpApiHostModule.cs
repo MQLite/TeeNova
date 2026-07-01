@@ -52,10 +52,14 @@ public class TeeNovaHttpApiHostModule : AbpModule
         context.Services.AddControllers()
             .AddJsonOptions(o => o.JsonSerializerOptions.Converters.Add(new JsonStringEnumConverter()));
 
-        Configure<AbpAspNetCoreMvcOptions>(options =>
-        {
-            options.ConventionalControllers.Create(typeof(TeeNovaApplicationModule).Assembly);
-        });
+        // Security (Task 8703): ABP conventional auto-API exposure is intentionally NOT enabled.
+        // Previously `options.ConventionalControllers.Create(typeof(TeeNovaApplicationModule).Assembly)`
+        // auto-generated unauthenticated `/api/app/*` routes for every application service, bypassing the
+        // authorization carefully applied on the hand-written controllers in TeeNova.HttpApi. Every app
+        // service already has a curated manual controller (the only intended HTTP surface), so the
+        // auto-API layer is left off to keep admin operations off anonymous routes. If a new public/admin
+        // endpoint is needed, add an explicit action to the relevant controller with the right
+        // [Authorize]/[AllowAnonymous] attribute rather than re-enabling blanket auto-API.
     }
 
     private void ConfigureCors(ServiceConfigurationContext context, Microsoft.Extensions.Configuration.IConfiguration configuration)
