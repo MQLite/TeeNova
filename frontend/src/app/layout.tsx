@@ -5,10 +5,21 @@ import { Footer } from '@/components/layout/Footer'
 
 export const metadata: Metadata = {
   title: {
-    default: 'Otahuhu Printing — Custom T-Shirt Printing Auckland',
+    default: 'Otahuhu Printing Shop | Custom Printing Auckland',
     template: '%s | Otahuhu Printing',
   },
-  description: "Auckland's local custom print shop. Upload your design, pick your print position, and get quality garments delivered fast.",
+  description:
+    'Local Otahuhu print shop for T-shirt printing, badges, banners, business cards, stickers, signs and custom print jobs in Auckland.',
+  // OpenGraph is intentionally image-less and URL-less: no confirmed OG image asset or canonical
+  // domain exists yet (so no metadataBase). Add an image + metadataBase once those are confirmed.
+  openGraph: {
+    title: 'Otahuhu Printing Shop | Custom Printing Auckland',
+    description:
+      'T-shirts, badges, banners, business cards, stickers, signs and custom print jobs from a local Otahuhu print shop.',
+    type: 'website',
+    locale: 'en_NZ',
+    siteName: 'Otahuhu Printing Shop',
+  },
 }
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
