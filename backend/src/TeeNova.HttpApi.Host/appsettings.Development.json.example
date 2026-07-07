@@ -54,8 +54,15 @@
       "Poli":     { "Enabled": true },
       "PayPal":   { "Enabled": true }
     }
-    // Real Stripe sandbox keys (only needed when UseMockProviders=false) go in user-secrets, never here:
-    //   dotnet user-secrets set "OnlinePayments:Providers:Stripe:SecretKey" "sk_test_..."
-    //   dotnet user-secrets set "OnlinePayments:Providers:Stripe:WebhookSecret" "whsec_..."
+    // Real Stripe Test-mode secrets (sk_test_/whsec_) are NO LONGER read from config (Jira 9902). Set
+    // UseMockProviders=false and configure them in the Admin panel → Payments (/admin/settings/payments);
+    // they are encrypted at rest in the database and resolved at runtime. Live keys/mode are rejected.
+  },
+  // Application encryption key for persisted payment secrets (Jira 9902/9903). Prefer user-secrets/env so it
+  // never lands in a file. When unset, ABP's built-in default passphrase is used (LOCAL DEV ONLY). Set a
+  // strong, environment-unique value before storing real test secrets in any shared environment:
+  //   dotnet user-secrets set "Encryption:PassPhrase" "<a-long-random-string>"
+  "Encryption": {
+    // "PassPhrase": "REPLACE_WITH_A_LONG_RANDOM_DEV_ONLY_ENCRYPTION_PASSPHRASE"
   }
 }

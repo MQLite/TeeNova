@@ -52,8 +52,9 @@ public class TeeNovaDbContext : AbpDbContext<TeeNovaDbContext>
     public DbSet<ProductionJob> ProductionJobs { get; set; }
 
     // Payments
-    public DbSet<OnlinePaymentSession> OnlinePaymentSessions { get; set; }
-    public DbSet<PaymentWebhookEvent>  PaymentWebhookEvents  { get; set; }
+    public DbSet<OnlinePaymentSession>   OnlinePaymentSessions   { get; set; }
+    public DbSet<PaymentWebhookEvent>    PaymentWebhookEvents    { get; set; }
+    public DbSet<PaymentProviderSetting> PaymentProviderSettings { get; set; }
 
     // Notifications
     public DbSet<EmailNotificationLog> EmailNotificationLogs { get; set; }

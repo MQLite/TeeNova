@@ -48,6 +48,13 @@ public static class OnlinePaymentStartupGuard
     /// at startup — a missing key must fail fast rather than on the first checkout or webhook.
     /// The exception message names the missing configuration keys but never echoes any value.
     /// </summary>
+    /// <remarks>
+    /// Jira 9902: Stripe secrets are now stored encrypted in the database (PaymentProviderSetting) and
+    /// resolved at runtime via <c>IStripePaymentSettingsResolver</c>, so this config-presence gate is no
+    /// longer wired into startup — the app must boot without a Stripe secret so an admin can configure it,
+    /// and checkout/webhook fail closed until a valid enabled Test-mode configuration exists. The method is
+    /// retained (unit-testable, no behaviour change) for the config-based provider model and its tests.
+    /// </remarks>
     public static void EnsureStripeSecretsPresent(
         bool paymentsEnabled, string? secretKey, string? webhookSecret)
     {

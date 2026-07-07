@@ -1085,3 +1085,62 @@ export interface PagedResult<T> {
   items: T[]
   totalCount: number
 }
+
+// ── Payment provider settings (Jira 9902) ──────────────────────────────────
+// Persisted, admin-managed Stripe Test-mode configuration. Secrets are never
+// returned by the API — only configured/last-4 masked state.
+export type PaymentProviderMode = 'Test' | 'Live'
+export type PaymentProviderValidationStatus = 'NotValidated' | 'Valid' | 'Invalid'
+
+export interface PaymentProviderSetting {
+  provider: string
+  mode: PaymentProviderMode
+  isEnabled: boolean
+  currency: string
+  publishableKey: string | null
+  secretKeyConfigured: boolean
+  secretKeyLast4: string | null
+  webhookSecretConfigured: boolean
+  webhookSecretLast4: string | null
+  successReturnBaseUrl: string | null
+  cancelReturnBaseUrl: string | null
+  lastValidatedAt: string | null
+  lastValidationStatus: PaymentProviderValidationStatus
+  lastValidationMessageCode: string | null
+  // Readiness signals (Jira 9903) — all safe/non-secret.
+  isConfigured: boolean
+  canCreateCheckoutSession: boolean
+  liveModeBlocked: boolean
+  encryptionPassphraseConfigured: boolean
+  webhookEndpointPath: string
+  webhookEndpointUrl: string | null
+  secretsRuntimeSource: string
+  configRuntimeSource: string
+  missingPrerequisites: string[]
+  readinessCode: string
+}
+
+export interface UpdateStripeTestSettings {
+  isEnabled: boolean
+  currency: string
+  publishableKey?: string | null
+  // Write-only secrets. Leave blank/undefined to keep the currently stored value.
+  secretKey?: string | null
+  webhookSecret?: string | null
+  successReturnBaseUrl?: string | null
+  cancelReturnBaseUrl?: string | null
+}
+
+export interface StripeTestSettingsValidationResult {
+  status: PaymentProviderValidationStatus
+  messageCode: string | null
+  isEnabled: boolean
+  secretKeyConfigured: boolean
+  webhookSecretConfigured: boolean
+  returnUrlsValid: boolean
+  // Readiness signals (Jira 9903).
+  canCreateCheckoutSession: boolean
+  encryptionPassphraseConfigured: boolean
+  liveModeBlocked: boolean
+  missingPrerequisites: string[]
+}

@@ -3,7 +3,6 @@ using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.Extensions.Logging;
-using Microsoft.Extensions.Options;
 using Stripe;
 using Stripe.Checkout;
 
@@ -12,20 +11,24 @@ namespace TeeNova.Payments.Stripe;
 /// <summary>
 /// Real Stripe hosted checkout provider. Handles Checkout Session creation and webhook
 /// signature validation with event mapping to the provider-neutral result model.
+///
+/// Secret material (secret key + webhook signing secret) is resolved at runtime from the persisted,
+/// admin-managed Stripe Test-mode configuration via <see cref="IStripePaymentSettingsResolver"/> (Jira 9902)
+/// — never from environment/appsettings config. All secret resolution fails closed.
 /// </summary>
 public sealed class StripeOnlinePaymentProvider : IOnlinePaymentProvider
 {
-    private readonly IOptions<OnlinePaymentOptions>       _options;
+    private readonly IStripePaymentSettingsResolver       _settingsResolver;
     private readonly ILogger<StripeOnlinePaymentProvider> _logger;
 
     public PaymentProvider Provider => PaymentProvider.Stripe;
 
     public StripeOnlinePaymentProvider(
-        IOptions<OnlinePaymentOptions>        options,
+        IStripePaymentSettingsResolver        settingsResolver,
         ILogger<StripeOnlinePaymentProvider>  logger)
     {
-        _options = options;
-        _logger  = logger;
+        _settingsResolver = settingsResolver;
+        _logger           = logger;
     }
 
     // ── Session creation ──────────────────────────────────────────────────────
@@ -50,7 +53,7 @@ public sealed class StripeOnlinePaymentProvider : IOnlinePaymentProvider
         if (string.IsNullOrWhiteSpace(request.CancelUrl))
             throw new ArgumentException("CancelUrl is required.", nameof(request));
 
-        var secretKey = ResolveSecretKey();
+        var secretKey = await _settingsResolver.ResolveSecretKeyForCheckoutAsync(cancellationToken);
 
         // Stripe requires amounts in minor units (cents). NZD has 2 decimal places.
         // AwayFromZero matches standard financial rounding.
@@ -164,9 +167,24 @@ public sealed class StripeOnlinePaymentProvider : IOnlinePaymentProvider
         if (string.IsNullOrWhiteSpace(providerSessionId))
             return;
 
+        string secretKey;
         try
         {
-            var client  = new StripeClient(ResolveSecretKey());
+            secretKey = await _settingsResolver.ResolveSecretKeyForCheckoutAsync(cancellationToken);
+        }
+        catch (Exception ex)
+        {
+            // Best-effort expiration: if the persisted Stripe settings are gone/disabled/undecryptable we
+            // simply cannot call Stripe. Local cancellation remains authoritative; never throw here.
+            _logger.LogWarning(ex,
+                "[Stripe] Skipping best-effort expire of session {SessionId} — Stripe settings unavailable.",
+                providerSessionId);
+            return;
+        }
+
+        try
+        {
+            var client  = new StripeClient(secretKey);
             var service = new SessionService(client);
 
             await service.ExpireAsync(providerSessionId, cancellationToken: cancellationToken);
@@ -187,7 +205,7 @@ public sealed class StripeOnlinePaymentProvider : IOnlinePaymentProvider
 
     // ── Webhook parsing ───────────────────────────────────────────────────────
 
-    public Task<OnlinePaymentWebhookResult> ParseWebhookAsync(
+    public async Task<OnlinePaymentWebhookResult> ParseWebhookAsync(
         string                              rawBody,
         IReadOnlyDictionary<string, string> headers,
         CancellationToken                   cancellationToken = default)
@@ -195,16 +213,26 @@ public sealed class StripeOnlinePaymentProvider : IOnlinePaymentProvider
         if (string.IsNullOrWhiteSpace(rawBody))
         {
             _logger.LogWarning("[Stripe] Webhook received with empty body — ignoring.");
-            return Task.FromResult(MakeIgnored("empty_body"));
+            return MakeIgnored("empty_body");
         }
 
-        var webhookSecret = ResolveWebhookSecret();
+        // Fail closed: no enabled/decryptable persisted webhook secret means we cannot verify the signature,
+        // so the event is ignored with NO payment side effect (SignatureVerified stays false → no durable
+        // record). Never throws — a throw would make the provider retry against a permanently unverifiable
+        // configuration.
+        var webhookSecret = await _settingsResolver.TryResolveWebhookSecretAsync(cancellationToken);
+        if (string.IsNullOrWhiteSpace(webhookSecret))
+        {
+            _logger.LogWarning(
+                "[Stripe] Webhook ignored — no resolvable persisted webhook secret; cannot verify signature.");
+            return MakeIgnored("webhook_secret_unavailable");
+        }
 
         if (!headers.TryGetValue("Stripe-Signature", out var stripeSignature) ||
             string.IsNullOrWhiteSpace(stripeSignature))
         {
             _logger.LogWarning("[Stripe] Webhook received without Stripe-Signature header — ignoring.");
-            return Task.FromResult(MakeIgnored("missing_stripe_signature"));
+            return MakeIgnored("missing_stripe_signature");
         }
 
         Event stripeEvent;
@@ -226,14 +254,14 @@ public sealed class StripeOnlinePaymentProvider : IOnlinePaymentProvider
                 "[Stripe] Webhook signature validation failed — Code: {Code}.",
                 ex.StripeError?.Code ?? "signature_verification_error");
 
-            return Task.FromResult(MakeIgnored("invalid_signature"));
+            return MakeIgnored("invalid_signature");
         }
 
         _logger.LogDebug(
             "[Stripe] Webhook validated — type: {EventType}, id: {EventId}.",
             stripeEvent.Type, stripeEvent.Id);
 
-        return Task.FromResult(MapStripeEvent(stripeEvent));
+        return MapStripeEvent(stripeEvent);
     }
 
     // ── Event mapping ─────────────────────────────────────────────────────────
@@ -344,36 +372,6 @@ public sealed class StripeOnlinePaymentProvider : IOnlinePaymentProvider
     }
 
     // ── Private helpers ───────────────────────────────────────────────────────
-
-    private string ResolveSecretKey()
-    {
-        if (!_options.Value.Providers.TryGetValue("Stripe", out var stripeOpts) ||
-            string.IsNullOrWhiteSpace(stripeOpts.SecretKey))
-        {
-            throw new InvalidOperationException(
-                "Stripe SecretKey is not configured. " +
-                "For local sandbox testing set it via dotnet user-secrets: " +
-                "dotnet user-secrets set \"OnlinePayments:Providers:Stripe:SecretKey\" \"sk_test_...\" " +
-                "Never add real Stripe keys to source control.");
-        }
-
-        return stripeOpts.SecretKey.Trim();
-    }
-
-    private string ResolveWebhookSecret()
-    {
-        if (!_options.Value.Providers.TryGetValue("Stripe", out var stripeOpts) ||
-            string.IsNullOrWhiteSpace(stripeOpts.WebhookSecret))
-        {
-            throw new InvalidOperationException(
-                "Stripe WebhookSecret is not configured. " +
-                "For local sandbox testing set it via dotnet user-secrets: " +
-                "dotnet user-secrets set \"OnlinePayments:Providers:Stripe:WebhookSecret\" \"whsec_...\" " +
-                "Never add real Stripe webhook secrets to source control.");
-        }
-
-        return stripeOpts.WebhookSecret.Trim();
-    }
 
     // Pre-verification ignore: no trusted event id, SignatureVerified stays false so the app service
     // never creates a durable idempotency record for an unauthenticated payload (empty body, missing

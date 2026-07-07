@@ -46,6 +46,21 @@ public class TeeNovaApplicationModule : AbpModule
 
         context.Services.Configure<OnlinePaymentOptions>(configuration.GetSection("OnlinePayments"));
 
+        // Application encryption key for persisted payment secrets (Jira 9902). The Stripe secret key and
+        // webhook signing secret are stored only as ciphertext produced by IStringEncryptionService; the key
+        // material lives HERE (configuration/user-secrets/env), never in the database. Operators MUST set a
+        // strong, environment-unique passphrase via user-secrets/env (Encryption:PassPhrase) — rotating it
+        // invalidates previously stored secrets (they must be re-entered by an admin). When unset, ABP's
+        // built-in default passphrase is used, which is acceptable ONLY for local development.
+        var encryptionPassPhrase = configuration["Encryption:PassPhrase"];
+        if (!string.IsNullOrWhiteSpace(encryptionPassPhrase))
+        {
+            context.Services.Configure<Volo.Abp.Security.Encryption.AbpStringEncryptionOptions>(options =>
+            {
+                options.DefaultPassPhrase = encryptionPassPhrase;
+            });
+        }
+
         // Inventory auto-deduction (Jira 9005) — the enable flag is now DB-backed
         // (InventorySettings), toggled from the admin panel; default OFF.
         context.Services.AddTransient<IInventoryDeductionService, InventoryDeductionService>();
@@ -93,13 +108,12 @@ public class TeeNovaApplicationModule : AbpModule
 
             if (stripeSection.GetValue<bool>("Enabled"))
             {
-                // Missing Stripe secrets must fail startup, not the first checkout/webhook (Jira 9802).
-                // The check names the missing keys but never echoes configured values.
-                OnlinePaymentStartupGuard.EnsureStripeSecretsPresent(
-                    paymentsEnabled,
-                    stripeSection["SecretKey"],
-                    stripeSection["WebhookSecret"]);
-
+                // Stripe secrets are NO LONGER sourced from config (Jira 9902): the secret key and webhook
+                // secret are resolved at runtime from the encrypted, admin-managed PaymentProviderSetting via
+                // IStripePaymentSettingsResolver. The app therefore boots without any Stripe secret present so
+                // an admin can configure it in the panel; checkout/webhook then fail closed until a valid,
+                // enabled Test-mode configuration exists. (The former EnsureStripeSecretsPresent startup gate is
+                // intentionally not called here — it would block boot before configuration is possible.)
                 context.Services.AddTransient<IOnlinePaymentProvider, StripeOnlinePaymentProvider>();
             }
         }
