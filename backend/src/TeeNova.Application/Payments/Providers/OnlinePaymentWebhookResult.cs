@@ -22,6 +22,18 @@ public class OnlinePaymentWebhookResult
 {
     public PaymentProvider             Provider          { get; set; }
     public OnlinePaymentWebhookOutcome Outcome           { get; set; }
+
+    /// <summary>
+    /// True once the provider has cryptographically verified the event as authentic (Jira 9805/9806).
+    /// Only verified events are eligible to create a durable <c>PaymentWebhookEvent</c> idempotency
+    /// record — an invalid signature, missing signature, or empty body MUST leave this false so no
+    /// trusted event record is ever created for an unauthenticated payload.
+    /// </summary>
+    public bool                        SignatureVerified { get; set; }
+
+    /// <summary>Provider-native event type string (e.g. "checkout.session.completed"), when known.</summary>
+    public string?                     ProviderEventType { get; set; }
+
     public string?                     ProviderSessionId { get; set; }
     public string?                     ProviderPaymentId { get; set; }
     public string?                     ProviderEventId   { get; set; }

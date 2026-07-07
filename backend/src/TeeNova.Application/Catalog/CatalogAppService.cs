@@ -70,6 +70,13 @@ public class CatalogAppService : ApplicationService, ICatalogAppService
             .Include(p => p.Images)
             .Include(p => p.Variants);
 
+        // Public catalog safety (Jira 9808): GET /api/catalog/products is [AllowAnonymous]. An anonymous
+        // caller must never enumerate inactive products, so force the active-only filter and ignore any
+        // client-supplied IsActive (e.g. ?isActive=false or ?isActive=). Authenticated admins keep the
+        // full filter (pass IsActive=null to see everything) for product management.
+        if (!CurrentUser.IsAuthenticated)
+            input.IsActive = true;
+
         if (input.IsActive.HasValue)
             query = query.Where(p => p.IsActive == input.IsActive.Value);
 
@@ -206,6 +213,12 @@ public class CatalogAppService : ApplicationService, ICatalogAppService
             .FirstOrDefaultAsync(p => p.Id == id);
 
         if (product == null)
+            throw new Volo.Abp.Domain.Entities.EntityNotFoundException(typeof(Product), id);
+
+        // Public detail safety (Jira 9808): GET /api/catalog/products/{id} is [AllowAnonymous]. An inactive
+        // product must not be reachable by GUID from the storefront — return 404 for anonymous callers.
+        // Authenticated admins can still open inactive products for management.
+        if (!product.IsActive && !CurrentUser.IsAuthenticated)
             throw new Volo.Abp.Domain.Entities.EntityNotFoundException(typeof(Product), id);
 
         var dto = ObjectMapper.Map<Product, ProductDto>(product);

@@ -1,0 +1,61 @@
+{
+  // Local development template (Jira 9802).
+  //
+  // Copy this file to appsettings.Development.json (which is gitignored on purpose) and fill in
+  // your own values. NEVER commit real credentials, connection strings, or API keys — anything
+  // sensitive belongs in user-secrets, which override this file at runtime:
+  //
+  //   cd backend/src/TeeNova.HttpApi.Host
+  //   dotnet user-secrets set "ConnectionStrings:Default" "Server=...;Database=TeeNova;User Id=...;Password=...;TrustServerCertificate=True;"
+  //
+  "ConnectionStrings": {
+    "Default": "Server=localhost;Database=TeeNova;Trusted_Connection=True;TrustServerCertificate=True;"
+  },
+  "Jwt": {
+    // Any random string of at least 32 characters. Dev-only — never reuse in other environments.
+    "Secret": "REPLACE_WITH_A_RANDOM_DEV_ONLY_SECRET_MIN_32_CHARS",
+    "Issuer": "https://localhost:44300",
+    "Audience": "TeeNovaAdminClient",
+    "ExpiryMinutes": 480
+  },
+  "AdminAuth": {
+    "Username": "admin",
+    // BCrypt hash of your chosen local admin password (generate locally, e.g. with BCrypt.Net).
+    "PasswordHash": "REPLACE_WITH_BCRYPT_HASH_OF_YOUR_LOCAL_ADMIN_PASSWORD"
+  },
+  // Public endpoint abuse-protection rate limits (Jira 9808). Optional — per-policy defaults in
+  // TeeNovaHttpApiHostModule apply if omitted. Each policy is per-IP fixed-window. To disable all
+  // public limits for local load testing, set "PublicRateLimit": { "Enabled": false }.
+  "PublicRateLimit": {
+    "Enabled": true,
+    "PublicCheckoutPolicy": { "PermitLimit": 10, "WindowSeconds": 60 },
+    "PublicPricingPolicy": { "PermitLimit": 60, "WindowSeconds": 60 },
+    "PublicUploadPolicy": { "PermitLimit": 20, "WindowSeconds": 60 },
+    "PublicEnquiryPolicy": { "PermitLimit": 8, "WindowSeconds": 60 },
+    "PaymentWebhookPolicy": { "PermitLimit": 300, "WindowSeconds": 60 }
+  },
+  "OnlinePayments": {
+    // Mock providers are Development-only: the backend refuses to start when Enabled=true and
+    // UseMockProviders=true outside the Development environment, because mock providers accept
+    // unsigned webhook payloads (Jira 9802 startup guard).
+    "Enabled": true,
+    "UseMockProviders": true,
+    "DefaultProvider": "Stripe",
+    "Currency": "NZD",
+    // Browser return URLs (Jira 9811). Distinct success + cancel paths. The backend appends its own
+    // ?orderId=&orderNumber=&provider= params, so these must carry no query/fragment of their own; a
+    // browser redirect here is NEVER treated as payment proof — the webhook is the source of truth.
+    // Outside Development these must be absolute HTTPS on a non-local host (startup-validated).
+    "SuccessReturnBaseUrl": "http://localhost:3000/checkout/success",
+    "CancelReturnBaseUrl": "http://localhost:3000/checkout/cancel",
+    "Providers": {
+      "Stripe":   { "Enabled": true },
+      "Windcave": { "Enabled": true },
+      "Poli":     { "Enabled": true },
+      "PayPal":   { "Enabled": true }
+    }
+    // Real Stripe sandbox keys (only needed when UseMockProviders=false) go in user-secrets, never here:
+    //   dotnet user-secrets set "OnlinePayments:Providers:Stripe:SecretKey" "sk_test_..."
+    //   dotnet user-secrets set "OnlinePayments:Providers:Stripe:WebhookSecret" "whsec_..."
+  }
+}

@@ -1,6 +1,7 @@
 using System.Threading.Tasks;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.RateLimiting;
 using TeeNova.Pricing.Dtos;
 
 namespace TeeNova.Pricing;
@@ -24,6 +25,8 @@ public class PricingController : TeeNovaControllerBase
     /// Quote-only: does not create or modify any records.
     /// </summary>
     [HttpPost("calculate")]
+    [EnableRateLimiting("PublicPricingPolicy")]
+    [RequestSizeLimit(64 * 1024)]
     public async Task<PriceCalculationResponseDto> CalculateAsync([FromBody] PriceCalculationRequestDto input)
         => await _pricingAppService.CalculateAsync(input);
 }

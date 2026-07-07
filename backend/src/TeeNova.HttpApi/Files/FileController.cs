@@ -4,6 +4,7 @@ using System.Threading.Tasks;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.RateLimiting;
 using TeeNova.Auth;
 using TeeNova.Files.Dtos;
 using Volo.Abp.Application.Dtos;
@@ -24,10 +25,11 @@ public class FileController : TeeNovaControllerBase
 
     /// <summary>
     /// Uploads a design image. Returns an asset ID and public URL.
-    /// Max 20 MB. Accepted: PNG, JPEG, SVG, WebP.
+    /// Max 20 MB. Accepted: PNG, JPEG, WebP, PDF, AI (extension + content type must match; SVG rejected).
     /// </summary>
     [HttpPost("upload")]
     [AllowAnonymous]
+    [EnableRateLimiting("PublicUploadPolicy")]
     [RequestSizeLimit(20 * 1024 * 1024)]
     [Consumes("multipart/form-data")]
     public async Task<UploadFileOutput> UploadAsync(

@@ -1,6 +1,8 @@
 using System.Threading.Tasks;
+using Microsoft.AspNetCore.Hosting;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Hosting;
 using TeeNova.Auth;
 using TeeNova.Email;
 using TeeNova.Files;
@@ -50,29 +52,59 @@ public class TeeNovaApplicationModule : AbpModule
 
         context.Services.AddTransient<IOnlinePaymentProviderResolver, OnlinePaymentProviderResolver>();
 
-        // Register mock providers only when explicitly enabled — never in production.
-        var useMockProviders = configuration
-            .GetSection("OnlinePayments")
-            .GetValue<bool>("UseMockProviders");
+        var onlinePaymentsSection = configuration.GetSection("OnlinePayments");
+        var paymentsEnabled       = onlinePaymentsSection.GetValue<bool>("Enabled");
+        var useMockProviders      = onlinePaymentsSection.GetValue<bool>("UseMockProviders");
 
-        if (useMockProviders)
+        // Environment fail-safe (Jira 9802): mock providers process UNSIGNED webhook payloads and are
+        // therefore strictly Development-only. An unresolvable environment counts as non-Development so
+        // this can never fail open. Enabled+mocks outside Development fails startup; with payments
+        // disabled the app boots but registers no payment provider at all.
+        var environment   = context.Services.GetSingletonInstanceOrNull<IWebHostEnvironment>();
+        var isDevelopment = environment != null && environment.IsDevelopment();
+
+        OnlinePaymentStartupGuard.EnsureMockProvidersAreDevelopmentOnly(
+            paymentsEnabled, useMockProviders, isDevelopment);
+
+        // Return URL safety (Jira 9811): when payments are enabled the success/cancel browser return URLs
+        // must be present and absolute, and outside Development must be HTTPS on a non-local host with no
+        // pre-existing query/fragment. Fails startup so a customer can never be redirected to an untrusted
+        // origin after checkout.
+        OnlinePaymentStartupGuard.EnsureReturnUrlsAreValid(
+            paymentsEnabled,
+            isDevelopment,
+            onlinePaymentsSection["SuccessReturnBaseUrl"],
+            onlinePaymentsSection["CancelReturnBaseUrl"]);
+
+        if (OnlinePaymentStartupGuard.ShouldRegisterMockProviders(useMockProviders, isDevelopment))
         {
             context.Services.AddTransient<IOnlinePaymentProvider, MockStripeOnlinePaymentProvider>();
             context.Services.AddTransient<IOnlinePaymentProvider, MockWindcaveOnlinePaymentProvider>();
             context.Services.AddTransient<IOnlinePaymentProvider, MockPoliOnlinePaymentProvider>();
             context.Services.AddTransient<IOnlinePaymentProvider, MockPayPalOnlinePaymentProvider>();
         }
-        else
+        else if (!useMockProviders)
         {
             // Register real provider implementations.
             // Only providers with Enabled = true are registered; the resolver throws if a
             // disabled/unregistered provider is requested.
             // PayPal, Windcave, and POLi implementations are added in Jira 7037, 7040, 7041.
-            var providersConfig = configuration.GetSection("OnlinePayments:Providers");
+            var stripeSection = configuration.GetSection("OnlinePayments:Providers:Stripe");
 
-            if (providersConfig.GetSection("Stripe").GetValue<bool>("Enabled"))
+            if (stripeSection.GetValue<bool>("Enabled"))
+            {
+                // Missing Stripe secrets must fail startup, not the first checkout/webhook (Jira 9802).
+                // The check names the missing keys but never echoes configured values.
+                OnlinePaymentStartupGuard.EnsureStripeSecretsPresent(
+                    paymentsEnabled,
+                    stripeSection["SecretKey"],
+                    stripeSection["WebhookSecret"]);
+
                 context.Services.AddTransient<IOnlinePaymentProvider, StripeOnlinePaymentProvider>();
+            }
         }
+        // else: UseMockProviders=true outside Development with payments disabled — no providers are
+        // registered, so an unsigned mock webhook payload can never be parsed in this environment.
     }
 
     public override async Task OnApplicationInitializationAsync(ApplicationInitializationContext context)

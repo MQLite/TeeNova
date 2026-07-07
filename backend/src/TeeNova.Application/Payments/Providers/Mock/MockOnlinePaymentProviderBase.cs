@@ -70,6 +70,15 @@ public abstract class MockOnlinePaymentProviderBase : IOnlinePaymentProvider
         return Task.FromResult(ParseMockWebhook(rawBody));
     }
 
+    public Task ExpireSessionAsync(
+        string            providerSessionId,
+        CancellationToken cancellationToken = default)
+    {
+        // Mock providers hold no external session state; local cancellation is authoritative.
+        // No-op so the superseded/stale-session flow (Jira 9804) behaves consistently in Development.
+        return Task.CompletedTask;
+    }
+
     // ── Mock webhook parsing ──────────────────────────────────────────────────
 
     private OnlinePaymentWebhookResult ParseMockWebhook(string rawBody)
@@ -105,17 +114,44 @@ public abstract class MockOnlinePaymentProviderBase : IOnlinePaymentProvider
             _                                            => "mock_ignored",
         };
 
+        // The mock provider is Development-only (Jira 9802) and treats every well-formed payload as an
+        // authentic event. Marking it verified lets the idempotency layer (Jira 9806) exercise the same
+        // durable-record path as Stripe in local QA. If the QA payload omits providerEventId we derive a
+        // deterministic one from the payload's meaningful fields, so posting the SAME body twice collapses
+        // to one event id (replay), while a genuinely different payload yields a different id.
+        var providerEventId = string.IsNullOrWhiteSpace(payload.ProviderEventId)
+            ? DeriveDeterministicEventId(outcome, payload)
+            : payload.ProviderEventId.Trim();
+
         return new OnlinePaymentWebhookResult
         {
             Provider          = Provider,
             Outcome           = outcome,
+            SignatureVerified = true,
+            ProviderEventType = $"mock.{outcome}",
             ProviderSessionId = payload.ProviderSessionId,
             ProviderPaymentId = payload.ProviderPaymentId,
-            ProviderEventId   = payload.ProviderEventId,
+            ProviderEventId   = providerEventId,
             RawProviderStatus = payload.RawProviderStatus ?? defaultStatus,
             Amount            = payload.Amount,
             Currency          = payload.Currency?.ToUpperInvariant(),
         };
+    }
+
+    private string DeriveDeterministicEventId(OnlinePaymentWebhookOutcome outcome, MockWebhookPayload payload)
+    {
+        var providerName = Provider.ToString().ToLowerInvariant();
+        var seed = string.Join(
+            '|',
+            outcome,
+            payload.ProviderSessionId ?? "",
+            payload.ProviderPaymentId ?? "",
+            payload.Amount?.ToString(CultureInfo.InvariantCulture) ?? "",
+            payload.Currency?.ToUpperInvariant() ?? "");
+
+        using var sha = System.Security.Cryptography.SHA256.Create();
+        var hash = sha.ComputeHash(System.Text.Encoding.UTF8.GetBytes(seed));
+        return $"mock_{providerName}_evt_{Convert.ToHexString(hash, 0, 8).ToLowerInvariant()}";
     }
 
     private OnlinePaymentWebhookResult MakeIgnored(string rawStatus) => new()

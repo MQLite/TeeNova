@@ -1,4 +1,5 @@
 using System;
+using System.Linq;
 using System.Net;
 using System.Text;
 using System.Text.Json.Serialization;
@@ -18,6 +19,7 @@ using Microsoft.OpenApi.Models;
 using TeeNova.Auth;
 using TeeNova.EntityFrameworkCore;
 using Volo.Abp;
+using Volo.Abp.AspNetCore.ExceptionHandling;
 using Volo.Abp.AspNetCore.Mvc;
 using Volo.Abp.AspNetCore.Serilog;
 using Volo.Abp.Autofac;
@@ -47,6 +49,7 @@ public class TeeNovaHttpApiHostModule : AbpModule
         ConfigureJwtAuthentication(context, configuration);
         ConfigureForwardedHeaders(context);
         ConfigureRateLimiting(context, configuration);
+        ConfigureExceptionHandling(context, hostingEnvironment);
 
         // Serialize enums as strings so the frontend receives "Pending" not 0
         context.Services.AddControllers()
@@ -64,13 +67,21 @@ public class TeeNovaHttpApiHostModule : AbpModule
 
     private void ConfigureCors(ServiceConfigurationContext context, Microsoft.Extensions.Configuration.IConfiguration configuration)
     {
+        // Origins are always an explicit allow-list from config (never a wildcard). Because the policy
+        // sends credentials, a "*" origin is both unsafe and rejected by ASP.NET at runtime — filter it
+        // out defensively (Jira 9808) so a misconfigured "*" fails closed to "no cross-origin" rather
+        // than throwing, and trim entries so stray whitespace never breaks an otherwise-valid origin.
+        var corsOrigins = (configuration["App:CorsOrigins"] ?? string.Empty)
+            .Split(",", StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .Where(o => o != "*")
+            .ToArray();
+
         context.Services.AddCors(options =>
         {
             options.AddDefaultPolicy(builder =>
             {
                 builder
-                    .WithOrigins(configuration["App:CorsOrigins"]?
-                        .Split(",", StringSplitOptions.RemoveEmptyEntries) ?? Array.Empty<string>())
+                    .WithOrigins(corsOrigins)
                     .AllowAnyHeader()
                     .AllowAnyMethod()
                     .AllowCredentials();
@@ -127,6 +138,23 @@ public class TeeNovaHttpApiHostModule : AbpModule
             });
     }
 
+    // Public error-response safety (Jira 9809): outside Development, never send internal exception
+    // details or stack traces to API clients. ABP still returns BusinessException codes+messages (the
+    // intended, safe validation errors the frontend renders) — only unhandled exceptions (e.g. a raw
+    // provider/DB failure on a payment path) collapse to a generic 500, so a stack trace, connection
+    // string, or secret can never be echoed to a caller. Explicit here as defense-in-depth over defaults.
+    private static void ConfigureExceptionHandling(
+        ServiceConfigurationContext context,
+        Microsoft.Extensions.Hosting.IHostEnvironment env)
+    {
+        var isDevelopment = env.IsDevelopment();
+        context.Services.Configure<AbpExceptionHandlingOptions>(options =>
+        {
+            options.SendExceptionsDetailsToClients = isDevelopment;
+            options.SendStackTraceToClients        = isDevelopment;
+        });
+    }
+
     private static void ConfigureForwardedHeaders(ServiceConfigurationContext context)
     {
         context.Services.Configure<ForwardedHeadersOptions>(options =>
@@ -139,6 +167,16 @@ public class TeeNovaHttpApiHostModule : AbpModule
         });
     }
 
+    // Public abuse-protection rate limits (Jira 9808). Every policy is per-IP fixed-window and fully
+    // config-driven under "PublicRateLimit"; all are registered unconditionally (as NoLimiter when
+    // disabled) so the [EnableRateLimiting("…")] attributes always resolve and deploy unchanged.
+    private const string AdminLoginPolicy      = "AdminLoginPolicy";
+    private const string PublicCheckoutPolicy  = "PublicCheckoutPolicy";
+    private const string PublicPricingPolicy   = "PublicPricingPolicy";
+    private const string PublicUploadPolicy    = "PublicUploadPolicy";
+    private const string PublicEnquiryPolicy   = "PublicEnquiryPolicy";
+    private const string PaymentWebhookPolicy  = "PaymentWebhookPolicy";
+
     private static void ConfigureRateLimiting(
         ServiceConfigurationContext context,
         Microsoft.Extensions.Configuration.IConfiguration configuration)
@@ -149,11 +187,43 @@ public class TeeNovaHttpApiHostModule : AbpModule
         var windowSeconds = section.GetValue<int>("WindowSeconds", 60);
         var queueLimit    = section.GetValue<int>("QueueLimit", 0);
 
+        // Public endpoint limits (Jira 9808). Defaults are deliberately generous enough for real
+        // storefront use yet low enough to blunt anonymous spam / disk-fill / session-spam bursts.
+        var publicSection  = configuration.GetSection("PublicRateLimit");
+        var publicEnabled  = publicSection.GetValue<bool>("Enabled", true);
+
         context.Services.AddRateLimiter(options =>
         {
+            // Per-IP fixed-window policy from a config subsection, or an inert NoLimiter when disabled
+            // (keeps the named policy resolvable so controller attributes never fail to bind).
+            void AddPublicPolicy(string name, int defaultPermit, int defaultWindow)
+            {
+                if (!publicEnabled)
+                {
+                    options.AddPolicy(name, _ => RateLimitPartition.GetNoLimiter<string>("disabled"));
+                    return;
+                }
+
+                var sub    = publicSection.GetSection(name);
+                var permit = sub.GetValue<int>("PermitLimit", defaultPermit);
+                var window = sub.GetValue<int>("WindowSeconds", defaultWindow);
+                var queue  = sub.GetValue<int>("QueueLimit", 0);
+
+                options.AddPolicy(name, httpContext =>
+                    RateLimitPartition.GetFixedWindowLimiter(
+                        partitionKey: httpContext.Connection.RemoteIpAddress?.ToString() ?? "unknown",
+                        factory: _ => new FixedWindowRateLimiterOptions
+                        {
+                            PermitLimit       = permit,
+                            Window            = TimeSpan.FromSeconds(window),
+                            QueueLimit        = queue,
+                            AutoReplenishment = true,
+                        }));
+            }
+
             if (enabled)
             {
-                options.AddPolicy("AdminLoginPolicy", httpContext =>
+                options.AddPolicy(AdminLoginPolicy, httpContext =>
                     RateLimitPartition.GetFixedWindowLimiter(
                         partitionKey: httpContext.Connection.RemoteIpAddress?.ToString() ?? "unknown",
                         factory: _ => new FixedWindowRateLimiterOptions
@@ -168,22 +238,41 @@ public class TeeNovaHttpApiHostModule : AbpModule
             {
                 // Emergency disable path: register the policy name with no limiting so
                 // [EnableRateLimiting("AdminLoginPolicy")] compiles and deploys unchanged.
-                options.AddPolicy("AdminLoginPolicy", _ =>
+                options.AddPolicy(AdminLoginPolicy, _ =>
                     RateLimitPartition.GetNoLimiter<string>("disabled"));
             }
+
+            // Checkout writes (order create, online payment session): anonymous + can trigger emails /
+            // DB writes / provider session creation, so the tightest of the public limits.
+            AddPublicPolicy(PublicCheckoutPolicy, defaultPermit: 10, defaultWindow: 60);
+
+            // Pricing quote: read-only, no writes, called repeatedly while customizing — most generous.
+            AddPublicPolicy(PublicPricingPolicy, defaultPermit: 60, defaultWindow: 60);
+
+            // File upload: anonymous + writes files to disk — capped to blunt disk-fill abuse.
+            AddPublicPolicy(PublicUploadPolicy, defaultPermit: 20, defaultWindow: 60);
+
+            // Banner enquiry: anonymous + triggers admin/customer emails — kept low like checkout.
+            AddPublicPolicy(PublicEnquiryPolicy, defaultPermit: 8, defaultWindow: 60);
+
+            // Payment webhook: server-to-server. Deliberately VERY generous so a legitimate Stripe retry
+            // burst is never throttled; this exists only to cap a pathological flood, not normal delivery.
+            // Signature verification + the 1 MB body cap (Jira 9805) remain the real webhook guards.
+            AddPublicPolicy(PaymentWebhookPolicy, defaultPermit: 300, defaultWindow: 60);
 
             options.OnRejected = async (ctx, ct) =>
             {
                 ctx.HttpContext.Response.StatusCode = StatusCodes.Status429TooManyRequests;
                 ctx.HttpContext.Response.Headers["Retry-After"] = windowSeconds.ToString();
                 await ctx.HttpContext.Response.WriteAsJsonAsync(
-                    new { message = "Too many login attempts. Please wait before trying again." },
+                    new { message = "Too many requests. Please wait a moment and try again." },
                     ct);
 
                 ctx.HttpContext.RequestServices
                     .GetRequiredService<ILogger<TeeNovaHttpApiHostModule>>()
                     .LogWarning(
-                        "Admin login rate limit exceeded from IP {RemoteIp}.",
+                        "Rate limit exceeded for {Path} from IP {RemoteIp}.",
+                        ctx.HttpContext.Request.Path,
                         ctx.HttpContext.Connection.RemoteIpAddress);
             };
         });

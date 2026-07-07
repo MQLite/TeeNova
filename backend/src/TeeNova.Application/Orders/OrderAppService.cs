@@ -8,7 +8,9 @@ using Microsoft.AspNetCore.Http;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
+using TeeNova.Customization;
 using TeeNova.Email;
+using TeeNova.Files;
 using TeeNova.Inventory;
 using TeeNova.Orders.Dtos;
 using TeeNova.Payments;
@@ -27,6 +29,8 @@ public class OrderAppService : ApplicationService, IOrderAppService
     private readonly IRepository<PaymentTransaction, Guid>   _paymentTransactionRepository;
     private readonly IRepository<OrderPriceAdjustment, Guid> _priceAdjustmentRepository;
     private readonly IRepository<OnlinePaymentSession, Guid> _onlinePaymentSessionRepository;
+    private readonly IRepository<PaymentWebhookEvent, Guid>  _paymentWebhookEventRepository;
+    private readonly IRepository<UploadedAsset, Guid>        _uploadedAssetRepository;
     private readonly IOrderEmailNotificationService          _orderEmailNotificationService;
     private readonly IOptions<OnlinePaymentOptions>          _onlinePaymentOptions;
     private readonly IOnlinePaymentProviderResolver          _onlinePaymentProviderResolver;
@@ -41,6 +45,8 @@ public class OrderAppService : ApplicationService, IOrderAppService
         IRepository<PaymentTransaction, Guid>    paymentTransactionRepository,
         IRepository<OrderPriceAdjustment, Guid>  priceAdjustmentRepository,
         IRepository<OnlinePaymentSession, Guid>  onlinePaymentSessionRepository,
+        IRepository<PaymentWebhookEvent, Guid>   paymentWebhookEventRepository,
+        IRepository<UploadedAsset, Guid>         uploadedAssetRepository,
         IOrderEmailNotificationService           orderEmailNotificationService,
         IOptions<OnlinePaymentOptions>           onlinePaymentOptions,
         IOnlinePaymentProviderResolver           onlinePaymentProviderResolver,
@@ -54,6 +60,8 @@ public class OrderAppService : ApplicationService, IOrderAppService
         _paymentTransactionRepository   = paymentTransactionRepository;
         _priceAdjustmentRepository      = priceAdjustmentRepository;
         _onlinePaymentSessionRepository = onlinePaymentSessionRepository;
+        _paymentWebhookEventRepository  = paymentWebhookEventRepository;
+        _uploadedAssetRepository        = uploadedAssetRepository;
         _orderEmailNotificationService  = orderEmailNotificationService;
         _onlinePaymentOptions           = onlinePaymentOptions;
         _onlinePaymentProviderResolver  = onlinePaymentProviderResolver;
@@ -65,6 +73,13 @@ public class OrderAppService : ApplicationService, IOrderAppService
 
     public async Task<OrderDto> CreateAsync(CreateOrderDto input)
     {
+        // Public/anonymous checkout hardening (Jira 9808): validate + normalize every customer-supplied
+        // design reference BEFORE pricing/persisting. A supplied UploadedAssetId must resolve to a real
+        // CustomerDesign asset (its stored URL then becomes the authoritative reference); a bare
+        // UploadedAssetUrl must be a safe internal /uploads path (no external/tracking URLs, no unsafe
+        // schemes). Runs on the untrusted DTO so the constraint can never be bypassed by the pricing path.
+        await ValidateAndNormalizeDesignReferencesAsync(input);
+
         // Address is optional for manual + pickup orders (walk-in / phone). The NOT NULL address
         // columns are stored as empty strings when omitted; a customer name + email are still kept.
         var addr = input.ShippingAddress;
@@ -179,7 +194,35 @@ public class OrderAppService : ApplicationService, IOrderAppService
         // Items/Prints snapshot — no DB access, no mutation of the flat items or any price snapshot.
         dto.PrintGroups = OrderPrintGroupBuilder.Build(dto);
 
+        // Public-read redaction (Jira 9808): GET /api/orders/{id} is [AllowAnonymous] for the customer
+        // success/tracking pages. Strip admin-only / internal fields for unauthenticated callers; an
+        // authenticated admin/viewer (bearer token) still receives the full detail the admin UI needs.
+        if (!CurrentUser.IsAuthenticated)
+            RedactForAnonymous(dto);
+
         return dto;
+    }
+
+    /// <summary>
+    /// Removes admin-only and internal fields from an order read for anonymous callers (Jira 9808): admin
+    /// notes, the price-adjustment history (reasons + admin usernames), the internal timeline audit trail,
+    /// per-transaction records, and the internal last-payment note/reference. Customer-safe fields the
+    /// success/tracking pages use — status, totals, balance, payment status, items/prints — are untouched.
+    /// </summary>
+    private static void RedactForAnonymous(OrderDto dto)
+    {
+        dto.AdminNotes = null;
+
+        dto.PriceAdjustments          = new();
+        dto.HasPriceAdjustment        = false;
+        dto.LastPriceAdjustedAt       = null;
+        dto.LastPriceAdjustmentReason = null;
+        dto.LastPriceAdjustmentAmount = null;
+
+        dto.Timeline            = new();
+        dto.PaymentTransactions = new();
+        dto.LastPaymentNote      = null;
+        dto.LastPaymentReference = null;
     }
 
     public async Task<OrderDto> AdjustPriceAsync(Guid id, AdjustOrderPriceDto input)
@@ -201,6 +244,9 @@ public class OrderAppService : ApplicationService, IOrderAppService
         foreach (var session in pendingSessions)
         {
             session.MarkCancelled(null, "price_adjusted");
+            // Best-effort provider-side expiration (Jira 9804): stop a stale customer checkout tab
+            // from completing a charge at the old amount. Never throws; local cancellation stands.
+            await TryExpireProviderSessionAsync(session);
             await _onlinePaymentSessionRepository.UpdateAsync(session, autoSave: false);
         }
 
@@ -335,6 +381,9 @@ public class OrderAppService : ApplicationService, IOrderAppService
             foreach (var session in pendingSessions)
             {
                 session.MarkCancelled(null, "order_content_edited");
+                // Best-effort provider-side expiration (Jira 9804): stop a stale customer checkout tab
+                // from completing a charge at the old amount. Never throws; local cancellation stands.
+                await TryExpireProviderSessionAsync(session);
                 await _onlinePaymentSessionRepository.UpdateAsync(session, autoSave: false);
             }
 
@@ -363,12 +412,33 @@ public class OrderAppService : ApplicationService, IOrderAppService
     /// Permanently deletes an order and everything that references it. The Order aggregate owns its
     /// Items -> Prints (cascaded), but timeline entries, payment transactions, price adjustments and
     /// online payment sessions are independent aggregates keyed by OrderId and are removed explicitly
-    /// to avoid orphaned rows. This is a hard delete — financial/audit history for the order is lost.
+    /// to avoid orphaned rows. This is a hard delete — allowed ONLY for orders that never touched the
+    /// payment machinery (see the retention guard below); everything with payment history is retained.
     /// </summary>
     public async Task DeleteAsync(Guid id)
     {
         // Resolve first so a missing order surfaces a clean 404 rather than silently no-op'ing.
         var order = await _orderRepository.GetAsync(id);
+
+        // Payment-audit retention policy (Jira 9807 → extended in 9810): a hard delete permanently erases
+        // this order's financial and reconciliation trail. Block it whenever the order has ANY payment
+        // footprint — recorded money (PaidAmount), a PaymentTransaction, an OnlinePaymentSession, or a
+        // durable PaymentWebhookEvent (incl. RequiresManualReview records) — so no charged/half-charged or
+        // under-reconciliation order can be silently destroyed. Such orders are cancelled (a reversible,
+        // auditable terminal state), never deleted. (A future soft-delete/archive design supersedes this.)
+        var transactionCount  = await _paymentTransactionRepository.CountAsync(t => t.OrderId == id);
+        var sessionCount      = await _onlinePaymentSessionRepository.CountAsync(s => s.OrderId == id);
+        var webhookEventCount = await _paymentWebhookEventRepository.CountAsync(e => e.OrderId == id);
+
+        if (order.PaidAmount > 0 || transactionCount > 0 || sessionCount > 0 || webhookEventCount > 0)
+        {
+            throw new Volo.Abp.BusinessException("TeeNova:Order:CannotDeleteOrderWithPaymentHistory")
+                .WithData("OrderId", id)
+                .WithData("PaidAmount", order.PaidAmount)
+                .WithData("PaymentTransactionCount", transactionCount)
+                .WithData("OnlinePaymentSessionCount", sessionCount)
+                .WithData("PaymentWebhookEventCount", webhookEventCount);
+        }
 
         await _timelineRepository.DeleteAsync(e => e.OrderId == id, autoSave: false);
         await _paymentTransactionRepository.DeleteAsync(t => t.OrderId == id, autoSave: false);
@@ -451,23 +521,9 @@ public class OrderAppService : ApplicationService, IOrderAppService
     {
         var order = await _orderRepository.GetAsync(id);
 
-        if (order.PaymentRequirementType == PaymentRequirementType.FullPaymentRequired
-            && order.PaymentStatus != PaymentStatus.Paid)
-        {
-            throw new Volo.Abp.BusinessException("TeeNova:Order:FullPaymentNotMet")
-                .WithData("RequiredPaymentAmount", order.RequiredPaymentAmount)
-                .WithData("PaidAmount", order.PaidAmount);
-        }
-
-        if (order.PaymentRequirementType == PaymentRequirementType.DepositThenBalance
-            && order.PaidAmount < order.RequiredDepositAmount)
-        {
-            throw new Volo.Abp.BusinessException("TeeNova:Order:DepositPaymentNotMet")
-                .WithData("RequiredDepositAmount", order.RequiredDepositAmount)
-                .WithData("PaidAmount", order.PaidAmount);
-        }
-
-        order.UpdateStatus(OrderStatus.Paid);
+        // Payment-threshold enforcement now lives in the domain (Jira 9807): Activate is the single
+        // guarded Pending → Paid path and throws the same FullPaymentNotMet / DepositPaymentNotMet codes.
+        order.Activate(Clock.Now);
         await _orderRepository.UpdateAsync(order, autoSave: true);
 
         await AddTimelineEntryAsync(id, OrderEventType.StatusChanged,
@@ -702,9 +758,64 @@ public class OrderAppService : ApplicationService, IOrderAppService
 
         var (purpose, amount) = CalculatePaymentPurposeAndAmount(order, input.Purpose);
 
+        // Precision fail-safe (Jira 9803): order money columns are decimal(18,4), so admin inputs
+        // (price adjustments, recorded payments, variant price adjustments) can leave a sub-cent
+        // balance. Providers charge whole cents and the webhook compares the provider amount against
+        // the frozen session amount, so a non-2dp amount would be charged at the provider and then
+        // REJECTED as an amount mismatch (charged-but-unrecorded). Reject upfront instead — never
+        // round silently; the admin fixes the order total to whole cents via the price-adjust flow.
+        if (amount != decimal.Round(amount, 2, MidpointRounding.AwayFromZero))
+            throw new Volo.Abp.BusinessException("TeeNova:Payment:OnlinePaymentAmountPrecisionInvalid")
+                .WithData("OrderId", order.Id)
+                .WithData("Amount", amount);
+
         var currency   = string.IsNullOrWhiteSpace(opts.Currency) ? "NZD" : opts.Currency.ToUpperInvariant();
         var successUrl = $"{opts.SuccessReturnBaseUrl.TrimEnd('/')}?orderId={order.Id}&orderNumber={Uri.EscapeDataString(order.OrderNumber)}&provider={Uri.EscapeDataString(selectedProvider.ToString())}";
         var cancelUrl  = $"{opts.CancelReturnBaseUrl.TrimEnd('/')}?orderId={order.Id}&orderNumber={Uri.EscapeDataString(order.OrderNumber)}&provider={Uri.EscapeDataString(selectedProvider.ToString())}";
+
+        // ── Idempotency & stale-session handling (Jira 9804) ──────────────────────────────────────
+        // Examine every currently-Pending session for this order:
+        //   • Reuse the first that EXACTLY matches provider+purpose+amount+currency — a customer
+        //     double-click / retry / second tab returns the same checkout link with no duplicate
+        //     provider session and no duplicate local row.
+        //   • Treat every other Pending session as stale (its amount was superseded by an admin price
+        //     change or a partial payment, or the customer switched provider/purpose): cancel it
+        //     locally and best-effort expire it provider-side so a lingering checkout tab can't
+        //     complete a charge the local system would then reject.
+        var pendingQuery = await _onlinePaymentSessionRepository.GetQueryableAsync();
+        var pendingSessions = await pendingQuery
+            .Where(s => s.OrderId == order.Id && s.Status == OnlinePaymentSessionStatus.Pending)
+            .ToListAsync();
+
+        OnlinePaymentSession? reusable = null;
+        foreach (var existing in pendingSessions)
+        {
+            var matches = reusable == null
+                && existing.Provider == selectedProvider
+                && existing.Purpose  == purpose
+                && existing.Amount   == amount
+                && string.Equals(existing.Currency, currency, StringComparison.OrdinalIgnoreCase);
+
+            if (matches)
+            {
+                reusable = existing;
+                continue;
+            }
+
+            existing.MarkCancelled(null, "superseded_by_new_session");
+            await TryExpireProviderSessionAsync(existing);
+            await _onlinePaymentSessionRepository.UpdateAsync(existing, autoSave: true);
+        }
+
+        if (reusable != null)
+        {
+            Logger.LogInformation(
+                "[OnlinePayment] Reusing existing Pending session {SessionId} for order {OrderNumber} " +
+                "({Amount} {Currency}, {Purpose}) — no new provider session created.",
+                reusable.Id, order.OrderNumber, amount, currency, purpose);
+
+            return ObjectMapper.Map<OnlinePaymentSession, OnlinePaymentSessionDto>(reusable);
+        }
 
         var request = new CreateOnlinePaymentProviderSessionRequest
         {
@@ -752,6 +863,25 @@ public class OrderAppService : ApplicationService, IOrderAppService
                 .WithData("Provider", selectedProvider);
         }
 
+        // Concurrency / provider-idempotency backstop (Jira 9804): a concurrent request (double-click,
+        // two tabs, retry) may have already persisted a row for this exact provider session id. Stripe's
+        // amount-scoped idempotency key returns the SAME session for identical params, and there is a
+        // unique index on ProviderSessionId — so without this check the second insert would fail with a
+        // raw DB constraint error. If the row already exists, return it (idempotent) instead of inserting.
+        var alreadyPersisted = await (await _onlinePaymentSessionRepository.GetQueryableAsync())
+            .FirstOrDefaultAsync(s => s.Provider == selectedProvider
+                && s.ProviderSessionId == providerResult.ProviderSessionId);
+
+        if (alreadyPersisted != null)
+        {
+            Logger.LogInformation(
+                "[OnlinePayment] Provider session {ProviderSessionId} already persisted for order " +
+                "{OrderNumber} — returning existing row (idempotent).",
+                providerResult.ProviderSessionId, order.OrderNumber);
+
+            return ObjectMapper.Map<OnlinePaymentSession, OnlinePaymentSessionDto>(alreadyPersisted);
+        }
+
         var session = OnlinePaymentSession.Create(
             GuidGenerator.Create(),
             order.Id,
@@ -779,6 +909,63 @@ public class OrderAppService : ApplicationService, IOrderAppService
     {
         if (priced.Items.Any(i => i.PricingModel == Catalog.PricingModel.CustomQuoteOnly))
             throw new Volo.Abp.BusinessException(errorCode);
+    }
+
+    /// <summary>
+    /// Validates and normalizes every customer-supplied design reference on an incoming order (Jira 9808).
+    /// A supplied <c>UploadedAssetId</c> must resolve to an existing <see cref="AssetType.CustomerDesign"/>
+    /// asset — its server-stored URL then REPLACES any client-supplied URL as the authoritative reference,
+    /// so a spoofed/external URL riding alongside a valid id is discarded. When no id is given, a bare
+    /// <c>UploadedAssetUrl</c> is accepted only if it is a safe internal <c>/uploads/…</c> path. Mutates the
+    /// DTO in place so the normalized references flow through pricing → persistence unchanged.
+    /// </summary>
+    private async Task ValidateAndNormalizeDesignReferencesAsync(CreateOrderDto input)
+    {
+        if (input?.Items == null || input.Items.Count == 0)
+            return;
+
+        // One batch lookup for every referenced asset id (item-level + print-level).
+        var referencedIds = new HashSet<Guid>();
+        foreach (var item in input.Items)
+        {
+            if (item.UploadedAssetId.HasValue)
+                referencedIds.Add(item.UploadedAssetId.Value);
+            foreach (var print in item.Prints ?? new List<CreateOrderItemPrintDto>())
+                if (print.UploadedAssetId.HasValue)
+                    referencedIds.Add(print.UploadedAssetId.Value);
+        }
+
+        var assetsById = new Dictionary<Guid, UploadedAsset>();
+        if (referencedIds.Count > 0)
+        {
+            var found = await _uploadedAssetRepository.GetListAsync(a => referencedIds.Contains(a.Id));
+            assetsById = found
+                .Where(a => a.AssetType == AssetType.CustomerDesign)
+                .ToDictionary(a => a.Id);
+        }
+
+        string? Resolve(Guid? assetId, string? assetUrl)
+        {
+            if (assetId.HasValue)
+            {
+                if (!assetsById.TryGetValue(assetId.Value, out var asset))
+                    throw new Volo.Abp.BusinessException("TeeNova:Order:UploadedAssetNotFound")
+                        .WithData("UploadedAssetId", assetId.Value);
+
+                // Authoritative internal reference — never trust the client-supplied URL when an id resolves.
+                return asset.StoredFileUrl;
+            }
+
+            return UploadedAssetReferenceValidator.NormalizeOrThrow(
+                assetUrl, "TeeNova:Order:UnsafeUploadedAssetUrl");
+        }
+
+        foreach (var item in input.Items)
+        {
+            item.UploadedAssetUrl = Resolve(item.UploadedAssetId, item.UploadedAssetUrl);
+            foreach (var print in item.Prints ?? new List<CreateOrderItemPrintDto>())
+                print.UploadedAssetUrl = Resolve(print.UploadedAssetId, print.UploadedAssetUrl);
+        }
     }
 
     private static (PaymentPurpose purpose, decimal amount) CalculatePaymentPurposeAndAmount(
@@ -836,6 +1023,30 @@ public class OrderAppService : ApplicationService, IOrderAppService
         throw new Volo.Abp.BusinessException("TeeNova:Payment:OnlinePaymentInvalidOrderState")
             .WithData("OrderId", order.Id)
             .WithData("Reason", "Delivery method is not set or not recognised");
+    }
+
+    /// <summary>
+    /// Best-effort provider-side expiration of a locally-cancelled/superseded Pending session (Jira 9804).
+    /// Resolves the provider for the session and asks it to expire the hosted checkout session so a
+    /// lingering customer tab can't complete a stale charge. Never throws and never blocks the caller:
+    /// local cancellation is authoritative, so any provider failure (unregistered provider, provider API
+    /// error) is logged safely (no secrets) and swallowed.
+    /// </summary>
+    private async Task TryExpireProviderSessionAsync(OnlinePaymentSession session)
+    {
+        try
+        {
+            var provider = _onlinePaymentProviderResolver.Resolve(session.Provider);
+            await provider.ExpireSessionAsync(session.ProviderSessionId);
+        }
+        catch (Exception ex)
+        {
+            // Includes the provider not being registered in this environment. Local cancellation stands.
+            Logger.LogWarning(ex,
+                "[OnlinePayment] Provider-side expiration failed for session {SessionId} " +
+                "(order {OrderId}, provider {Provider}). Local cancellation remains authoritative.",
+                session.Id, session.OrderId, session.Provider);
+        }
     }
 
     // Original private helpers
@@ -1208,7 +1419,11 @@ public class OrderAppService : ApplicationService, IOrderAppService
 
     private async Task<OrderDto> ChangeStatusAsync(Guid id, OrderStatus newStatus)
     {
-        if (newStatus is OrderStatus.Printing or OrderStatus.Ready or OrderStatus.Completed)
+        // Paid (activation) is payment-gated and Printing/Ready/Completed are production transitions:
+        // all must go through their dedicated, guarded actions. The generic status endpoint may only
+        // drive non-gated transitions (e.g. Cancel, Paid → Reviewing). Activation is rejected here so
+        // it can never bypass the domain payment-threshold guard (Jira 9807).
+        if (newStatus is OrderStatus.Paid or OrderStatus.Printing or OrderStatus.Ready or OrderStatus.Completed)
         {
             throw new Volo.Abp.BusinessException("TeeNova:Order:StatusRequiresDedicatedAction")
                 .WithData("RequestedStatus", newStatus);

@@ -1,13 +1,14 @@
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.Extensions.Logging;
 using TeeNova.Payments;
-using Volo.Abp;
 
 namespace TeeNova.Webhooks;
 
@@ -24,23 +25,13 @@ public class PaymentWebhookController : TeeNovaControllerBase
     private readonly IOnlinePaymentWebhookAppService  _webhookService;
     private readonly ILogger<PaymentWebhookController> _logger;
 
-    // These error codes represent known business rejections that have been safely evaluated
-    // and will not change on retry. Returning HTTP 200 prevents real payment providers
-    // from entering indefinite retry loops for events that cannot be processed.
-    private static readonly HashSet<string> KnownWebhookRejectionCodes = new(StringComparer.Ordinal)
-    {
-        "TeeNova:Payment:WebhookMissingProviderSessionId",
-        "TeeNova:Payment:WebhookSessionNotFound",
-        "TeeNova:Payment:WebhookSessionNotActionable",
-        "TeeNova:Payment:WebhookMissingAmount",
-        "TeeNova:Payment:WebhookAmountMismatch",
-        "TeeNova:Payment:WebhookCurrencyMismatch",
-        "TeeNova:Payment:WebhookOrderNotFound",
-        "TeeNova:Payment:WebhookOrderCancelled",
-        "TeeNova:Payment:WebhookOrderCompleted",
-        "TeeNova:Payment:WebhookNoBalanceDue",
-        "TeeNova:Payment:WebhookOverpayment",
-    };
+    // Anonymous webhook body cap (Jira 9805). Replaces the former [DisableRequestSizeLimit], which
+    // let an unauthenticated caller post an unbounded body. 1 MB comfortably covers real Stripe
+    // webhook events (a few KB in practice, well under 100 KB even with expanded objects) while
+    // rejecting oversized bodies before any raw-body read, signature verification, or business
+    // logic runs. This is a per-action limit only — it does not touch the design upload endpoint
+    // (FileController, 20 MB), whose own limit/rules are owned by Jira 9808.
+    private const long MaxWebhookBodyBytes = 1024 * 1024;
 
     public PaymentWebhookController(
         IOnlinePaymentWebhookAppService    webhookService,
@@ -54,30 +45,35 @@ public class PaymentWebhookController : TeeNovaControllerBase
     /// Handles an incoming provider webhook event.
     /// provider: stripe | windcave | poli | paypal
     /// </summary>
+    // Very generous per-IP cap (Jira 9808) — sized so a legitimate Stripe retry burst is never
+    // throttled; signature verification + the 1 MB body cap remain the real webhook guards.
     [HttpPost("{provider}")]
-    [DisableRequestSizeLimit]
+    [EnableRateLimiting("PaymentWebhookPolicy")]
+    [RequestSizeLimit(MaxWebhookBodyBytes)]
     public async Task<IActionResult> HandleWebhookAsync(string provider, CancellationToken cancellationToken)
     {
-        using var reader = new StreamReader(Request.Body);
+        // Read the raw body exactly once with explicit UTF-8 decoding (BOM detection disabled) so the
+        // string handed to the provider is a faithful decode of the bytes the provider signed. No JSON
+        // model binding runs before this: the provider verifies the signature over this raw payload
+        // before any event content is trusted (see StripeOnlinePaymentProvider.ParseWebhookAsync).
+        using var reader = new StreamReader(
+            Request.Body, Encoding.UTF8, detectEncodingFromByteOrderMarks: false, leaveOpen: true);
         var rawBody = await reader.ReadToEndAsync(cancellationToken);
 
         IReadOnlyDictionary<string, string> headers = Request.Headers
             .ToDictionary(h => h.Key, h => h.Value.ToString(), StringComparer.OrdinalIgnoreCase);
 
-        try
-        {
-            await _webhookService.HandleWebhookAsync(provider, rawBody, headers, cancellationToken);
-            return Ok();
-        }
-        catch (BusinessException ex) when (ex.Code != null && KnownWebhookRejectionCodes.Contains(ex.Code))
-        {
-            // The app service already logged the diagnostic detail. Log here only to confirm
-            // the rejection was handled at the HTTP boundary without a 500.
-            _logger.LogInformation(
-                "[Webhook] Provider '{Provider}' webhook rejected (non-retryable): {Code} — returning 200 to suppress provider retry.",
-                provider, ex.Code);
+        _logger.LogDebug("[Webhook] Received '{Provider}' webhook ({Bytes} bytes).", provider, rawBody.Length);
 
-            return Ok(new { rejected = true, reason = ex.Code });
-        }
+        // HTTP/retry policy (Jira 9806):
+        //  • Unverified/unsupported/duplicate events are acknowledged inside the app service and return 200.
+        //  • Known business rejections (amount mismatch, cancelled order, completed-after-cancel, …) are now
+        //    durably recorded as PaymentWebhookEvent (RequiresManualReview / Rejected) and return 200, so a
+        //    real provider does not retry an event whose local outcome will not change.
+        //  • Only a genuine infrastructure failure (DB unavailable, etc.) throws out of the app service. It is
+        //    left to propagate so ABP returns a non-2xx and the provider retries; the durable event record, if
+        //    already written, is non-terminal so the retry safely re-attempts.
+        await _webhookService.HandleWebhookAsync(provider, rawBody, headers, cancellationToken);
+        return Ok();
     }
 }

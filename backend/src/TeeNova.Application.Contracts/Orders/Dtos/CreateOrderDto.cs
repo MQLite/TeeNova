@@ -30,7 +30,9 @@ public class CreateOrderItemDto
     /// </summary>
     public Guid? ProductVariantId { get; set; }
 
-    [Range(1, 100000)]
+    // Ceiling shared with the authoritative pricing path (Jira 9803), which re-enforces it
+    // server-side for every pricing/repricing route regardless of DTO validation.
+    [Range(1, OrderLimits.MaxOrderItemQuantity)]
     public int Quantity { get; set; } = 1;
 
     // ── Item-level design (Jira 9503) — used by non-garment items (Badge). Garment design lives in Prints.

@@ -16,6 +16,39 @@ function getPrintSummary(item: OrderItem) {
   return item.prints ?? []
 }
 
+/**
+ * Maps the backend-confirmed payment status to a customer-facing notice for an online-payment return.
+ * The status comes ONLY from the fetched order (backend/webhook truth) — never from URL query params —
+ * so a crafted success URL can never make this render "confirmed".
+ */
+function onlineReturnNotice(order: Order) {
+  if (order.paymentStatus === 'Paid') {
+    return {
+      title: 'Payment confirmed',
+      message: 'Your payment has been confirmed by the payment provider. We’ll start processing your order shortly.',
+      container: 'border-green-200 bg-green-50',
+      accent: 'text-green-700',
+      body: 'text-green-800',
+    }
+  }
+  if (order.paymentStatus === 'DepositPaid') {
+    return {
+      title: 'Deposit received',
+      message: 'Your deposit has been confirmed by the payment provider. The remaining balance is due on pickup.',
+      container: 'border-green-200 bg-green-50',
+      accent: 'text-green-700',
+      body: 'text-green-800',
+    }
+  }
+  return {
+    title: 'Online payment confirmation pending',
+    message: 'Your online payment session was created. Payment is only confirmed after the payment provider notifies us. Please check your order status below or contact the shop if you are unsure.',
+    container: 'border-amber-200 bg-amber-50',
+    accent: 'text-amber-700',
+    body: 'text-amber-800',
+  }
+}
+
 export default function CheckoutSuccessPage() {
   return (
     <Suspense fallback={
@@ -38,6 +71,7 @@ function SuccessContent() {
 
   const [order, setOrder] = useState<Order | null>(null)
   const [loading, setLoading] = useState(true)
+  const [error, setError] = useState(false)
 
   useEffect(() => {
     if (!orderId) {
@@ -46,6 +80,7 @@ function SuccessContent() {
     }
     ordersApi.getById(orderId)
       .then(setOrder)
+      .catch(() => setError(true))
       .finally(() => setLoading(false))
   }, [orderId])
 
@@ -79,26 +114,39 @@ function SuccessContent() {
       <div className="mx-auto max-w-2xl px-4 py-10 sm:px-6">
         <div className="space-y-5">
 
-          {/* Online payment confirmation pending notice */}
-          {isOnlineReturn && (
-            <div className="rounded-2xl border border-amber-200 bg-amber-50 px-6 py-5">
-              <p className="mb-2 font-mono text-[11px] uppercase tracking-[0.54px] text-amber-700">
-                Online payment confirmation pending
+          {/* Could not load the order — never blocks the page, never implies payment succeeded. */}
+          {!loading && error && (
+            <div className="rounded-2xl border border-black/10 bg-black/[0.02] px-6 py-5">
+              <p className="mb-2 font-mono text-[11px] uppercase tracking-[0.54px] text-black/60">
+                Order status unavailable
               </p>
-              <p className="text-sm text-amber-800" style={{ letterSpacing: '-0.14px' }}>
-                Your online payment session was created. Payment is only confirmed after the payment
-                provider notifies us. Please check your order status below or contact the shop if you
-                are unsure.
+              <p className="text-sm text-black/70" style={{ letterSpacing: '-0.14px' }}>
+                We couldn’t load your order details right now. Your order may still have been placed —
+                please check your email for confirmation, or contact the shop if you’re unsure. Payment is
+                only ever confirmed by the payment provider, never by this page.
               </p>
-              {!loading && order && (
+            </div>
+          )}
+
+          {/* Online payment status — AUTHORITATIVE from backend paymentStatus, never from query params. */}
+          {isOnlineReturn && !loading && order && (() => {
+            const notice = onlineReturnNotice(order)
+            return (
+              <div className={`rounded-2xl border px-6 py-5 ${notice.container}`}>
+                <p className={`mb-2 font-mono text-[11px] uppercase tracking-[0.54px] ${notice.accent}`}>
+                  {notice.title}
+                </p>
+                <p className={`text-sm ${notice.body}`} style={{ letterSpacing: '-0.14px' }}>
+                  {notice.message}
+                </p>
                 <div className="mt-3">
-                  <Link href={`/orders/${order.id}`} className="text-sm text-amber-700 underline">
+                  <Link href={`/orders/${order.id}`} className={`text-sm underline ${notice.accent}`}>
                     Check your order status →
                   </Link>
                 </div>
-              )}
-            </div>
-          )}
+              </div>
+            )
+          })()}
 
           {/* Payment Instructions — manual orders only */}
           {!isOnlineReturn && !loading && order && (

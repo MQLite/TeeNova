@@ -81,6 +81,15 @@ public class Order : FullAuditedAggregateRoot<Guid>
             return;
         }
 
+        // Activation (→ Paid) is payment-gated and must go through Activate() so the payment-threshold
+        // guard can never be bypassed by the generic status-update path (Jira 9807). Reject it here even
+        // though the transition table lists Pending→Paid, so there is a single, guarded activation path.
+        if (newStatus == OrderStatus.Paid)
+        {
+            throw new BusinessException("TeeNova:Order:UseActivateToMarkPaid")
+                .WithData("CurrentStatus", Status);
+        }
+
         if (!AllowedTransitions.TryGetValue(Status, out var allowedStatuses) || !allowedStatuses.Contains(newStatus))
         {
             throw new BusinessException("TeeNova:Order:InvalidStatusTransition")
@@ -89,6 +98,57 @@ public class Order : FullAuditedAggregateRoot<Guid>
         }
 
         Status = newStatus;
+    }
+
+    /// <summary>
+    /// Activates a Pending order (Pending → Paid) once its payment threshold is met (Jira 9807). This is
+    /// the ONLY path to <see cref="OrderStatus.Paid"/>; the generic <see cref="UpdateStatus"/> rejects a
+    /// direct jump to Paid so the threshold guard here can never be bypassed. Idempotent when the order is
+    /// already Paid. The threshold rule mirrors the delivery-method payment model:
+    /// FullPaymentRequired orders must be fully Paid; DepositThenBalance (Pickup) orders must have met the
+    /// required deposit.
+    /// </summary>
+    public void Activate(DateTime now)
+    {
+        if (Status == OrderStatus.Paid)
+        {
+            return;
+        }
+
+        if (Status != OrderStatus.Pending)
+        {
+            throw new BusinessException("TeeNova:Order:InvalidStatusTransition")
+                .WithData("CurrentStatus", Status)
+                .WithData("RequestedStatus", OrderStatus.Paid);
+        }
+
+        EnsurePaymentThresholdMet();
+
+        Status = OrderStatus.Paid;
+    }
+
+    /// <summary>
+    /// Enforces the delivery-method payment threshold required to activate the order. Throws the same
+    /// BusinessException codes the admin activation flow has always used. Kept in the domain so every
+    /// activation path (admin mark-paid, and any future caller) is guarded identically (Jira 9807).
+    /// </summary>
+    private void EnsurePaymentThresholdMet()
+    {
+        if (PaymentRequirementType == PaymentRequirementType.FullPaymentRequired
+            && PaymentStatus != PaymentStatus.Paid)
+        {
+            throw new BusinessException("TeeNova:Order:FullPaymentNotMet")
+                .WithData("RequiredPaymentAmount", RequiredPaymentAmount)
+                .WithData("PaidAmount", PaidAmount);
+        }
+
+        if (PaymentRequirementType == PaymentRequirementType.DepositThenBalance
+            && PaidAmount < RequiredDepositAmount)
+        {
+            throw new BusinessException("TeeNova:Order:DepositPaymentNotMet")
+                .WithData("RequiredDepositAmount", RequiredDepositAmount)
+                .WithData("PaidAmount", PaidAmount);
+        }
     }
 
     public void ApproveForPrinting()
@@ -191,6 +251,17 @@ public class Order : FullAuditedAggregateRoot<Guid>
 
     public void ApplyPayment(decimal amount, ManualPaymentMethod method, string? reference, string? note, DateTime now)
     {
+        // Domain-level terminal guard (Jira 9807): a cancelled/completed order must never accept a payment,
+        // even if a stale balance remains (e.g. cancelled before payment). Both callers (admin
+        // RecordPayment, webhook PaymentCompleted) already guard this; enforce it here so no future path
+        // can apply money to a terminal order.
+        if (Status == OrderStatus.Cancelled || Status == OrderStatus.Completed)
+        {
+            throw new BusinessException("TeeNova:Order:CannotApplyPaymentToTerminalOrder")
+                .WithData("OrderId", Id)
+                .WithData("Status", Status);
+        }
+
         if (amount <= 0)
         {
             throw new BusinessException("TeeNova:Order:PaymentAmountMustBePositive")

@@ -6,6 +6,7 @@ using Microsoft.Extensions.Logging;
 using TeeNova.Catalog;
 using TeeNova.Email;
 using TeeNova.Enquiries.Dtos;
+using TeeNova.Files;
 using TeeNova.Orders;
 using Volo.Abp;
 using Volo.Abp.Application.Dtos;
@@ -93,7 +94,10 @@ public class BannerQuoteRequestAppService : ApplicationService, IBannerQuoteRequ
             CustomerPhone       = string.IsNullOrWhiteSpace(input.CustomerPhone) ? null : input.CustomerPhone.Trim(),
             Message             = string.IsNullOrWhiteSpace(input.Message) ? null : input.Message.Trim(),
             UploadedAssetId     = input.UploadedAssetId,
-            UploadedAssetUrl    = string.IsNullOrWhiteSpace(input.UploadedAssetUrl) ? null : input.UploadedAssetUrl.Trim(),
+            // Anonymous storefront submission (Jira 9808): only a safe internal /uploads reference is
+            // accepted so an enquiry can never carry an arbitrary external tracking/image URL.
+            UploadedAssetUrl    = UploadedAssetReferenceValidator.NormalizeOrThrow(
+                                      input.UploadedAssetUrl, "TeeNova:BannerEnquiry:UnsafeUploadedAssetUrl"),
             DesignNote          = string.IsNullOrWhiteSpace(input.DesignNote) ? null : input.DesignNote.Trim(),
 
             SizeMode             = detail.SizeMode,

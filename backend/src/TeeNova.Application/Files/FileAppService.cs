@@ -6,6 +6,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.AspNetCore.Http;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging;
 using TeeNova.Customization;
 using TeeNova.Files.Dtos;
 using TeeNova.Orders;
@@ -18,21 +19,24 @@ namespace TeeNova.Files;
 
 public class FileAppService : ApplicationService, IFileAppService
 {
-    private static readonly string[] AllowedContentTypes =
-    {
-        "image/png",
-        "image/jpeg",
-        "image/svg+xml",
-        "image/webp",
-        "application/pdf",
-        "application/illustrator",
-        "application/postscript",   // .ai files sometimes reported as this
-    };
+    // Extension → allowed content types (Jira 9808). Upload is accepted only when BOTH the (normalized)
+    // extension is a key here AND the browser-supplied content type is in that key's set — so a mismatched
+    // pair (e.g. a .png body sent as application/pdf, or an .exe renamed to .png) is rejected, not accepted
+    // on either signal alone. SVG is intentionally NOT allowed: it can carry inline <script>, and these
+    // files are served back from /uploads as static content, so an SVG upload would be a stored-XSS vector.
+    // .ai is design-production input whose content type is unreliable across editors, so octet-stream is
+    // tolerated for it only (never for the raster/pdf types, whose content types are well-defined).
+    private static readonly IReadOnlyDictionary<string, string[]> AllowedTypesByExtension =
+        new Dictionary<string, string[]>(StringComparer.OrdinalIgnoreCase)
+        {
+            [".png"]  = new[] { "image/png" },
+            [".jpg"]  = new[] { "image/jpeg" },
+            [".jpeg"] = new[] { "image/jpeg" },
+            [".webp"] = new[] { "image/webp" },
+            [".pdf"]  = new[] { "application/pdf" },
+            [".ai"]   = new[] { "application/pdf", "application/postscript", "application/illustrator", "application/octet-stream" },
+        };
 
-    private static readonly string[] AllowedExtensions =
-    {
-        ".png", ".jpg", ".jpeg", ".svg", ".webp", ".pdf", ".ai",
-    };
     private const long MaxFileSizeBytes = 20 * 1024 * 1024; // 20 MB
 
     private readonly IFileStorageService _storageService;
@@ -86,16 +90,30 @@ public class FileAppService : ApplicationService, IFileAppService
         if (file.Length > MaxFileSizeBytes)
             throw new UserFriendlyException($"File size exceeds the {MaxFileSizeBytes / (1024 * 1024)} MB limit.");
 
+        // Require BOTH a known extension AND a content type consistent with that extension (Jira 9808).
         var ext = Path.GetExtension(file.FileName).ToLowerInvariant();
-        var contentTypeAllowed = Array.Exists(AllowedContentTypes, ct => ct == file.ContentType);
-        var extensionAllowed = Array.Exists(AllowedExtensions, e => e == ext);
+        var contentType = (file.ContentType ?? string.Empty).Trim().ToLowerInvariant();
 
-        if (!contentTypeAllowed && !extensionAllowed)
-            throw new UserFriendlyException("Only PNG, JPEG, SVG, WebP, PDF, and AI files are accepted.");
+        if (!AllowedTypesByExtension.TryGetValue(ext, out var allowedTypesForExt))
+        {
+            // Log the rejection reason only (Jira 9809) — never echo the raw client filename/extension,
+            // which is untrusted free text and a log-injection / noise risk.
+            Logger.LogWarning("[Upload] Rejected design upload: file extension is not in the allow-list.");
+            throw new UserFriendlyException("Only PNG, JPEG, WebP, PDF, and AI files are accepted.");
+        }
 
+        if (!Array.Exists(allowedTypesForExt, t => t == contentType))
+        {
+            Logger.LogWarning("[Upload] Rejected design upload: content type does not match the file extension.");
+            throw new UserFriendlyException(
+                "The file's content type does not match its extension. Please upload a valid PNG, JPEG, WebP, PDF, or AI file.");
+        }
+
+        // Use the validated, normalized content type (guaranteed non-null and in the allow-list) for both
+        // storage and the tracked record, rather than the raw nullable IFormFile.ContentType.
         await using var stream = file.OpenReadStream();
         var fileUrl = await _storageService.SaveAsync(
-            stream, file.FileName, file.ContentType,
+            stream, file.FileName, contentType,
             folder: "designs",
             fileNamePrefix: "designs",
             cancellationToken: cancellationToken);
@@ -104,12 +122,19 @@ public class FileAppService : ApplicationService, IFileAppService
             GuidGenerator.Create(),
             file.FileName,
             fileUrl,
-            file.ContentType,
+            contentType,
             file.Length,
             assetType: TeeNova.Files.AssetType.CustomerDesign
         );
 
         await _assetRepository.InsertAsync(asset, autoSave: true);
+
+        // Safe observability (Jira 9809): only server-controlled values — the new asset id, the validated
+        // content type, the byte size, and the server-generated root-relative /uploads URL. The raw
+        // original filename is intentionally NOT logged.
+        Logger.LogInformation(
+            "[Upload] Stored design asset {AssetId} ({ContentType}, {SizeBytes} bytes) at {FileUrl}.",
+            asset.Id, contentType, file.Length, fileUrl);
 
         return new UploadFileOutput
         {

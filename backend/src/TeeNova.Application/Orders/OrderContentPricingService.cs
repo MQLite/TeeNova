@@ -78,6 +78,31 @@ public class OrderContentPricingService : ITransientDependency
             if (!products.ContainsKey(id))
                 throw new EntityNotFoundException(typeof(Catalog.Product), id);
 
+        // Amount-integrity guards (Jira 9803), applied centrally so EVERY pricing path — customer
+        // checkout and admin content edit, all pricing models — enforces them before an order can be
+        // persisted or become payable. Inactive products were previously only rejected by the public
+        // quote endpoint, leaving direct POST /api/orders able to order (and pay for) them.
+        foreach (var product in products.Values)
+        {
+            if (!product.IsActive)
+                throw new BusinessException("TeeNova:Pricing:ProductInactive")
+                    .WithData("ProductId", product.Id)
+                    .WithData("ProductName", product.Name);
+        }
+
+        foreach (var item in items)
+        {
+            if (item.Quantity <= 0)
+                throw new BusinessException("TeeNova:Order:ItemQuantityMustBePositive")
+                    .WithData("Quantity", item.Quantity);
+
+            if (item.Quantity > OrderLimits.MaxOrderItemQuantity)
+                throw new BusinessException("TeeNova:Pricing:QuantityExceedsMaximum")
+                    .WithData("ProductId", item.ProductId)
+                    .WithData("Quantity", item.Quantity)
+                    .WithData("MaxQuantity", OrderLimits.MaxOrderItemQuantity);
+        }
+
         // Garment print-tier quantity scope (Jira 9203): the PrintPricingGroup TOTAL quantity across the
         // WHOLE draft, counting GARMENT-PRINT items only (Jira 9503: Badge/non-garment never aggregate).
         var groupQuantities = new Dictionary<string, int>();

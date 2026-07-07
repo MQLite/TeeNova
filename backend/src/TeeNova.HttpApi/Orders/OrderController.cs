@@ -2,6 +2,7 @@ using System;
 using System.Threading.Tasks;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.RateLimiting;
 using TeeNova.Auth;
 using TeeNova.Orders.Dtos;
 using Volo.Abp.Application.Dtos;
@@ -24,8 +25,12 @@ public class OrderController : TeeNovaControllerBase
         _orderProductionPdfService = orderProductionPdfService;
     }
 
+    // Anonymous checkout write (Jira 9808): rate-limited per IP (order/email spam) and capped to a
+    // sane JSON body size (a large multi-item order is still comfortably under 512 KB).
     [HttpPost]
     [AllowAnonymous]
+    [EnableRateLimiting("PublicCheckoutPolicy")]
+    [RequestSizeLimit(512 * 1024)]
     public async Task<OrderDto> CreateAsync([FromBody] CreateOrderDto input)
         => await _orderAppService.CreateAsync(input);
 
@@ -40,6 +45,8 @@ public class OrderController : TeeNovaControllerBase
     // reachable through the auto-API route /api/app/order/{id}/online-payment-session (Task 8703).
     [HttpPost("{id:guid}/online-payment-session")]
     [AllowAnonymous]
+    [EnableRateLimiting("PublicCheckoutPolicy")]
+    [RequestSizeLimit(32 * 1024)]
     public async Task<OnlinePaymentSessionDto> CreateOnlinePaymentSessionAsync(
         Guid id, [FromBody] CreateOnlinePaymentSessionDto input)
         => await _orderAppService.CreateOnlinePaymentSessionAsync(id, input);

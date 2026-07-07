@@ -18,6 +18,7 @@
 7. [Known Issues to Resolve Before Real-Provider Go-Live](#7-known-issues-to-resolve-before-real-provider-go-live)
 8. [Production Readiness Decision Checklist](#8-production-readiness-decision-checklist)
 9. [Out of Scope](#9-out-of-scope)
+10. [Admin Reconciliation, Retention & Refund Policy (Jira 9810)](#10-admin-reconciliation-retention--refund-policy-jira-9810)
 
 ---
 
@@ -34,7 +35,7 @@ The `OnlinePayments` block in `appsettings.json` (or injected via environment va
 | `OnlinePayments:DefaultProvider` | `string` | `"Stripe"` | Provider name matching a configured, enabled provider |
 | `OnlinePayments:Currency` | `string` | `"NZD"` | `"NZD"` (or ISO-4217 code for the store currency) |
 | `OnlinePayments:SuccessReturnBaseUrl` | `string` | `http://localhost:3000/checkout/success` | `https://<production-domain>/checkout/success` |
-| `OnlinePayments:CancelReturnBaseUrl` | `string` | `http://localhost:3000/checkout/success` | `https://<production-domain>/checkout/success` (or a dedicated cancel page) |
+| `OnlinePayments:CancelReturnBaseUrl` | `string` | `http://localhost:3000/checkout/cancel` | `https://<production-domain>/checkout/cancel` |
 | `OnlinePayments:Providers:Stripe:Enabled` | `bool` | `true` | `true` / `false` per which providers are contracted |
 | `OnlinePayments:Providers:Windcave:Enabled` | `bool` | `true` | `true` / `false` |
 | `OnlinePayments:Providers:Poli:Enabled` | `bool` | `true` | `true` / `false` |
@@ -43,8 +44,18 @@ The `OnlinePayments` block in `appsettings.json` (or injected via environment va
 ### 1.2 Critical Production Switches
 
 - **`UseMockProviders` MUST be `false` in production.** Mock providers create fake sessions, never charge the customer, and never validate webhook signatures.
-- **`SuccessReturnBaseUrl` MUST be the HTTPS production domain.** The backend appends `?orderId=&orderNumber=` to this URL. If the URL is wrong, the customer lands on a broken page after checkout.
-- **`CancelReturnBaseUrl` MUST be HTTPS.** Payment providers will refuse to redirect to non-HTTPS cancel URLs.
+- **Startup fail-safe (Jira 9802):** the backend now enforces this at boot. Outside the
+  `Development` environment, `Enabled=true` + `UseMockProviders=true` throws a startup exception
+  (fail-closed), and `UseMockProviders=true` with payments disabled registers **no** payment
+  providers at all, so unsigned mock webhook payloads can never be parsed outside Development.
+  Additionally, when payments are enabled with the real Stripe provider, missing
+  `Providers:Stripe:SecretKey` / `Providers:Stripe:WebhookSecret` values fail startup (the error
+  names the missing keys, never their values). See `OnlinePaymentStartupGuard` in
+  `backend/src/TeeNova.Application/Payments`.
+- **`SuccessReturnBaseUrl` MUST be the HTTPS production domain.** The backend appends `?orderId=&orderNumber=&provider=` to this URL. If the URL is wrong, the customer lands on a broken page after checkout.
+- **`CancelReturnBaseUrl` MUST be HTTPS** and should be the dedicated `/checkout/cancel` page (distinct from success). Payment providers will refuse to redirect to non-HTTPS cancel URLs.
+- **Return-URL startup validation (Jira 9811):** when `Enabled=true`, the backend validates both return URLs at boot (`OnlinePaymentStartupGuard.EnsureReturnUrlsAreValid`). They must be present and absolute; outside Development they must be **HTTPS on a non-local, non-private host** and must carry **no query string or fragment** (the server appends the safe return params itself). A violation fails startup (fail-closed). Development may use `http://localhost`.
+- **A browser redirect to success/cancel is NEVER treated as payment proof.** The `/checkout/success` and `/checkout/cancel` pages only read the backend-confirmed order `PaymentStatus`; the provider webhook is the sole source of payment truth.
 - Only enable provider entries for providers that have been fully configured with real credentials (see Section 3). A provider with `Enabled: true` but missing credentials will throw at session-creation time.
 
 ### 1.3 appsettings.json Placeholder Policy
@@ -55,7 +66,7 @@ The `OnlinePayments` block in `appsettings.json` (or injected via environment va
 {
   "OnlinePayments": {
     "Enabled": false,
-    "UseMockProviders": true,
+    "UseMockProviders": false,
     "DefaultProvider": "",
     "Currency": "NZD",
     "SuccessReturnBaseUrl": "#{REPLACE_WITH_SUCCESS_URL}#",
@@ -70,7 +81,7 @@ The `OnlinePayments` block in `appsettings.json` (or injected via environment va
 }
 ```
 
-Real values are injected via `appsettings.Production.json` (gitignored), environment variables, or a secrets manager (see Section 2).
+Real values are injected via `appsettings.Production.json` (gitignored), environment variables, or a secrets manager (see Section 2). Keep `UseMockProviders: false` in any committed template: since Jira 9802 the backend fails startup if it is `true` together with `Enabled: true` outside Development, and registers no payment providers if it is `true` while payments are disabled.
 
 ---
 
@@ -419,6 +430,84 @@ The following items are explicitly **not** covered by this checklist and must be
 | Subscription / recurring payments | Not part of the order model |
 | Tax calculation or GST invoices | Separate concern; not part of the payment pipeline |
 | Provider-level fraud detection configuration | Configured in provider dashboard, not in application config |
+
+---
+
+## 10. Admin Reconciliation, Retention & Refund Policy (Jira 9810)
+
+> **Sandbox security test matrix (Jira 9812):** the full checkout/webhook/session/state/admin/
+> public-endpoint/return-page test matrix — with expected results, static-verification status, and a
+> secret-free Stripe **test-mode** setup runbook — lives in
+> `docs/phase-9800-9812-stripe-sandbox-security-test-matrix.md` (that `docs/` file is gitignored; force-add
+> to version it). Runtime Stripe cases there are Blocked pending test keys + Stripe CLI + a migrated DB.
+
+> **Final readiness gate (Jira 9813):** `docs/phase-9800-9813-payment-readiness-final-security-qa-gate.md`
+> (gitignored; force-add to version) records the Epic 9800 gate verdict: **PASS WITH NOTES** — static/
+> build/security gate passed and the code is ready for controlled Stripe **test-mode** runtime smoke, but
+> it is **NOT** cleared for **live** payment until the 9812 runtime matrix is executed and passes. Live
+> enablement remains gated by Stage 2/3 of this checklist.
+
+> Note: several Section 7 "known issues" were subsequently resolved — non-retryable webhook rejections now
+> return HTTP 200 with a durable `PaymentWebhookEvent` record (Jira 9805/9806), and rejected/superseded
+> `Pending` sessions are cancelled/failed rather than left stale (Jira 9804/9807). This section adds the
+> admin permission + reconciliation foundation built in Jira 9810.
+
+### 10.1 Admin reconciliation surface (implemented, read-only)
+
+- `GET /api/admin/payment-webhook-events` and `GET /api/admin/payment-webhook-events/{id}` expose durable
+  `PaymentWebhookEvent` records for reconciliation.
+- **Auth**: controller-level `[Authorize]` (no role). The app issues JWTs only to admin-panel users, so
+  **Admin and Viewer can read; customers cannot** (never anonymous). There are **no mutation actions** —
+  9810 is visibility only (nothing resolves an event, applies payment, marks paid, or calls a provider).
+- **Filters**: `requiresManualReview`, `status`, `provider`, `orderId`, `providerSessionId`, `fromDate`,
+  `toDate`, plus paging. Default order: **RequiresManualReview first, then most-recent**.
+- **Safe DTO only**: id, provider, providerEventId, providerEventType, providerSessionId, paymentIntentId,
+  status, requiresManualReview, rejectionCode, message, orderId, orderNumber (joined), onlinePaymentSessionId,
+  amount, currency, receivedAt, processedAt, lastSeenAt, duplicateCount. **No** raw webhook body, secrets,
+  card data, raw provider payload, or customer PII.
+
+### 10.2 Manual-review resolution policy (read-only for 9810)
+
+Deliberately **no auto-resolve, no auto-refund, no auto-mark-paid**. Operator workflow for a
+`RequiresManualReview` event (e.g. a charged event for a cancelled/superseded session, or an amount/currency
+mismatch):
+
+1. Filter the reconciliation list by `requiresManualReview=true`.
+2. Correlate `providerSessionId` / `paymentIntentId` / `providerEventId` against the **provider dashboard**
+   to confirm whether a real charge exists.
+3. If a genuine charge landed and the order is still owed → use the existing audited **record-payment**
+   action (`POST /api/orders/{id}/record-payment`, Admin-only, threshold-safe, writes a `PaymentTransaction`
+   + timeline entry). This never mutates the webhook-event row.
+4. If the charge must be reversed → follow the refund process (§10.4, not yet implemented) in the provider
+   dashboard; do not delete the order (§10.3).
+
+An event-level acknowledge/resolve status is **deferred** (it needs new columns + a migration). 9810 keeps
+the record immutable and the reconciliation act auditable via the order's own `record-payment` timeline. A
+future Admin-only `POST …/payment-webhook-events/{id}/acknowledge` (note only, Viewer excluded, no order/
+payment mutation) can add this.
+
+### 10.3 Payment-audit retention (hard-delete guard)
+
+`OrderAppService.DeleteAsync` blocks a hard delete when the order has **any** payment footprint:
+`PaidAmount > 0`, or any `PaymentTransaction`, `OnlinePaymentSession`, or `PaymentWebhookEvent` (including
+`RequiresManualReview`). Such orders are **cancelled** (reversible, auditable), never deleted. A future
+soft-delete/archive design should supersede hard delete entirely while preserving this audit trail.
+
+### 10.4 Future refund requirements (NOT implemented)
+
+A refund flow, when built, MUST: be **Admin-only** (Viewer read-only); use the **real provider path**
+(never MockProvider outside Development); **verify** order/session/transaction state first; be **idempotent**
+(provider idempotency key + durable local refund record); **never erase** the original `PaymentTransaction`
+(record a new refund transaction + timeline); update `PaymentStatus` only through a controlled domain method,
+handling **partial vs full** refunds explicitly with non-negative `PaidAmount`/`BalanceAmount`; keep provider
+internals out of public responses (Jira 9809); and process refund provider events through the same durable/
+idempotent webhook path (Jira 9806).
+
+### 10.5 Public/customer privacy
+
+Reconciliation data is admin-only. Anonymous `GET /api/orders/{id}` never included webhook events and
+(Jira 9808) strips admin notes, price-adjustment reasons, timeline, and per-transaction records. The new
+admin DTO is used only by `/api/admin/payment-webhook-events`.
 
 ---
 

@@ -97,9 +97,13 @@ public sealed class StripeOnlinePaymentProvider : IOnlinePaymentProvider
             },
         };
 
-        // Stable per-order+purpose idempotency key prevents duplicate sessions
-        // from network retries or double-submits on the same intent.
-        var idempotencyKey = $"stripe_session_{request.OrderId}_{request.Purpose}";
+        // Idempotency key scoped to order + purpose + amount + currency (Jira 9804). Including the
+        // minor-unit amount and currency means identical retries/double-submits collapse to ONE Stripe
+        // session, while a changed amount (e.g. after an admin price adjustment or a partial payment)
+        // produces a DIFFERENT key — so Stripe returns a fresh session instead of an idempotency
+        // conflict against a session frozen at the old amount.
+        var idempotencyKey =
+            $"stripe_session_{request.OrderId}_{request.Purpose}_{amountMinorUnits}_{currency}";
 
         Session session;
         try
@@ -145,6 +149,40 @@ public sealed class StripeOnlinePaymentProvider : IOnlinePaymentProvider
             ProviderPaymentId   = null,
             RawProviderStatus   = session.Status,
         };
+    }
+
+    // ── Session expiration ────────────────────────────────────────────────────
+
+    public async Task ExpireSessionAsync(
+        string            providerSessionId,
+        CancellationToken cancellationToken = default)
+    {
+        // Best-effort (Jira 9804): expire a still-open Checkout Session so a lingering customer tab
+        // cannot complete a charge the local system has already superseded/cancelled. Never throws —
+        // an already-expired / already-completed / unknown session is an acceptable no-op — and never
+        // logs the secret key.
+        if (string.IsNullOrWhiteSpace(providerSessionId))
+            return;
+
+        try
+        {
+            var client  = new StripeClient(ResolveSecretKey());
+            var service = new SessionService(client);
+
+            await service.ExpireAsync(providerSessionId, cancellationToken: cancellationToken);
+
+            _logger.LogInformation(
+                "[Stripe] Checkout session {SessionId} expired server-side.", providerSessionId);
+        }
+        catch (StripeException ex)
+        {
+            // Most commonly the session is already in a terminal state (expired/completed) and cannot
+            // be expired again. Log the code only — never the webhook/secret key — and swallow.
+            _logger.LogWarning(
+                "[Stripe] Could not expire session {SessionId} — Code: {Code}. " +
+                "Ignoring (best-effort); local cancellation remains authoritative.",
+                providerSessionId, ex.StripeError?.Code ?? "expire_error");
+        }
     }
 
     // ── Webhook parsing ───────────────────────────────────────────────────────
@@ -206,7 +244,9 @@ public sealed class StripeOnlinePaymentProvider : IOnlinePaymentProvider
             "checkout.session.completed"    => MapCheckoutSessionCompleted(stripeEvent),
             "checkout.session.expired"      => MapCheckoutSessionExpired(stripeEvent),
             "payment_intent.payment_failed" => MapPaymentIntentFailed(stripeEvent),
-            _                               => MakeIgnored("unsupported_event"),
+            // Verified but unsupported: carry the event id so it is recorded as an Ignored idempotency
+            // record (Jira 9806) rather than silently dropped.
+            _                               => MakeVerifiedIgnored(stripeEvent, "unsupported_event"),
         };
 
     private OnlinePaymentWebhookResult MapCheckoutSessionCompleted(Event stripeEvent)
@@ -216,7 +256,7 @@ public sealed class StripeOnlinePaymentProvider : IOnlinePaymentProvider
             _logger.LogWarning(
                 "[Stripe] checkout.session.completed event {EventId} had no Session data — ignoring.",
                 stripeEvent.Id);
-            return MakeIgnored("missing_session_object");
+            return MakeVerifiedIgnored(stripeEvent, "missing_session_object");
         }
 
         // AmountTotal is in Stripe minor units (cents); convert to major units (dollars).
@@ -234,6 +274,8 @@ public sealed class StripeOnlinePaymentProvider : IOnlinePaymentProvider
         {
             Provider          = Provider,
             Outcome           = OnlinePaymentWebhookOutcome.PaymentCompleted,
+            SignatureVerified = true,
+            ProviderEventType = stripeEvent.Type,
             ProviderSessionId = session.Id,
             ProviderPaymentId = session.PaymentIntentId,
             ProviderEventId   = stripeEvent.Id,
@@ -250,7 +292,7 @@ public sealed class StripeOnlinePaymentProvider : IOnlinePaymentProvider
             _logger.LogWarning(
                 "[Stripe] checkout.session.expired event {EventId} had no Session data — ignoring.",
                 stripeEvent.Id);
-            return MakeIgnored("missing_session_object");
+            return MakeVerifiedIgnored(stripeEvent, "missing_session_object");
         }
 
         _logger.LogInformation(
@@ -260,6 +302,8 @@ public sealed class StripeOnlinePaymentProvider : IOnlinePaymentProvider
         {
             Provider          = Provider,
             Outcome           = OnlinePaymentWebhookOutcome.PaymentExpired,
+            SignatureVerified = true,
+            ProviderEventType = stripeEvent.Type,
             ProviderSessionId = session.Id,
             ProviderEventId   = stripeEvent.Id,
             RawProviderStatus = session.Status ?? "expired",
@@ -273,7 +317,7 @@ public sealed class StripeOnlinePaymentProvider : IOnlinePaymentProvider
             _logger.LogWarning(
                 "[Stripe] payment_intent.payment_failed event {EventId} had no PaymentIntent data — ignoring.",
                 stripeEvent.Id);
-            return MakeIgnored("missing_payment_intent_object");
+            return MakeVerifiedIgnored(stripeEvent, "missing_payment_intent_object");
         }
 
         // A Checkout-created PaymentIntent does not carry the Checkout Session ID in the
@@ -290,6 +334,8 @@ public sealed class StripeOnlinePaymentProvider : IOnlinePaymentProvider
         {
             Provider          = Provider,
             Outcome           = OnlinePaymentWebhookOutcome.PaymentFailed,
+            SignatureVerified = true,
+            ProviderEventType = stripeEvent.Type,
             ProviderSessionId = null,
             ProviderPaymentId = paymentIntent.Id,
             ProviderEventId   = stripeEvent.Id,
@@ -329,10 +375,26 @@ public sealed class StripeOnlinePaymentProvider : IOnlinePaymentProvider
         return stripeOpts.WebhookSecret.Trim();
     }
 
+    // Pre-verification ignore: no trusted event id, SignatureVerified stays false so the app service
+    // never creates a durable idempotency record for an unauthenticated payload (empty body, missing
+    // signature header, or failed signature validation).
     private OnlinePaymentWebhookResult MakeIgnored(string rawStatus) => new()
     {
         Provider          = Provider,
         Outcome           = OnlinePaymentWebhookOutcome.Ignored,
+        SignatureVerified = false,
+        RawProviderStatus = rawStatus,
+    };
+
+    // Post-verification ignore: signature already validated, so carry the verified event id/type. The
+    // app service records these as an Ignored idempotency entry (Jira 9806) instead of dropping them.
+    private OnlinePaymentWebhookResult MakeVerifiedIgnored(Event stripeEvent, string rawStatus) => new()
+    {
+        Provider          = Provider,
+        Outcome           = OnlinePaymentWebhookOutcome.Ignored,
+        SignatureVerified = true,
+        ProviderEventType = stripeEvent.Type,
+        ProviderEventId   = stripeEvent.Id,
         RawProviderStatus = rawStatus,
     };
 }

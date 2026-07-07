@@ -2,6 +2,7 @@ using System;
 using System.Threading.Tasks;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.RateLimiting;
 using TeeNova.Auth;
 using TeeNova.Enquiries.Dtos;
 using Volo.Abp.Application.Dtos;
@@ -29,6 +30,8 @@ public class BannerEnquiryController : TeeNovaControllerBase
     /// <summary>Storefront: submit a Banner quote enquiry. No payment, no order.</summary>
     [HttpPost]
     [AllowAnonymous]
+    [EnableRateLimiting("PublicEnquiryPolicy")]
+    [RequestSizeLimit(128 * 1024)]
     public async Task<BannerEnquiryResultDto> CreateAsync([FromBody] CreateBannerEnquiryDto input)
         => await _appService.CreateAsync(input);
 
