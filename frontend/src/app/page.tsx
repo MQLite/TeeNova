@@ -45,7 +45,7 @@ const SERVICE_CATEGORIES: {
     title: 'Banners & Pull-Ups',
     desc: 'Pull-up banners, PVC banners and event signage for shops, churches, events and promotions.',
     cta: 'Request a quote',
-    href: 'mailto:otahuhuprint@gmail.com',
+    href: 'mailto:quanlitycanvasltd@gmail.com',
     external: true,
     tag: 'Enquire',
   },
@@ -54,7 +54,7 @@ const SERVICE_CATEGORIES: {
     title: 'Business Cards',
     desc: 'Professional business cards printed locally for Auckland businesses.',
     cta: 'Request a quote',
-    href: 'mailto:otahuhuprint@gmail.com',
+    href: 'mailto:quanlitycanvasltd@gmail.com',
     external: true,
     tag: 'Enquire',
   },
@@ -63,7 +63,7 @@ const SERVICE_CATEGORIES: {
     title: 'Stickers & Labels',
     desc: 'Custom stickers, labels and decals for packaging, events and promotions.',
     cta: 'Request a quote',
-    href: 'mailto:otahuhuprint@gmail.com',
+    href: 'mailto:quanlitycanvasltd@gmail.com',
     external: true,
     tag: 'Enquire',
   },
@@ -72,7 +72,7 @@ const SERVICE_CATEGORIES: {
     title: 'Signs & Corflute',
     desc: 'Corflute signs and rigid signage for worksites, real estate, events and local advertising.',
     cta: 'Request a quote',
-    href: 'mailto:otahuhuprint@gmail.com',
+    href: 'mailto:quanlitycanvasltd@gmail.com',
     external: true,
     tag: 'Enquire',
   },
@@ -109,7 +109,7 @@ export default function HomePage() {
               <Link href="/products" className="btn-white">
                 Browse Products
               </Link>
-              <a href="mailto:otahuhuprint@gmail.com"
+              <a href="mailto:quanlitycanvasltd@gmail.com"
                 className="inline-flex items-center justify-center gap-1.5 rounded-[50px] px-[22px] py-[10px] text-base text-white/80 transition-colors hover:text-white"
                 style={{ letterSpacing: '-0.14px', background: 'rgba(255,255,255,0.16)' }}>
                 Request a Quote
@@ -336,21 +336,21 @@ export default function HomePage() {
           <div className="card flex flex-col items-center gap-6 p-8 text-center sm:flex-row sm:justify-between sm:text-left">
             <div>
               <p className="mb-2 font-mono text-[11px] uppercase tracking-[0.54px] text-black/45">
-                Otahuhu, Auckland
+                483 Great South Road, Otahuhu, Auckland 1062
               </p>
               <h2 className="text-xl text-black" style={{ fontWeight: 540, letterSpacing: '-0.42px' }}>
                 Visit or Contact Our Otahuhu Print Shop
               </h2>
               <p className="mt-2 max-w-xl text-sm text-black/55" style={{ letterSpacing: '-0.14px', fontWeight: 400 }}>
                 Need help with a print job? Contact our local team for T-shirts, badges, banners,
-                signs and custom jobs.
+                signs and custom jobs. Open Mon–Fri 9am–5pm and Sat 10am–4pm.
               </p>
             </div>
             <div className="flex shrink-0 flex-wrap justify-center gap-3">
               <Link href="/contact" className="btn-black">
                 Contact Us
               </Link>
-              <a href="mailto:otahuhuprint@gmail.com" className="btn-glass">
+              <a href="mailto:quanlitycanvasltd@gmail.com" className="btn-glass">
                 Request a Quote
               </a>
             </div>
@@ -373,7 +373,7 @@ export default function HomePage() {
               <Link href="/products" className="btn-white">
                 Browse Products
               </Link>
-              <a href="mailto:otahuhuprint@gmail.com"
+              <a href="mailto:quanlitycanvasltd@gmail.com"
                 className="inline-flex items-center justify-center gap-1.5 rounded-[50px] px-[22px] py-[10px] text-base text-white/80 transition-colors hover:text-white"
                 style={{ letterSpacing: '-0.14px', background: 'rgba(255,255,255,0.16)' }}>
                 Request a Quote

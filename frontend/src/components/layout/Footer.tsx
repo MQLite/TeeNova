@@ -9,16 +9,16 @@ const SERVICE_LINKS: FooterLink[] = [
   { href: '/products', label: 'T-Shirt & Garment Printing' },
   { href: '/customize', label: 'Bring Your Own Garment' },
   { href: '/products', label: 'Custom Badges' },
-  { href: 'mailto:otahuhuprint@gmail.com', label: 'Banners & Pull-Ups', external: true },
-  { href: 'mailto:otahuhuprint@gmail.com', label: 'Business Cards', external: true },
-  { href: 'mailto:otahuhuprint@gmail.com', label: 'Stickers & Labels', external: true },
-  { href: 'mailto:otahuhuprint@gmail.com', label: 'Signs & Corflute', external: true },
+  { href: 'mailto:quanlitycanvasltd@gmail.com', label: 'Banners & Pull-Ups', external: true },
+  { href: 'mailto:quanlitycanvasltd@gmail.com', label: 'Business Cards', external: true },
+  { href: 'mailto:quanlitycanvasltd@gmail.com', label: 'Stickers & Labels', external: true },
+  { href: 'mailto:quanlitycanvasltd@gmail.com', label: 'Signs & Corflute', external: true },
 ]
 
 const SUPPORT_LINKS: FooterLink[] = [
   { href: '/products', label: 'Browse Products' },
   { href: '/#how-it-works', label: 'How It Works' },
-  { href: 'mailto:otahuhuprint@gmail.com', label: 'Request a Quote', external: true },
+  { href: 'mailto:quanlitycanvasltd@gmail.com', label: 'Request a Quote', external: true },
   { href: '/contact', label: 'Contact Us' },
 ]
 

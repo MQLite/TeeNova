@@ -275,7 +275,7 @@ export default async function ProductsPage({ searchParams }: PageProps) {
               body="Please try again shortly or contact us for help with your print job."
             >
               <Link href="/contact" className="btn-black btn-sm">Contact Us</Link>
-              <a href="mailto:otahuhuprint@gmail.com" className="btn-glass btn-sm">Request a Quote</a>
+              <a href="mailto:quanlitycanvasltd@gmail.com" className="btn-glass btn-sm">Request a Quote</a>
             </EmptyBox>
           ) : items.length === 0 ? (
             params.search ? (
@@ -294,7 +294,7 @@ export default async function ProductsPage({ searchParams }: PageProps) {
                 body="Contact us and we can still help with custom printing."
               >
                 <Link href="/contact" className="btn-black btn-sm">Contact Us</Link>
-                <a href="mailto:otahuhuprint@gmail.com" className="btn-glass btn-sm">Request a Quote</a>
+                <a href="mailto:quanlitycanvasltd@gmail.com" className="btn-glass btn-sm">Request a Quote</a>
               </EmptyBox>
             )
           ) : visible.length === 0 ? (
@@ -305,7 +305,7 @@ export default async function ProductsPage({ searchParams }: PageProps) {
             >
               <Link href={categoryHref('all', params.search)} className="btn-black btn-sm">All Products</Link>
               <Link href="/contact" className="btn-glass btn-sm">Contact Us</Link>
-              <a href="mailto:otahuhuprint@gmail.com" className="btn-glass btn-sm">Request a Quote</a>
+              <a href="mailto:quanlitycanvasltd@gmail.com" className="btn-glass btn-sm">Request a Quote</a>
             </EmptyBox>
           ) : (
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
@@ -330,7 +330,7 @@ export default async function ProductsPage({ searchParams }: PageProps) {
             Contact us for bulk orders, custom product types, or special requests.
           </p>
           <div className="flex flex-wrap justify-center gap-3">
-            <a href="mailto:otahuhuprint@gmail.com" className="btn-black">
+            <a href="mailto:quanlitycanvasltd@gmail.com" className="btn-black">
               Contact Us
             </a>
             <Link href="/" className="btn-glass">

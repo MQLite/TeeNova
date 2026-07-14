@@ -12,7 +12,7 @@ const NAV_LINKS: { href: string; label: string; external?: boolean }[] = [
   { href: '/#what-we-print', label: 'Services' },
   { href: '/#how-it-works', label: 'How It Works' },
   { href: '/contact', label: 'Contact' },
-  { href: 'mailto:otahuhuprint@gmail.com', label: 'Request a Quote', external: true },
+  { href: 'mailto:quanlitycanvasltd@gmail.com', label: 'Request a Quote', external: true },
 ]
 
 export function Header() {

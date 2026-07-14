@@ -2,13 +2,15 @@ import type { Metadata } from 'next'
 import Link from 'next/link'
 
 // Contact / Location page (Jira 9605). Frontend-only, no backend form and no email-sending: the quote
-// and contact actions all use the existing storefront mailto pattern. Only business details already
-// present in the storefront (suburb, hours, email) are shown — no invented phone, street address,
-// parking notes, or social URLs. LocalBusiness JSON-LD is intentionally deferred to 9606.
+// and contact actions all use the existing storefront mailto pattern. Business details shown (street
+// address, suburb, hours, email) are the owner-provided shop details — no invented phone, parking
+// notes, or social URLs. LocalBusiness JSON-LD is intentionally deferred to 9606.
 
-const CONTACT_EMAIL = 'otahuhuprint@gmail.com'
-// Suburb-level Google Maps search (no invented street address, no Maps API dependency/key).
-const MAPS_SEARCH_URL = 'https://www.google.com/maps/search/?api=1&query=Otahuhu%2C+Auckland'
+const CONTACT_EMAIL = 'quanlitycanvasltd@gmail.com'
+const SHOP_ADDRESS = '483 Great South Road, Otahuhu, Auckland 1062'
+// Google Maps search for the shop's street address (no Maps API dependency/key).
+const MAPS_SEARCH_URL =
+  'https://www.google.com/maps/search/?api=1&query=483+Great+South+Road%2C+Otahuhu%2C+Auckland+1062'
 
 export const metadata: Metadata = {
   title: 'Contact Otahuhu Printing Shop | Custom Printing Auckland',
@@ -26,8 +28,8 @@ export const metadata: Metadata = {
 
 const CONTACT_CARDS: { label: string; value: string; note?: string; href?: string }[] = [
   { label: 'Email', value: CONTACT_EMAIL, note: 'Best way to reach us', href: `mailto:${CONTACT_EMAIL}` },
-  { label: 'Location', value: 'Otahuhu, Auckland', note: 'Local print shop' },
-  { label: 'Hours', value: 'Mon–Fri 8am–6pm' },
+  { label: 'Location', value: SHOP_ADDRESS, note: 'Local print shop' },
+  { label: 'Hours', value: 'Mon–Fri 9am–5pm', note: 'Sat 10am–4pm' },
   { label: 'Pickup / delivery', value: 'Pickup in Otahuhu or NZ-wide delivery' },
 ]
 
@@ -154,7 +156,7 @@ export default function ContactPage() {
             <h2 className="display-section">Find Us in<br />Otahuhu, Auckland</h2>
             <p className="mx-auto mt-6 max-w-lg text-base leading-relaxed text-black/55"
                style={{ letterSpacing: '-0.14px', fontWeight: 400 }}>
-              We&apos;re based in Otahuhu, Auckland. Get in touch to arrange pickup, or ask us about
+              Find us at {SHOP_ADDRESS}. Get in touch to arrange pickup, or ask us about
               NZ-wide delivery for your order.
             </p>
             <div className="mt-8 flex flex-wrap justify-center gap-3">
@@ -171,7 +173,7 @@ export default function ContactPage() {
               </a>
             </div>
             <p className="mt-6 font-mono text-[11px] uppercase tracking-[0.54px] text-black/40">
-              Exact street address available on request
+              483 Great South Road, Otahuhu, Auckland 1062
             </p>
           </div>
         </div>
