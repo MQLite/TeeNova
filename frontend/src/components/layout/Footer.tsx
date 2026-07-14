@@ -101,8 +101,9 @@ export function Footer() {
               Visit Us
             </h3>
             <div className="rounded-lg border border-white/[0.08] p-4">
-              <p className="text-xs font-medium text-white">Otahuhu, Auckland</p>
-              <p className="mt-1 text-xs" style={{ letterSpacing: '-0.14px' }}>Mon–Fri 8am–6pm</p>
+              <p className="text-xs font-medium text-white">483 Great South Road, Otahuhu, Auckland 1062</p>
+              <p className="mt-1 text-xs" style={{ letterSpacing: '-0.14px' }}>Mon–Fri 9am–5pm</p>
+              <p className="text-xs" style={{ letterSpacing: '-0.14px' }}>Sat 10am–4pm</p>
               <p className="mt-2 text-xs" style={{ letterSpacing: '-0.14px' }}>
                 Pickup in Otahuhu or NZ-wide delivery.
               </p>
