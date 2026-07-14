@@ -28,7 +28,8 @@
       "Bash(npx next:*)",
       "Bash(xargs wc:*)",
       "Bash(powershell -Command \"Stop-Process -Name git -Force -ErrorAction SilentlyContinue; Start-Sleep 1; Remove-Item 'D:\\\\Repositories\\\\TeeNova\\\\.git\\\\index.lock' -Force -ErrorAction SilentlyContinue; Write-Output 'done'\")",
-      "Bash(git commit -m ':*)"
+      "Bash(git commit -m ':*)",
+      "Bash(dotnet build *)"
     ]
   }
 }

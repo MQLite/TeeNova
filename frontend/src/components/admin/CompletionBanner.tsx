@@ -1,14 +1,14 @@
 'use client'
 
+import { formatNzDateTime } from '@/lib/datetime'
+
 interface Props {
   orderNumber: string
   completedAt?: string
 }
 
 export function CompletionBanner({ orderNumber, completedAt }: Props) {
-  const formattedDate = completedAt
-    ? new Date(completedAt).toLocaleString('en-NZ', { dateStyle: 'medium', timeStyle: 'short' })
-    : null
+  const formattedDate = completedAt ? formatNzDateTime(completedAt) : null
 
   return (
     <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-5">

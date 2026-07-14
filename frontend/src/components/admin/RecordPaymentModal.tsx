@@ -103,7 +103,7 @@ export function RecordPaymentModal({ order, open, onClose, onSubmit }: Props) {
   }
 
   return (
-    <Modal open={open} onClose={onClose} title="Record Payment">
+    <Modal open={open} onClose={onClose} title="Record Payment" closeOnBackdropClick={false}>
       <form onSubmit={handleSubmit} className="space-y-4">
 
         {/* Amount */}

@@ -6,6 +6,7 @@ import { useRouter } from 'next/navigation'
 import { makeOrdersApi } from '@/api/orders'
 import { adminApiClient, redirectToLogin } from '@/lib/admin-client'
 import { ApiError } from '@/lib/api-client'
+import { formatNzDate } from '@/lib/datetime'
 import { OrderStatusBadge, STATUS_CONFIG } from '@/components/admin/OrderStatusBadge'
 import type { Order, OrderStatus } from '@/types'
 
@@ -282,7 +283,7 @@ export function OrdersTable({ orders }: Props) {
                     ${order.totalAmount.toFixed(2)}
                   </td>
                   <td className="px-4 py-3 font-mono text-[10px] uppercase tracking-[0.54px] text-black/45">
-                    {new Date(order.creationTime).toLocaleDateString('en-NZ', {
+                    {formatNzDate(order.creationTime, {
                       day: 'numeric', month: 'short', year: 'numeric',
                     })}
                   </td>

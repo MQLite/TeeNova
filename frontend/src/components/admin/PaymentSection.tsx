@@ -3,6 +3,7 @@
 import clsx from 'clsx'
 import { Card, CardHeader, CardBody } from '@/components/ui/Card'
 import { Button } from '@/components/ui/Button'
+import { formatNzDateTime } from '@/lib/datetime'
 import type { ManualPaymentMethod, Order, PaymentStatus } from '@/types'
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -36,8 +37,7 @@ function formatSignedMoney(value: number): string {
 }
 
 function formatDate(iso: string | null | undefined): string {
-  if (!iso) return '—'
-  return new Date(iso).toLocaleString('en-NZ', { dateStyle: 'medium', timeStyle: 'short' })
+  return formatNzDateTime(iso)
 }
 
 function AmountRow({

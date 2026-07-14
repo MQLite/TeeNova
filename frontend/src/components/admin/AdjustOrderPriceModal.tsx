@@ -137,7 +137,7 @@ export function AdjustOrderPriceModal({ order, open, onClose, onSubmit }: Props)
   }
 
   return (
-    <Modal open={open} onClose={onClose} title="Adjust Order Price">
+    <Modal open={open} onClose={onClose} title="Adjust Order Price" closeOnBackdropClick={false}>
       <form onSubmit={handleSubmit} className="space-y-4">
 
         {/* Current figures (read-only) */}

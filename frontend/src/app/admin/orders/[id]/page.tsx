@@ -7,6 +7,7 @@ import { makeOrdersApi } from '@/api/orders'
 import { makeFilesApi } from '@/api/files'
 import { adminApiClient, redirectToLogin } from '@/lib/admin-client'
 import { ApiError } from '@/lib/api-client'
+import { formatNzDateTime } from '@/lib/datetime'
 
 const ordersApi = makeOrdersApi(adminApiClient)
 const filesApi = makeFilesApi(adminApiClient)
@@ -564,7 +565,7 @@ export default function AdminOrderDetailPage() {
             <OrderStatusBadge status={order.status} />
           </div>
           <p className="mt-0.5 font-mono text-[11px] uppercase tracking-[0.54px] text-black/45">
-            Placed {new Date(order.creationTime).toLocaleString('en-NZ', { dateStyle: 'medium', timeStyle: 'short' })}
+            Placed {formatNzDateTime(order.creationTime)}
           </p>
         </div>
         {/* Always available (incl. Cancelled/Completed) for archive/workshop use. */}

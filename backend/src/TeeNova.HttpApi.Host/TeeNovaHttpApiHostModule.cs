@@ -26,6 +26,7 @@ using Volo.Abp.Autofac;
 using Volo.Abp.Data;
 using Volo.Abp.Modularity;
 using Volo.Abp.Swashbuckle;
+using Volo.Abp.Timing;
 
 namespace TeeNova;
 
@@ -50,6 +51,14 @@ public class TeeNovaHttpApiHostModule : AbpModule
         ConfigureForwardedHeaders(context);
         ConfigureRateLimiting(context, configuration);
         ConfigureExceptionHandling(context, hostingEnvironment);
+
+        // Treat all stored/served timestamps as UTC. Without this, ABP's default clock is
+        // "Unspecified": Clock.Now returns server-local time with no Kind, and the JSON serializer
+        // emits values like "2026-07-13T10:30:00" (no trailing "Z"). A browser then parses that as
+        // its own local time, shifting payment/timeline timestamps off the true NZ wall-clock. With
+        // Utc, every DateTime is normalized to UTC and serialized with a "Z" so the client can convert
+        // it correctly (the admin UI renders it in Pacific/Auckland).
+        Configure<AbpClockOptions>(options => options.Kind = DateTimeKind.Utc);
 
         // Serialize enums as strings so the frontend receives "Pending" not 0
         context.Services.AddControllers()

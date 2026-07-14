@@ -1,10 +1,11 @@
 'use client'
 
 import { OrderStatusBadge } from '@/components/admin/OrderStatusBadge'
+import { formatNzDateTime } from '@/lib/datetime'
 import type { OrderTimelineEntry, OrderStatus } from '@/types'
 
 function formatTime(iso: string): string {
-  return new Date(iso).toLocaleString('en-NZ', {
+  return formatNzDateTime(iso, {
     month: 'short',
     day: 'numeric',
     hour: '2-digit',
