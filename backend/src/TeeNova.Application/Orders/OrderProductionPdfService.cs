@@ -221,11 +221,13 @@ public class OrderProductionPdfService : IOrderProductionPdfService, ITransientD
                     }
                 });
 
-                // Print production list, grouped by the print instruction itself — design file, position
+                // Print production list, grouped by the print instruction itself — design, position
                 // (print area) and print size. Every garment that takes that exact print is listed under it,
                 // with sizes combined per product + colour (e.g. "Daisy Yellow / S, M, L, XL"). The design is
                 // keyed by its core file name (DesignDisplayName strips the per-upload prefix) so the same
-                // artwork re-uploaded for each placement still collapses. Per-size quantities stay in the
+                // artwork re-uploaded for each placement still collapses, while the heading shows the design
+                // description when one was given. Keeping the file name in the key stops two distinct
+                // artworks that happen to share a description from merging. Per-size quantities stay in the
                 // Items table above.
                 var printRows = order.Items
                     .Where(i => i.Prints.Count > 0)
@@ -237,11 +239,11 @@ public class OrderProductionPdfService : IOrderProductionPdfService, ITransientD
                             Color: color,
                             Size: size,
                             Design: DesignDisplayName(p.UploadedAssetUrl),
+                            DesignLabel: DesignLabel(p.UploadedAssetUrl, p.DesignNote),
                             Area: p.PrintAreaName,
                             PrintSize: p.PrintSizeName,
                             Notes: new[]
                             {
-                                string.IsNullOrWhiteSpace(p.DesignNote) ? null : $"Design note: {p.DesignNote}",
                                 string.IsNullOrWhiteSpace(p.Notes) ? null : $"Print note: {p.Notes}",
                             }.Where(n => n is not null).Select(n => n!).ToList()));
                     })
@@ -250,7 +252,7 @@ public class OrderProductionPdfService : IOrderProductionPdfService, ITransientD
                 if (printRows.Count > 0)
                     col.Item().PaddingTop(8).Text("Print production").SemiBold().FontSize(10);
 
-                foreach (var group in printRows.GroupBy(r => (r.Design, r.Area, r.PrintSize)))
+                foreach (var group in printRows.GroupBy(r => (r.Design, r.DesignLabel, r.Area, r.PrintSize)))
                 {
                     var first = group.First();
 
@@ -259,7 +261,7 @@ public class OrderProductionPdfService : IOrderProductionPdfService, ITransientD
                         {
                             pc.Item().Text(t =>
                             {
-                                t.Span(first.Design).SemiBold().FontSize(9);
+                                t.Span(first.DesignLabel).SemiBold().FontSize(9);
                                 t.Span("  ·  ").FontSize(9).FontColor(Colors.Grey.Medium);
                                 t.Span($"{first.Area} · {first.PrintSize}").FontSize(9);
                             });
@@ -287,7 +289,8 @@ public class OrderProductionPdfService : IOrderProductionPdfService, ITransientD
 
                 // Non-garment / design-only items (Badge, Jira 9505). These carry no print placements, so
                 // they never appear in the print-production list above. Each is rendered with its product,
-                // quantity, pricing, applied quantity tier, design file name and design note — no variant,
+                // quantity, pricing, applied quantity tier and design (description, or file name when the
+                // customer gave no description) — no variant,
                 // print position, print size, or blank " / " artifacts. Banner items are excluded here and
                 // rendered with their full structured detail in ComposeBannerItems (Jira 9514).
                 ComposeDesignOnlyItems(col, order);
@@ -324,10 +327,8 @@ public class OrderProductionPdfService : IOrderProductionPdfService, ITransientD
                         ic.Item().Text($"Quantity tier: {item.AppliedQuantityTierMinQuantity.Value}+")
                             .FontSize(8).FontColor(Colors.Grey.Darken1);
 
-                    ic.Item().Text($"Design: {DesignDisplayName(item.UploadedAssetUrl)}").FontSize(8).FontColor(Colors.Grey.Darken1);
-
-                    if (!string.IsNullOrWhiteSpace(item.DesignNote))
-                        ic.Item().Text($"Design note: {item.DesignNote}").FontSize(8).FontColor(Colors.Grey.Darken1);
+                    ic.Item().Text($"Design: {DesignLabel(item.UploadedAssetUrl, item.DesignNote)}")
+                        .FontSize(8).FontColor(Colors.Grey.Darken1);
                 });
         }
     }
@@ -386,9 +387,8 @@ public class OrderProductionPdfService : IOrderProductionPdfService, ITransientD
                             ic.Item().Text($"Banner notes: {d.Notes}").FontSize(8).FontColor(Colors.Grey.Darken1);
                     }
 
-                    ic.Item().Text($"Design: {DesignDisplayName(item.UploadedAssetUrl)}").FontSize(8).FontColor(Colors.Grey.Darken1);
-                    if (!string.IsNullOrWhiteSpace(item.DesignNote))
-                        ic.Item().Text($"Design note: {item.DesignNote}").FontSize(8).FontColor(Colors.Grey.Darken1);
+                    ic.Item().Text($"Design: {DesignLabel(item.UploadedAssetUrl, item.DesignNote)}")
+                        .FontSize(8).FontColor(Colors.Grey.Darken1);
                 });
         }
     }
@@ -613,6 +613,16 @@ public class OrderProductionPdfService : IOrderProductionPdfService, ITransientD
 
     private static string DesignDisplayName(string? url)
         => GeneratedFilePrefix.Replace(DesignFileLabel(url), string.Empty);
+
+    /// <summary>
+    /// How a design is named on the sheet: the design description the customer gave (the design note),
+    /// falling back to the uploaded file name when there is none. A description reads better on the
+    /// production floor than a storage file name, and it also carries the customer's intent.
+    /// </summary>
+    private static string DesignLabel(string? url, string? designDescription)
+        => string.IsNullOrWhiteSpace(designDescription)
+            ? DesignDisplayName(url)
+            : designDescription.Trim();
 
     private static string DesignFileLabel(string? url)
     {
