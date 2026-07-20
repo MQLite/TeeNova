@@ -16,8 +16,19 @@ export function fileTypeCategory(contentType: string): string {
 }
 
 export function fileSizeLabel(bytes: number): string {
-  if (bytes >= 1_000_000) return `${(bytes / 1_000_000).toFixed(1)} MB`
-  return `${Math.round(bytes / 1000)} KB`
+  if (!Number.isFinite(bytes) || bytes < 0 || !Number.isInteger(bytes)) return '—'
+  if (bytes < 1024) return `${bytes} B`
+
+  const units = ['KB', 'MB', 'GB'] as const
+  let value = bytes / 1024
+  let unitIndex = 0
+  while (value >= 1024 && unitIndex < units.length - 1) {
+    value /= 1024
+    unitIndex += 1
+  }
+
+  const formatted = value >= 100 ? Math.round(value).toString() : value.toFixed(1).replace(/\.0$/, '')
+  return `${formatted} ${units[unitIndex]}`
 }
 
 export function isPreviewable(contentType: string): boolean {

@@ -101,6 +101,17 @@ const usersNavItem = {
   ),
 }
 
+const logsNavItem = {
+  href: '/admin/system/logs',
+  label: 'Logs',
+  exact: false,
+  icon: (
+    <svg viewBox="0 0 20 20" fill="currentColor" className="h-4 w-4 shrink-0" aria-hidden="true">
+      <path fillRule="evenodd" d="M4 2a2 2 0 00-2 2v12a2 2 0 002 2h12a2 2 0 002-2V7.414A2 2 0 0015.414 6L12 2.586A2 2 0 0010.586 2H4zm2 7a1 1 0 100 2h8a1 1 0 100-2H6zm-1 4a1 1 0 011-1h8a1 1 0 110 2H6a1 1 0 01-1-1z" clipRule="evenodd" />
+    </svg>
+  ),
+}
+
 interface AdminSidebarProps {
   role?: string
 }
@@ -154,6 +165,29 @@ export function AdminSidebar({ role }: AdminSidebarProps) {
             </Link>
           )
         })}
+
+        {role === 'Admin' && (
+          <div className="pt-4">
+            <p className="mb-1.5 px-2 font-mono text-[9px] uppercase tracking-[0.54px] text-black/45">
+              System
+            </p>
+            <Link
+              href={logsNavItem.href}
+              className={[
+                'flex items-center gap-2.5 rounded-[50px] px-3 py-2.5 text-sm transition-all',
+                isActive(logsNavItem.href)
+                  ? 'bg-black text-white shadow-sm'
+                  : 'text-black/50 hover:bg-black/[0.05] hover:text-black hover:translate-x-[1px]',
+              ].join(' ')}
+              style={{ letterSpacing: '-0.14px' }}
+            >
+              <span className={isActive(logsNavItem.href) ? 'text-white' : 'text-black/50'}>
+                {logsNavItem.icon}
+              </span>
+              {logsNavItem.label}
+            </Link>
+          </div>
+        )}
       </nav>
 
       {/* Back link */}

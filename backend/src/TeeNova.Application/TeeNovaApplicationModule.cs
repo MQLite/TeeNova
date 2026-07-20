@@ -1,8 +1,11 @@
 using System.Threading.Tasks;
+using Microsoft.AspNetCore.DataProtection;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Options;
+using TeeNova.AdminLogs;
 using TeeNova.Auth;
 using TeeNova.Email;
 using TeeNova.Files;
@@ -35,6 +38,20 @@ public class TeeNovaApplicationModule : AbpModule
         });
 
         var configuration = context.Services.GetConfiguration();
+
+        context.Services.Configure<AdminLogsOptions>(configuration.GetSection(AdminLogsOptions.SectionName));
+        context.Services.AddSingleton<IValidateOptions<AdminLogsOptions>, AdminLogsOptionsValidator>();
+        context.Services.AddOptions<AdminLogsOptions>().ValidateOnStart();
+        context.Services.AddDataProtection().SetApplicationName("TeeNova");
+        context.Services.AddSingleton(TimeProvider.System);
+        context.Services.AddHttpContextAccessor();
+        context.Services.AddSingleton<IAdminLogDirectoryEnumerator, AdminLogDirectoryEnumerator>();
+        context.Services.AddSingleton<IAdminLogFileMetadataReader, AdminLogFileMetadataReader>();
+        context.Services.AddSingleton<IAdminLogFileIdProtector, AdminLogFileIdProtector>();
+        context.Services.AddSingleton<IAdminLogFileOpener, AdminLogFileOpener>();
+        context.Services.AddSingleton<IAdminLogDownloadAudit, AdminLogDownloadAudit>();
+        context.Services.AddTransient<IAdminLogAppService, AdminLogAppService>();
+        context.Services.AddTransient<IAdminLogDownloadService, AdminLogDownloadService>();
 
         context.Services.Configure<AdminAuthOptions>(configuration.GetSection("AdminAuth"));
         context.Services.Configure<JwtOptions>(configuration.GetSection("Jwt"));

@@ -16,6 +16,7 @@ using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Microsoft.IdentityModel.Tokens;
 using Microsoft.OpenApi.Models;
+using TeeNova.AdminLogs;
 using TeeNova.Auth;
 using TeeNova.EntityFrameworkCore;
 using Volo.Abp;
@@ -161,6 +162,18 @@ public class TeeNovaHttpApiHostModule : AbpModule
         {
             options.SendExceptionsDetailsToClients = isDevelopment;
             options.SendStackTraceToClients        = isDevelopment;
+        });
+
+        context.Services.Configure<AbpExceptionHttpStatusCodeOptions>(options =>
+        {
+            options.Map(AdminLogsErrorCodes.InvalidQuery, HttpStatusCode.BadRequest);
+            options.Map(AdminLogsErrorCodes.SourceNotFound, HttpStatusCode.NotFound);
+            options.Map(AdminLogsErrorCodes.Disabled, HttpStatusCode.ServiceUnavailable);
+            options.Map(AdminLogsErrorCodes.SourceUnavailable, HttpStatusCode.ServiceUnavailable);
+            options.Map(AdminLogsErrorCodes.FileUnavailable, HttpStatusCode.NotFound);
+            options.Map(AdminLogsErrorCodes.FileIdExpired, HttpStatusCode.Gone);
+            options.Map(AdminLogsErrorCodes.FileChanged, HttpStatusCode.Conflict);
+            options.Map(AdminLogsErrorCodes.FileTooLarge, HttpStatusCode.RequestEntityTooLarge);
         });
     }
 

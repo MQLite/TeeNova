@@ -35,10 +35,15 @@ function buildUrl(path: string, params?: Record<string, string | number | boolea
 }
 
 export const adminApiClient = {
-  async get<T>(path: string, params?: Record<string, string | number | boolean | undefined>): Promise<T> {
+  async get<T>(
+    path: string,
+    params?: Record<string, string | number | boolean | undefined>,
+    signal?: AbortSignal,
+  ): Promise<T> {
     const res = await fetch(buildUrl(path, params), {
       cache: 'no-store',
       headers: { 'Content-Type': 'application/json' },
+      signal,
     })
     return handleResponse<T>(res)
   },
