@@ -156,7 +156,11 @@ public sealed class HostedAdminLogsTests
         Assert.Equal("Failed", Assert.Single(host.Audit.Records).Outcome);
 
         host.Audit.Clear();
-        var tampered = id[..^1] + (id[^1] == 'A' ? 'B' : 'A');
+        // Tamper a significant interior base64url character. Flipping only the final character is unreliable
+        // because its low bits are insignificant padding, so an A<->B change there can decode to the same
+        // protected payload; an interior change always alters the ciphertext and fails authenticated decryption.
+        var midpoint = id.Length / 2;
+        var tampered = id[..midpoint] + (id[midpoint] == 'A' ? 'B' : 'A') + id[(midpoint + 1)..];
         await AssertStatusAsync(host, $"/api/admin/logs/{Uri.EscapeDataString(tampered)}/download", token, HttpStatusCode.NotFound);
         Assert.Equal("Failed", Assert.Single(host.Audit.Records).Outcome);
 

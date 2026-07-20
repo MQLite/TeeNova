@@ -84,7 +84,11 @@ public sealed class AdminLogFileOpener : IAdminLogFileOpener
             var metadata = ReadLinuxHandleMetadata(fileDescriptor);
             ValidateOpenedFile(metadata, claim, maximumDownloadBytes);
 
-            var stream = new FileStream(fileHandle, FileAccess.Read, 64 * 1024, isAsync: true);
+            // A descriptor from raw openat is not opened for overlapped I/O, so the FileStream must be
+            // constructed as synchronous; requesting isAsync here throws ArgumentException on Linux and
+            // previously surfaced as a 503 SourceUnavailable for every download. Regular-file reads never
+            // block, so asynchronous stream reads remain correct over a synchronous handle.
+            var stream = new FileStream(fileHandle, FileAccess.Read, 64 * 1024, isAsync: false);
             fileHandle = null;
             return new OpenedFileHandle(stream, metadata.SizeBytes, metadata.LastModifiedUtc);
         }
