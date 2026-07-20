@@ -7,6 +7,12 @@ namespace TeeNova.AdminLogs;
 public sealed class AdminLogsControllerAuthorizationTests
 {
     [Fact]
+    public void Application_service_is_proxyable_by_ABP_interceptors()
+    {
+        Assert.False(typeof(AdminLogAppService).IsSealed);
+    }
+
+    [Fact]
     public void Controller_requires_the_existing_admin_role()
     {
         var attribute = Assert.Single(

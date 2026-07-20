@@ -15,7 +15,7 @@ using Volo.Abp.Application.Services;
 
 namespace TeeNova.AdminLogs;
 
-public sealed class AdminLogAppService : ApplicationService, IAdminLogAppService
+public class AdminLogAppService : ApplicationService, IAdminLogAppService
 {
     private const int MaximumSearchLength = 200;
     private const string FileTooLargeReason = "FileTooLarge";
