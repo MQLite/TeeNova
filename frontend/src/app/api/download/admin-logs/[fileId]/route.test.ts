@@ -83,6 +83,7 @@ describe('admin log streaming bridge', () => {
     const [url, init] = vi.mocked(fetch).mock.calls[0]
     expect(url).toBe('https://localhost:44300/api/admin/logs/opaque-id_value/download')
     expect((init?.headers as Record<string, string>).Authorization).toBe('Bearer server-only-admin-token')
+    expect((init?.headers as Record<string, string>).Accept).toBe('application/octet-stream, application/json')
     expect(init?.signal).toBe(req.signal)
     expect(response.body).toBe(stream)
     expect(arrayBufferSpy).not.toHaveBeenCalled()

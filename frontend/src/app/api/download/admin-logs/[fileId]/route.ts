@@ -42,7 +42,9 @@ export async function GET(
       method: 'GET',
       headers: {
         Authorization: `Bearer ${token}`,
-        Accept: 'application/octet-stream',
+        // ABP's exception filter only serializes mapped BusinessException responses when
+        // the request accepts JSON. Keep the stream media type first for successful files.
+        Accept: 'application/octet-stream, application/json',
       },
       cache: 'no-store',
       signal: req.signal,
