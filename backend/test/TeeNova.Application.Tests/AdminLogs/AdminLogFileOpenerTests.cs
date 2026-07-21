@@ -1,4 +1,5 @@
 using System.Runtime.InteropServices;
+using System.Runtime.Versioning;
 using System.Net.Sockets;
 
 namespace TeeNova.AdminLogs;
@@ -258,6 +259,27 @@ public sealed class AdminLogFileOpenerTests
     }
 
     [LinuxFact]
+    [SupportedOSPlatform("linux")]
+    public void Linux_root_permission_removal_fails_safely_and_permissions_are_restored()
+    {
+        using var directory = new TemporaryDirectory();
+        var path = directory.CreateFile("permission.log", "data");
+        var claim = Claim(directory, path);
+        var originalMode = File.GetUnixFileMode(directory.Path);
+
+        try
+        {
+            File.SetUnixFileMode(directory.Path, UnixFileMode.None);
+            AssertFailure(AdminLogFileOpenFailure.SourceUnavailable, () =>
+                _opener.Open(directory.Source("api"), claim, 100));
+        }
+        finally
+        {
+            File.SetUnixFileMode(directory.Path, originalMode);
+        }
+    }
+
+    [LinuxFact]
     public void Linux_fifo_is_rejected_without_blocking()
     {
         using var directory = new TemporaryDirectory();
@@ -279,6 +301,32 @@ public sealed class AdminLogFileOpenerTests
 
         AssertFailure(AdminLogFileOpenFailure.FileUnavailable, () =>
             _opener.Open(directory.Source("api"), BasicClaim(directory, "socket.log", 0), 100));
+    }
+
+    [LinuxFact]
+    public void Linux_character_device_is_rejected_without_configuring_a_production_source()
+    {
+        const string deviceRoot = "/dev";
+        const string deviceName = "null";
+        if (!File.Exists(Path.Combine(deviceRoot, deviceName)))
+            return;
+
+        var source = new AdminLogSourceOptions
+        {
+            Key = "device-test",
+            DisplayName = "Device test",
+            Directory = deviceRoot,
+        };
+        var claim = new AdminLogFileIdPayload
+        {
+            SourceKey = source.Key,
+            FileName = deviceName,
+            RootFingerprint = AdminLogAppService.CreateRootFingerprint(source),
+            SizeBytes = 0,
+        };
+
+        AssertFailure(AdminLogFileOpenFailure.FileUnavailable, () =>
+            _opener.Open(source, claim, 100));
     }
 
     private AdminLogFileIdPayload Claim(TemporaryDirectory directory, string path)

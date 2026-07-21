@@ -3,6 +3,7 @@ using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.Abstractions;
 using Microsoft.AspNetCore.Routing;
+using Microsoft.Extensions.Logging;
 
 namespace TeeNova.AdminLogs;
 
@@ -57,6 +58,40 @@ public sealed class AdminLogDownloadResultTests
 
         Assert.Equal("before", Encoding.UTF8.GetString(output.Bytes));
         Assert.Equal(6, Assert.Single(audit.Records).SnapshotLength);
+    }
+
+    [Fact]
+    public async Task Active_test_log_audit_append_does_not_extend_download_snapshot()
+    {
+        var path = Path.Combine(Path.GetTempPath(), $"teenova-active-log-{Guid.NewGuid():N}.log");
+        var snapshot = Encoding.UTF8.GetBytes("before");
+        try
+        {
+            await File.WriteAllBytesAsync(path, snapshot);
+            var input = new FileStream(
+                path,
+                FileMode.Open,
+                FileAccess.Read,
+                FileShare.ReadWrite | FileShare.Delete,
+                AdminLogDownloadResult.BufferSize,
+                FileOptions.SequentialScan);
+            var output = new RecordingWriteStream();
+            var audit = new AdminLogDownloadAudit(new AppendingFileLogger(path));
+
+            await new AdminLogDownloadResult(Opened(input, "active-test.log", snapshot.Length), audit, TimeProvider.System)
+                .ExecuteResultAsync(Context(output));
+
+            Assert.Equal(snapshot, output.Bytes);
+            Assert.Equal(snapshot.Length, output.Bytes.Length);
+            var finalContent = await File.ReadAllTextAsync(path);
+            Assert.StartsWith("before", finalContent, StringComparison.Ordinal);
+            Assert.Contains("AdminLogDownload", finalContent, StringComparison.Ordinal);
+            Assert.True(new FileInfo(path).Length > snapshot.Length);
+        }
+        finally
+        {
+            File.Delete(path);
+        }
     }
 
     [Fact]
@@ -229,6 +264,22 @@ public sealed class AdminLogDownloadResultTests
     {
         public List<AdminLogDownloadAuditRecord> Records { get; } = [];
         public void Write(AdminLogDownloadAuditRecord record) => Records.Add(record);
+    }
+
+    private sealed class AppendingFileLogger(string path) : ILogger<AdminLogDownloadAudit>
+    {
+        public IDisposable? BeginScope<TState>(TState state) where TState : notnull => null;
+        public bool IsEnabled(LogLevel logLevel) => true;
+
+        public void Log<TState>(
+            LogLevel logLevel,
+            EventId eventId,
+            TState state,
+            Exception? exception,
+            Func<TState, Exception?, string> formatter)
+        {
+            File.AppendAllText(path, Environment.NewLine + formatter(state, exception));
+        }
     }
 
     private sealed class TrackingReadStream : Stream
