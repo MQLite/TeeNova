@@ -12,8 +12,8 @@ export type AdminLogDownloadErrorCode =
   | 'download-failed'
 
 export function isSafeFileId(fileId: string | null | undefined): fileId is string {
-  if (!fileId || fileId === '.' || fileId === '..' || fileId.length > MAX_ADMIN_LOG_FILE_ID_LENGTH) return false
-  return !/[\u0000-\u001f\u007f/\\?#:]/.test(fileId)
+  if (!fileId || fileId.length > MAX_ADMIN_LOG_FILE_ID_LENGTH) return false
+  return /^[A-Za-z0-9_-]+$/.test(fileId)
 }
 
 export function mapDownloadFailure(

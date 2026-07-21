@@ -66,6 +66,24 @@ public sealed class AdminLogFileOpenerTests
     }
 
     [Fact]
+    public async Task Open_handle_is_not_redirected_by_path_replacement()
+    {
+        using var directory = new TemporaryDirectory();
+        var path = directory.CreateFile("stable.log", "original");
+        var claim = Claim(directory, path);
+
+        await using var opened = _opener.Open(directory.Source("api"), claim, 100);
+
+        File.Move(path, Path.Combine(directory.Path, "original-opened.log"));
+        directory.CreateFile("stable.log", "replacement");
+
+        var bytes = new byte[opened.Length];
+        await opened.Stream.ReadExactlyAsync(bytes);
+        Assert.Equal("original", System.Text.Encoding.UTF8.GetString(bytes));
+        Assert.Equal("replacement", File.ReadAllText(path));
+    }
+
+    [Fact]
     public void Truncation_before_open_is_changed_and_append_is_allowed()
     {
         using var directory = new TemporaryDirectory();
@@ -212,6 +230,28 @@ public sealed class AdminLogFileOpenerTests
         var linkedRoot = Path.Combine(parent.Path, "linked-root");
         Directory.CreateSymbolicLink(linkedRoot, target.Path);
         var source = new AdminLogSourceOptions { Key = "api", DisplayName = "API", Directory = linkedRoot };
+
+        AssertFailure(AdminLogFileOpenFailure.SourceUnavailable, () =>
+            _opener.Open(source, BasicClaim(target, "file.log", 4), 100));
+    }
+
+    [LinuxFact]
+    public void Linux_nested_root_component_symlink_is_rejected()
+    {
+        using var parent = new TemporaryDirectory();
+        using var target = new TemporaryDirectory();
+        var nestedTarget = Path.Combine(target.Path, "nested");
+        Directory.CreateDirectory(nestedTarget);
+        File.WriteAllText(Path.Combine(nestedTarget, "file.log"), "data");
+        var linkedComponent = Path.Combine(parent.Path, "linked-component");
+        Directory.CreateSymbolicLink(linkedComponent, target.Path);
+        var configuredRoot = Path.Combine(linkedComponent, "nested");
+        var source = new AdminLogSourceOptions
+        {
+            Key = "api",
+            DisplayName = "API",
+            Directory = configuredRoot,
+        };
 
         AssertFailure(AdminLogFileOpenFailure.SourceUnavailable, () =>
             _opener.Open(source, BasicClaim(target, "file.log", 4), 100));

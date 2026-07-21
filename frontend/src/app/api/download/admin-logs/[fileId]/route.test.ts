@@ -78,10 +78,10 @@ describe('admin log streaming bridge', () => {
     vi.mocked(fetch).mockResolvedValue(upstream)
     const req = request()
 
-    const response = await GET(req, routeParams('opaque+id=value'))
+    const response = await GET(req, routeParams('opaque-id_value'))
 
     const [url, init] = vi.mocked(fetch).mock.calls[0]
-    expect(url).toBe('https://localhost:44300/api/admin/logs/opaque%2Bid%3Dvalue/download')
+    expect(url).toBe('https://localhost:44300/api/admin/logs/opaque-id_value/download')
     expect((init?.headers as Record<string, string>).Authorization).toBe('Bearer server-only-admin-token')
     expect(init?.signal).toBe(req.signal)
     expect(response.body).toBe(stream)
@@ -201,6 +201,12 @@ describe('download bridge validation and status mapping', () => {
     'file:stream',
     'bad?query=1',
     'bad#fragment',
+    'opaque+id=value',
+    'bad%2fid',
+    'bad%252fid',
+    'bad⁄id',
+    'bad∕id',
+    'bad／id',
   ])('rejects malicious browser route value %s', value => {
     expect(isSafeFileId(value)).toBe(false)
   })

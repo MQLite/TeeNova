@@ -77,6 +77,77 @@ public sealed class AdminLogDownloadResultTests
     }
 
     [Fact]
+    public async Task Physical_truncation_during_stream_aborts_as_one_failure_and_disposes_input()
+    {
+        var path = Path.Combine(Path.GetTempPath(), $"teenova-truncate-{Guid.NewGuid():N}.log");
+        try
+        {
+            var snapshotLength = AdminLogDownloadResult.BufferSize * 2L;
+            using (var creator = new FileStream(path, FileMode.CreateNew, FileAccess.Write, FileShare.Read))
+                creator.SetLength(snapshotLength);
+
+            var input = new FileStream(
+                path,
+                FileMode.Open,
+                FileAccess.Read,
+                FileShare.ReadWrite | FileShare.Delete,
+                AdminLogDownloadResult.BufferSize,
+                FileOptions.SequentialScan);
+            var output = new RecordingWriteStream
+            {
+                OnFirstWrite = () =>
+                {
+                    using var truncator = new FileStream(
+                        path,
+                        FileMode.Open,
+                        FileAccess.Write,
+                        FileShare.ReadWrite | FileShare.Delete);
+                    truncator.SetLength(1);
+                },
+            };
+            var audit = new CapturingAudit();
+
+            await new AdminLogDownloadResult(
+                    Opened(input, "physically-truncated.log", snapshotLength), audit, TimeProvider.System)
+                .ExecuteResultAsync(Context(output));
+
+            Assert.False(input.CanRead);
+            Assert.InRange(output.Bytes.LongLength, 1, snapshotLength - 1);
+            var record = Assert.Single(audit.Records);
+            Assert.Equal("Failed", record.Outcome);
+            Assert.Equal("StreamingFailure", record.FailureCategory);
+            Assert.Equal(output.Bytes.LongLength, record.BytesWritten);
+        }
+        finally
+        {
+            File.Delete(path);
+        }
+    }
+
+    [Fact]
+    public async Task Cancellation_before_streaming_disposes_without_reading_and_audits_once()
+    {
+        using var cancellation = new CancellationTokenSource();
+        cancellation.Cancel();
+        var input = new TrackingReadStream(new byte[100]);
+        var output = new RecordingWriteStream();
+        var audit = new CapturingAudit();
+        var context = Context(output);
+        context.HttpContext.RequestAborted = cancellation.Token;
+
+        await new AdminLogDownloadResult(Opened(input, "cancel-before-stream.log", 100), audit, TimeProvider.System)
+            .ExecuteResultAsync(context);
+
+        Assert.True(input.Disposed);
+        Assert.Equal(0, input.MaximumReadRequest);
+        Assert.Empty(output.Bytes);
+        var record = Assert.Single(audit.Records);
+        Assert.Equal("Cancelled", record.Outcome);
+        Assert.Equal(499, record.HttpStatus);
+        Assert.Equal(0, record.BytesWritten);
+    }
+
+    [Fact]
     public async Task Client_cancellation_stops_streaming_disposes_and_audits_once()
     {
         using var cancellation = new CancellationTokenSource();
@@ -223,7 +294,9 @@ public sealed class AdminLogDownloadResultTests
     private sealed class RecordingWriteStream : Stream
     {
         private readonly List<byte> _bytes = [];
+        private bool _firstWrite = true;
         public byte[] Bytes => [.. _bytes];
+        public Action? OnFirstWrite { get; set; }
         public int MaximumWrite { get; private set; }
         public bool ThrowOnWrite { get; set; }
         public override bool CanRead => false;
@@ -237,6 +310,11 @@ public sealed class AdminLogDownloadResultTests
             cancellationToken.ThrowIfCancellationRequested();
             if (ThrowOnWrite)
                 throw new IOException("Synthetic write failure.");
+            if (_firstWrite)
+            {
+                _firstWrite = false;
+                OnFirstWrite?.Invoke();
+            }
             MaximumWrite = Math.Max(MaximumWrite, buffer.Length);
             foreach (var value in buffer.Span)
                 _bytes.Add(value);
