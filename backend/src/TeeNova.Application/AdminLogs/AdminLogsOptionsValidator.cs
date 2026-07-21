@@ -118,7 +118,11 @@ public sealed partial class AdminLogsOptionsValidator : IValidateOptions<AdminLo
             return;
         }
 
-        var extensions = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        // Case-insensitive duplicate extensions are redundant but harmless: every consumer resolves
+        // AllowedExtensions through an OrdinalIgnoreCase set (ToHashSet / Contains). Configuration array
+        // merging (appsettings.json plus environment variables, e.g. AdminLogs__AllowedExtensions__3)
+        // can silently append the same values again, so tolerating duplicates keeps a benign
+        // misconfiguration from failing application startup. Only malformed extensions are rejected.
         for (var index = 0; index < options.AllowedExtensions.Count; index++)
         {
             var extension = options.AllowedExtensions[index];
@@ -135,8 +139,6 @@ public sealed partial class AdminLogsOptionsValidator : IValidateOptions<AdminLo
                 failures.Add($"{label} exceeds {MaximumExtensionLength} characters.");
             if (extension.IndexOfAny(['/', '\\', '\0']) >= 0 || extension.Any(char.IsControl))
                 failures.Add($"{label} contains an unsafe character.");
-            if (!extensions.Add(extension))
-                failures.Add($"{label} is duplicated.");
         }
     }
 

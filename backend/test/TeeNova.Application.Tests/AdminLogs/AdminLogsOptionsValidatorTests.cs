@@ -25,6 +25,20 @@ public sealed class AdminLogsOptionsValidatorTests
         Assert.NotEmpty(result.Failures);
     }
 
+    [Fact]
+    public void Enabled_configuration_tolerates_duplicate_and_merged_extensions()
+    {
+        var options = ValidOptions();
+        // Reproduces .NET configuration array merging of appsettings.json with environment variables
+        // (AdminLogs__AllowedExtensions__3..): the same extensions, including a case variant, appended
+        // again. This must not fail startup because consumers resolve extensions case-insensitively.
+        options.AllowedExtensions.AddRange([".LOG", ".log", ".txt", ".json"]);
+
+        var result = _validator.Validate(null, options);
+
+        Assert.True(result.Succeeded, string.Join("; ", result.Failures ?? []));
+    }
+
     public static IEnumerable<object[]> InvalidConfigurations()
     {
         yield return Case(options => options.Sources.Clear());
@@ -47,7 +61,6 @@ public sealed class AdminLogsOptionsValidatorTests
         yield return Case(options => options.AllowedExtensions[0] = "log");
         yield return Case(options => options.AllowedExtensions[0] = ".lo/g");
         yield return Case(options => options.AllowedExtensions[0] = ".log\0");
-        yield return Case(options => options.AllowedExtensions.Add(".LOG"));
         yield return Case(options => options.MaximumDownloadBytes = 0);
         yield return Case(options => options.MaximumListItems = 0);
         yield return Case(options => options.DefaultPageSize = 0);
