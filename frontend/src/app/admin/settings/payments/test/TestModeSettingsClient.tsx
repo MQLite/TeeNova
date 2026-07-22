@@ -1,16 +1,31 @@
 'use client'
 
+// Payment Settings — Stripe Test Mode (Jira 9908.1).
+//
+// Owns ALL Test-mode status + mutation state, and nothing else: it never imports or renders any Live
+// form component, and it exposes no control that could change the runtime ActiveMode (there is no such
+// endpoint). Status comes from the masked overview (`overview.test`); the runtime banner is read-only.
+//
+// Secret lifecycle: the secret-key and webhook-secret inputs are write-only — they start empty, are
+// never populated from server data, and are cleared after a save (success OR failure) and after a
+// failed validation. No secret is placed in shared context, a global store, browser storage, a URL, or
+// a log line. Because this is a dedicated route, navigating away unmounts the component and discards
+// all unsubmitted secret state.
+
 import { useEffect, useState } from 'react'
 import { AdminPageHeader } from '@/components/admin/AdminPageHeader'
 import { makePaymentSettingsApi } from '@/api/payment-settings'
 import { adminApiClient, redirectToLogin } from '@/lib/admin-client'
 import { ApiError } from '@/lib/api-client'
-import LiveModeSection from './LiveModeSection'
 import type {
   PaymentProviderSetting,
   PaymentSettingsOverview,
   StripeTestSettingsValidationResult,
 } from '@/types'
+import { PaymentSettingsNavigation } from '../components/PaymentSettingsNavigation'
+import { PaymentEnvironmentBadge } from '../components/PaymentEnvironmentBadge'
+import { SecretConfiguredStatus } from '../components/SecretConfiguredStatus'
+import { ActiveRuntimeModeBanner } from '../components/ActiveRuntimeModeBanner'
 
 const paymentSettingsApi = makePaymentSettingsApi(adminApiClient)
 
@@ -20,20 +35,6 @@ const hintCls    = 'mt-1 text-xs text-black/40'
 const sectionCls = 'mb-1.5 text-[11px] font-semibold uppercase tracking-[0.54px] text-black/40'
 
 type CheckState = 'pass' | 'warn' | 'fail' | 'nottested'
-
-function StatusPill({ configured, last4 }: { configured: boolean; last4: string | null }) {
-  return configured ? (
-    <span className="inline-flex items-center gap-1.5 rounded-full bg-green-50 px-2.5 py-1 text-xs font-medium text-green-700">
-      <span className="h-1.5 w-1.5 rounded-full bg-green-500" />
-      Configured{last4 ? ` · ••••${last4}` : ''}
-    </span>
-  ) : (
-    <span className="inline-flex items-center gap-1.5 rounded-full bg-amber-50 px-2.5 py-1 text-xs font-medium text-amber-700">
-      <span className="h-1.5 w-1.5 rounded-full bg-amber-500" />
-      Missing
-    </span>
-  )
-}
 
 function CheckRow({ state, label, note }: { state: CheckState; label: string; note?: string }) {
   const cfg = {
@@ -47,8 +48,7 @@ function CheckRow({ state, label, note }: { state: CheckState; label: string; no
       <div className="flex items-start gap-2.5">
         <span className={`mt-1 h-1.5 w-1.5 shrink-0 rounded-full ${cfg.dot}`} />
         <span className={`text-sm ${cfg.text}`}>
-          {label}
-          {note ? <span className="text-black/40"> — {note}</span> : null}
+          {label}{note ? <span className="text-black/40"> — {note}</span> : null}
         </span>
       </div>
       <span className={`shrink-0 font-mono text-[10px] uppercase tracking-[0.4px] ${cfg.tagCls}`}>{cfg.tag}</span>
@@ -56,27 +56,27 @@ function CheckRow({ state, label, note }: { state: CheckState; label: string; no
   )
 }
 
-export default function PaymentSettingsClient({ role }: { role?: string }) {
-  const [settings, setSettings] = useState<PaymentProviderSetting | null>(null)
+export default function TestModeSettingsClient({ role }: { role?: string }) {
   const [overview, setOverview] = useState<PaymentSettingsOverview | null>(null)
-  const [loading,  setLoading]  = useState(true)
-  const [saving,   setSaving]   = useState(false)
-  const [busy,     setBusy]     = useState(false)
-  const [toast,    setToast]    = useState<string | null>(null)
+  const [test, setTest] = useState<PaymentProviderSetting | null>(null)
+  const [loading, setLoading] = useState(true)
+  const [saving, setSaving] = useState(false)
+  const [busy, setBusy] = useState(false)
+  const [toast, setToast] = useState<string | null>(null)
   const [toastTone, setToastTone] = useState<'success' | 'error'>('success')
   const [validation, setValidation] = useState<StripeTestSettingsValidationResult | null>(null)
   const [confirmDisable, setConfirmDisable] = useState(false)
   const [copied, setCopied] = useState(false)
 
   // Write-only secret inputs — never populated from the server, cleared after save.
-  const [secretKey,     setSecretKey]     = useState('')
+  const [secretKey, setSecretKey] = useState('')
   const [webhookSecret, setWebhookSecret] = useState('')
 
   // Editable non-secret fields.
-  const [isEnabled,      setIsEnabled]      = useState(false)
+  const [isEnabled, setIsEnabled] = useState(false)
   const [publishableKey, setPublishableKey] = useState('')
-  const [successUrl,     setSuccessUrl]     = useState('')
-  const [cancelUrl,      setCancelUrl]      = useState('')
+  const [successUrl, setSuccessUrl] = useState('')
+  const [cancelUrl, setCancelUrl] = useState('')
 
   const canWrite = role === 'Admin'
 
@@ -86,36 +86,34 @@ export default function PaymentSettingsClient({ role }: { role?: string }) {
     setTimeout(() => setToast(null), 4000)
   }
 
+  // Hydrate non-secret editable fields from a masked Test DTO. Secrets are never returned — the
+  // write-only inputs stay blank.
   function hydrate(s: PaymentProviderSetting) {
-    setSettings(s)
+    setTest(s)
     setIsEnabled(s.isEnabled)
     setPublishableKey(s.publishableKey ?? '')
     setSuccessUrl(s.successReturnBaseUrl ?? '')
     setCancelUrl(s.cancelReturnBaseUrl ?? '')
-    // Secrets are never returned — keep the write-only inputs blank.
     setSecretKey('')
     setWebhookSecret('')
   }
 
-  function loadOverview() {
+  function load() {
     return paymentSettingsApi.getOverview()
-      .then(setOverview)
-      .catch((err) => {
-        if (err instanceof ApiError && err.status === 401) { redirectToLogin('session-expired'); return }
-        // Non-fatal for the Test panel — the Live section simply won't render.
+      .then((data) => {
+        setOverview(data)
+        hydrate(data.test)
       })
   }
 
   useEffect(() => {
-    Promise.all([
-      paymentSettingsApi.getStripe().then(hydrate),
-      loadOverview(),
-    ])
+    load()
       .catch((err) => {
         if (err instanceof ApiError && err.status === 401) { redirectToLogin('session-expired'); return }
-        showToast('Failed to load payment settings.', 'error')
+        showToast('Failed to load Test settings.', 'error')
       })
       .finally(() => setLoading(false))
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
   async function handleSave() {
@@ -134,14 +132,15 @@ export default function PaymentSettingsClient({ role }: { role?: string }) {
       })
       hydrate(updated)
       setValidation(null)
+      // Refresh the overview so the runtime banner / status stay in sync (does not change ActiveMode).
+      await load().catch(() => { /* status already refreshed from the save response */ })
       showToast('Stripe Test settings saved.')
     } catch (err: unknown) {
       if (err instanceof ApiError && err.status === 401) { redirectToLogin('session-expired'); return }
       // Never surface the submitted secret — clear the write-only inputs on error too.
       setSecretKey('')
       setWebhookSecret('')
-      const msg = err instanceof Error ? err.message : 'Failed to save settings.'
-      showToast(msg, 'error')
+      showToast(err instanceof Error ? err.message : 'Failed to save settings.', 'error')
     } finally {
       setSaving(false)
     }
@@ -155,7 +154,8 @@ export default function PaymentSettingsClient({ role }: { role?: string }) {
       const updated = await paymentSettingsApi.disableStripeTest()
       hydrate(updated)
       setValidation(null)
-      showToast('Stripe online payments disabled.')
+      await load().catch(() => { /* already refreshed from the disable response */ })
+      showToast('Stripe Test payments disabled.')
     } catch (err: unknown) {
       if (err instanceof ApiError && err.status === 401) { redirectToLogin('session-expired'); return }
       showToast(err instanceof Error ? err.message : 'Failed to disable.', 'error')
@@ -170,15 +170,17 @@ export default function PaymentSettingsClient({ role }: { role?: string }) {
     try {
       const result = await paymentSettingsApi.validateStripeTest()
       setValidation(result)
-      // Re-load masked status so the recorded validation timestamp/code refreshes.
       const refreshed = await paymentSettingsApi.getStripe()
-      setSettings(refreshed)
+      setTest(refreshed)
       showToast(
         result.status === 'Valid' ? `Validation: ${result.messageCode ?? 'Valid'}` : `Validation: ${result.messageCode ?? result.status}`,
         result.status === 'Valid' ? 'success' : 'error',
       )
     } catch (err: unknown) {
       if (err instanceof ApiError && err.status === 401) { redirectToLogin('session-expired'); return }
+      // Clear write-only inputs after a validation failure too, as a defensive measure.
+      setSecretKey('')
+      setWebhookSecret('')
       showToast(err instanceof Error ? err.message : 'Validation failed.', 'error')
     } finally {
       setBusy(false)
@@ -198,7 +200,7 @@ export default function PaymentSettingsClient({ role }: { role?: string }) {
   if (loading) {
     return (
       <div className="admin-page admin-stack">
-        <AdminPageHeader title="Payment Settings" subtitle="Configure the Stripe payment gateway." />
+        <AdminPageHeader title="Stripe Test Mode" subtitle="Configure the Stripe Test gateway." />
         <div className="max-w-2xl space-y-3">
           {Array.from({ length: 6 }).map((_, i) => (
             <div key={i} className="h-10 animate-pulse rounded-lg bg-black/[0.04]" />
@@ -208,39 +210,41 @@ export default function PaymentSettingsClient({ role }: { role?: string }) {
     )
   }
 
-  const s = settings
+  const s = test
   const notConfigured = !s?.isConfigured
   const webhookDisplay = s?.webhookEndpointUrl || s?.webhookEndpointPath || '/api/payment-webhooks/stripe'
   const encryptionWarn = s ? !s.encryptionPassphraseConfigured : false
+  const isActive = overview ? !overview.activeModeIsLive : false
 
   return (
     <div className="admin-page admin-stack">
       <AdminPageHeader
-        title="Payment Settings"
-        subtitle="Stripe gateway. Secrets are encrypted at rest and never displayed. Live mode is guarded by a server-side unlock."
+        title="Stripe Test Mode"
+        subtitle="Test keys only. Secrets are encrypted at rest and never displayed after saving."
       />
 
       <div className="max-w-2xl space-y-6">
+        <PaymentSettingsNavigation />
 
-        {/* ── Active runtime mode banner ──────────────────────────────────── */}
-        {overview && (
-          <div className={`flex items-center justify-between gap-3 rounded-xl border px-4 py-3 text-sm ${overview.activeModeIsLive ? 'border-red-200 bg-red-50 text-red-800' : 'border-black/[0.08] bg-black/[0.02] text-black/70'}`}>
-            <span>
-              Active runtime mode:{' '}
-              <strong className={overview.activeModeIsLive ? 'text-red-700' : 'text-black/80'}>{overview.activeMode}</strong>
-              <span className="text-black/40"> · public checkout resolves {overview.activeMode}-mode secrets (server config)</span>
-            </span>
-            <span className={`shrink-0 rounded-full px-2.5 py-1 text-xs font-medium ${overview.liveModeConfigurationUnlocked ? 'bg-amber-100 text-amber-800' : 'bg-black/[0.05] text-black/50'}`}>
-              {overview.liveModeConfigurationUnlocked ? 'Live config unlocked' : 'Live config locked'}
+        {/* ── Identity ────────────────────────────────────────────────────── */}
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div className="flex items-center gap-3">
+            <PaymentEnvironmentBadge mode="Test" />
+            <span className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-medium ${isActive ? 'bg-green-50 text-green-700' : 'bg-black/[0.05] text-black/50'}`}>
+              <span className={`h-1.5 w-1.5 rounded-full ${isActive ? 'bg-green-500' : 'bg-black/30'}`} />
+              {isActive ? 'Active runtime mode' : 'Inactive runtime mode'}
             </span>
           </div>
-        )}
+        </div>
+
+        {/* ── Read-only runtime context ───────────────────────────────────── */}
+        {overview && <ActiveRuntimeModeBanner overview={overview} />}
 
         {/* ── Read-only banner for Viewer ─────────────────────────────────── */}
         {!canWrite && (
           <div className="flex items-center gap-2 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
-            <svg className="h-4 w-4 shrink-0" viewBox="0 0 20 20" fill="currentColor"><path fillRule="evenodd" d="M18 10A8 8 0 11.999 10 8 8 0 0118 10zM9 5a1 1 0 112 0v4a1 1 0 11-2 0V5zm1 8a1 1 0 100 2 1 1 0 000-2z" clipRule="evenodd" /></svg>
-            Read-only access — only an Admin can change payment settings.
+            <svg className="h-4 w-4 shrink-0" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true"><path fillRule="evenodd" d="M18 10A8 8 0 11.999 10 8 8 0 0118 10zM9 5a1 1 0 112 0v4a1 1 0 11-2 0V5zm1 8a1 1 0 100 2 1 1 0 000-2z" clipRule="evenodd" /></svg>
+            Read-only access — only an Admin can change Test settings.
           </div>
         )}
 
@@ -251,8 +255,7 @@ export default function PaymentSettingsClient({ role }: { role?: string }) {
             <ul className="mt-2 space-y-1 text-sm text-black/55">
               <li>• Only Stripe <strong>test</strong> keys are accepted (<code className="text-black/70">sk_test_…</code>, <code className="text-black/70">whsec_…</code>, optional <code className="text-black/70">pk_test_…</code>).</li>
               <li>• Full secrets are shown <strong>only while you type</strong> — after saving they are never displayed again, only a last-4 fragment.</li>
-              <li>• The webhook signing secret (<code className="text-black/70">whsec_…</code>) comes from your Stripe webhook endpoint or the Stripe CLI listener.</li>
-              <li>• <code className="text-black/70">sk_live_</code> keys and Live mode are intentionally blocked.</li>
+              <li>• <code className="text-black/70">sk_live_</code> keys are rejected on this page — configure Live keys on the Live Mode page.</li>
             </ul>
             {!canWrite && <p className="mt-3 text-xs text-black/40">Ask an Admin to configure Stripe Test mode.</p>}
           </div>
@@ -282,23 +285,19 @@ export default function PaymentSettingsClient({ role }: { role?: string }) {
               </span>
             </div>
             <div className="flex items-center justify-between">
-              <span className="text-sm text-black/70">Live mode</span>
-              {overview?.liveModeConfigurationUnlocked ? (
-                <span className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-medium ${overview.live.isEnabled ? 'bg-red-100 text-red-700' : 'bg-amber-50 text-amber-700'}`}>
-                  <span className={`h-1.5 w-1.5 rounded-full ${overview.live.isEnabled ? 'bg-red-500' : 'bg-amber-500'}`} />
-                  {overview.live.isEnabled ? 'Enabled' : 'Unlocked · configurable'}
-                </span>
-              ) : (
-                <span className="inline-flex items-center gap-1.5 rounded-full bg-black/[0.05] px-2.5 py-1 text-xs font-medium text-black/50">Locked · not available</span>
-              )}
+              <span className="text-sm text-black/70">Ready for checkout</span>
+              <span className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-medium ${s?.canCreateCheckoutSession ? 'bg-green-50 text-green-700' : 'bg-amber-50 text-amber-700'}`}>
+                <span className={`h-1.5 w-1.5 rounded-full ${s?.canCreateCheckoutSession ? 'bg-green-500' : 'bg-amber-500'}`} />
+                {s?.canCreateCheckoutSession ? 'Ready' : 'Not ready'}
+              </span>
             </div>
             <div className="flex items-center justify-between">
               <span className="text-sm text-black/70">Secret key</span>
-              <StatusPill configured={!!s?.secretKeyConfigured} last4={s?.secretKeyLast4 ?? null} />
+              <SecretConfiguredStatus configured={!!s?.secretKeyConfigured} last4={s?.secretKeyLast4 ?? null} />
             </div>
             <div className="flex items-center justify-between">
               <span className="text-sm text-black/70">Webhook signing secret</span>
-              <StatusPill configured={!!s?.webhookSecretConfigured} last4={s?.webhookSecretLast4 ?? null} />
+              <SecretConfiguredStatus configured={!!s?.webhookSecretConfigured} last4={s?.webhookSecretLast4 ?? null} />
             </div>
             <div className="flex items-center justify-between">
               <span className="text-sm text-black/70">Publishable key</span>
@@ -308,8 +307,18 @@ export default function PaymentSettingsClient({ role }: { role?: string }) {
             </div>
             <div className="flex items-center justify-between">
               <span className="text-sm text-black/70">Currency</span>
-              <span className="text-sm text-black/60">NZD</span>
+              <span className="text-sm text-black/60">{s?.currency ?? 'NZD'}</span>
             </div>
+            <div className="flex items-center justify-between">
+              <span className="text-sm text-black/70">Readiness code</span>
+              <span className="font-mono text-xs text-black/60">{s?.readinessCode ?? 'NotConfigured'}</span>
+            </div>
+            {s && s.missingPrerequisites.length > 0 && (
+              <div className="flex items-start justify-between gap-3">
+                <span className="text-sm text-black/70">Missing prerequisites</span>
+                <span className="text-right font-mono text-xs text-amber-700">{s.missingPrerequisites.join(', ')}</span>
+              </div>
+            )}
             <div className="mt-1 border-t border-black/[0.06] pt-3">
               <p className="text-xs text-black/45">
                 Runtime source — Stripe secrets: <strong className="text-black/60">Database (encrypted)</strong>;
@@ -356,19 +365,9 @@ export default function PaymentSettingsClient({ role }: { role?: string }) {
             <CheckRow state={s?.secretKeyConfigured ? 'pass' : 'fail'} label="Secret key configured" />
             <CheckRow state={s?.webhookSecretConfigured ? 'pass' : 'fail'} label="Webhook secret configured" />
             <CheckRow state="pass" label="Mode is Test" />
-            <CheckRow
-              state={overview ? (overview.liveModeConfigurationUnlocked ? 'warn' : 'pass') : 'pass'}
-              label="Live mode configuration"
-              note={overview?.liveModeConfigurationUnlocked ? 'unlocked (server flag on)' : 'locked'}
-            />
             <CheckRow state={s?.currency === 'NZD' ? 'pass' : 'warn'} label="Currency is NZD" />
             <CheckRow state={s && s.missingPrerequisites.includes('InvalidReturnUrl') ? 'fail' : 'pass'} label="Return URLs valid" note="blank = server config" />
             <CheckRow state={s?.encryptionPassphraseConfigured ? 'pass' : 'warn'} label="Encryption passphrase configured" note={s?.encryptionPassphraseConfigured ? undefined : 'dev default in use'} />
-            <CheckRow state="pass" label="Migration applied" note="settings table reachable" />
-            <div className="my-2 border-t border-black/[0.06]" />
-            <CheckRow state="nottested" label="Stripe CLI / webhook endpoint" note="verified in Jira 9904" />
-            <CheckRow state="nottested" label="SMTP receipt sink" note="verified in Jira 9904" />
-            <CheckRow state="nottested" label="Manual checkout runtime (test card)" note="verified in Jira 9904" />
           </div>
         </div>
 
@@ -463,24 +462,14 @@ export default function PaymentSettingsClient({ role }: { role?: string }) {
           </div>
         </div>
 
-        {/* ── Live mode (locked or guarded config) ────────────────────────── */}
-        {overview && (
-          <LiveModeSection
-            canWrite={canWrite}
-            overview={overview}
-            onChanged={loadOverview}
-            showToast={showToast}
-          />
-        )}
-
-        {/* ── Actions ─────────────────────────────────────────────────────── */}
+        {/* ── Actions (Admin) ─────────────────────────────────────────────── */}
         {canWrite && (
           <div className="flex flex-wrap items-center gap-3">
             <button
               onClick={handleSave} disabled={saving || busy}
               className="rounded-lg bg-black px-5 py-2.5 text-sm font-medium text-white transition-colors hover:bg-black/80 disabled:opacity-50"
             >
-              {saving ? 'Saving…' : 'Save settings'}
+              {saving ? 'Saving…' : 'Save Test settings'}
             </button>
             <button
               onClick={handleValidate} disabled={saving || busy}
@@ -500,7 +489,6 @@ export default function PaymentSettingsClient({ role }: { role?: string }) {
               <li>Webhook secret configured: {validation.webhookSecretConfigured ? 'yes' : 'no'}</li>
               <li>Return URLs valid: {validation.returnUrlsValid ? 'yes' : 'no'}</li>
               <li>Encryption passphrase configured: {validation.encryptionPassphraseConfigured ? 'yes' : 'no'}</li>
-              <li>Live mode blocked: {validation.liveModeBlocked ? 'yes' : 'no'}</li>
               {validation.missingPrerequisites.length > 0 && (
                 <li>Missing: {validation.missingPrerequisites.join(', ')}</li>
               )}
@@ -517,8 +505,8 @@ export default function PaymentSettingsClient({ role }: { role?: string }) {
               {!confirmDisable ? (
                 <div className="flex items-center justify-between gap-3">
                   <div>
-                    <p className="text-sm font-medium text-red-700">Disable Stripe online payments</p>
-                    <p className="mt-0.5 text-xs text-red-600/80">Stops creating new Stripe checkout sessions. Stored secrets are kept (not deleted); payment history is unaffected.</p>
+                    <p className="text-sm font-medium text-red-700">Disable Stripe Test payments</p>
+                    <p className="mt-0.5 text-xs text-red-600/80">Stops creating new Test checkout sessions. Stored secrets are kept (not deleted); payment history is unaffected.</p>
                   </div>
                   <button
                     onClick={() => setConfirmDisable(true)} disabled={busy}
@@ -529,7 +517,7 @@ export default function PaymentSettingsClient({ role }: { role?: string }) {
                 </div>
               ) : (
                 <div className="flex items-center justify-between gap-3">
-                  <p className="text-sm text-red-700">Disable Stripe payments now? New checkouts will be blocked until re-enabled.</p>
+                  <p className="text-sm text-red-700">Disable Stripe Test payments now? New checkouts will be blocked until re-enabled.</p>
                   <div className="flex shrink-0 gap-2">
                     <button onClick={() => setConfirmDisable(false)} disabled={busy} className="rounded-lg border border-black/[0.15] px-4 py-2 text-sm text-black/60 hover:bg-black/[0.04]">Cancel</button>
                     <button onClick={handleDisable} disabled={busy} className="rounded-lg bg-red-600 px-4 py-2 text-sm font-medium text-white hover:bg-red-700 disabled:opacity-50">Confirm disable</button>
