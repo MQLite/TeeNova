@@ -14,17 +14,25 @@ using Volo.Abp.Security.Encryption;
 namespace TeeNova.Payments;
 
 /// <summary>
-/// Admin management service for the persisted Stripe Test-mode configuration (Jira 9902).
+/// Admin management service for the persisted Stripe configuration (Jira 9902; Live-mode guard added in
+/// Jira 9908).
 ///
 /// Secrets are accepted write-only, encrypted with the application <see cref="IStringEncryptionService"/>
 /// before persistence, and are NEVER returned, revealed, or logged. Reads project a masked DTO
-/// (configured/last-4 only). Live mode and live/restricted keys are rejected. Authorization is enforced at
-/// the HTTP boundary (Admin for writes; Admin + Viewer for the masked read).
+/// (configured/last-4 only). Authorization is enforced at the HTTP boundary (Admin for writes; Admin + Viewer
+/// for masked reads).
+///
+/// Live-mode writes are DOUBLY guarded: Admin-only at the boundary AND rejected here unless the server-side
+/// unlock flag <c>OnlinePayments:AllowLiveModeConfiguration</c> is true and the caller supplies the exact
+/// confirmation phrase. Test-mode behaviour is unchanged from 9902/9903.
 /// </summary>
 public class PaymentProviderSettingsAppService : ApplicationService, IPaymentProviderSettingsAppService
 {
     // The Stripe webhook path (PaymentWebhookController route "api/payment-webhooks/{provider}").
     private const string StripeWebhookPath = "/api/payment-webhooks/stripe";
+
+    // Deliberate-intent phrase the Live save endpoint requires (mirrored to the UI via the overview DTO).
+    private const string LiveConfirmationPhrase = "ENABLE LIVE MODE";
 
     private readonly IRepository<PaymentProviderSetting, Guid>     _repository;
     private readonly IStringEncryptionService                     _encryption;
@@ -45,46 +53,141 @@ public class PaymentProviderSettingsAppService : ApplicationService, IPaymentPro
 
     public async Task<PaymentProviderSettingDto> GetStripeAsync()
     {
-        var setting = await FindStripeTestAsync();
-        return BuildDto(setting);
+        var setting = await FindAsync(PaymentProviderMode.Test);
+        return BuildDto(setting, PaymentProviderMode.Test);
     }
 
-    public async Task<PaymentProviderSettingDto> UpdateStripeTestAsync(UpdateStripeTestSettingsDto input)
+    public async Task<PaymentSettingsOverviewDto> GetOverviewAsync()
+    {
+        var test = await FindAsync(PaymentProviderMode.Test);
+        var live = await FindAsync(PaymentProviderMode.Live);
+        var activeMode = ResolveActiveMode();
+
+        return new PaymentSettingsOverviewDto
+        {
+            Test                          = BuildDto(test, PaymentProviderMode.Test),
+            Live                          = BuildDto(live, PaymentProviderMode.Live),
+            LiveModeConfigurationUnlocked = LiveConfigurationUnlocked,
+            ActiveMode                    = activeMode,
+            ActiveModeIsLive              = activeMode == PaymentProviderMode.Live,
+            ActiveModeSource              = "ServerConfig",
+            LiveConfirmationPhrase        = LiveConfirmationPhrase,
+        };
+    }
+
+    public Task<PaymentProviderSettingDto> UpdateStripeTestAsync(UpdateStripeTestSettingsDto input)
+    {
+        Check.NotNull(input, nameof(input));
+        return SaveAsync(PaymentProviderMode.Test, new SaveInput(
+            input.IsEnabled, input.Currency, input.PublishableKey, input.SecretKey,
+            input.WebhookSecret, input.SuccessReturnBaseUrl, input.CancelReturnBaseUrl));
+    }
+
+    public Task<PaymentProviderSettingDto> UpdateStripeLiveAsync(UpdateStripeLiveSettingsDto input)
     {
         Check.NotNull(input, nameof(input));
 
-        // ── Static validation (no live Stripe API call in this phase) ────────────────────────────────
+        // Guard 1 — server-side unlock. Without it, Live configuration is inert (mirrors the locked UI).
+        if (!LiveConfigurationUnlocked)
+            throw new UserFriendlyException(
+                "Live mode is locked. Complete the 9907 live-payment enablement checklist and set " +
+                "'OnlinePayments:AllowLiveModeConfiguration' to true on the server before configuring live keys.");
+
+        // Guard 2 — deliberate-intent confirmation phrase.
+        if (!string.Equals((input.ConfirmationPhrase ?? string.Empty).Trim(), LiveConfirmationPhrase, StringComparison.Ordinal))
+            throw new UserFriendlyException(
+                $"Live mode changes require the exact confirmation phrase \"{LiveConfirmationPhrase}\".");
+
+        return SaveAsync(PaymentProviderMode.Live, new SaveInput(
+            input.IsEnabled, input.Currency, input.PublishableKey, input.SecretKey,
+            input.WebhookSecret, input.SuccessReturnBaseUrl, input.CancelReturnBaseUrl));
+    }
+
+    public Task<PaymentProviderSettingDto> DisableStripeTestAsync() => DisableAsync(PaymentProviderMode.Test);
+
+    public Task<PaymentProviderSettingDto> DisableStripeLiveAsync() => DisableAsync(PaymentProviderMode.Live);
+
+    public async Task<StripeTestSettingsValidationResultDto> ValidateStripeTestAsync()
+    {
+        var setting  = await FindAsync(PaymentProviderMode.Test);
+        var readiness = ComputeReadiness(setting);
+
+        // Persist the recorded outcome only when a row exists.
+        if (setting is not null)
+        {
+            setting.RecordValidation(readiness.Status, readiness.Code, Clock.Now);
+            await _repository.UpdateAsync(setting, autoSave: true);
+        }
+
+        return new StripeTestSettingsValidationResultDto
+        {
+            Status                         = readiness.Status,
+            MessageCode                    = readiness.Code,
+            IsEnabled                      = setting?.IsEnabled       ?? false,
+            SecretKeyConfigured            = setting?.HasSecretKey     ?? false,
+            WebhookSecretConfigured        = setting?.HasWebhookSecret ?? false,
+            ReturnUrlsValid                = readiness.ReturnUrlsValid,
+            CanCreateCheckoutSession       = readiness.CanCreate,
+            EncryptionPassphraseConfigured = EncryptionPassphraseConfigured,
+            LiveModeBlocked                = !LiveConfigurationUnlocked,
+            MissingPrerequisites           = readiness.Missing,
+        };
+    }
+
+    // ── Save / disable (mode-aware) ───────────────────────────────────────────────────────────────────
+
+    private readonly record struct SaveInput(
+        bool    IsEnabled,
+        string? Currency,
+        string? PublishableKey,
+        string? SecretKey,
+        string? WebhookSecret,
+        string? SuccessReturnBaseUrl,
+        string? CancelReturnBaseUrl);
+
+    private async Task<PaymentProviderSettingDto> SaveAsync(PaymentProviderMode mode, SaveInput input)
+    {
+        // ── Static validation (no live Stripe API call) ──────────────────────────────────────────────
         var currency = (input.Currency ?? string.Empty).Trim().ToUpperInvariant();
         if (currency != "NZD")
             throw new UserFriendlyException("Currency must be NZD in this phase.");
 
-        // Reject live/restricted keys outright — Live mode is intentionally blocked (Jira 9902).
-        RejectLiveKey(input.SecretKey,     "Secret key");
-        RejectLiveKey(input.PublishableKey,"Publishable key");
-        RejectLiveKey(input.WebhookSecret, "Webhook secret");
+        // Restricted (rk_*) keys are never accepted, in any mode.
+        RejectRestrictedKey(input.SecretKey,     "Secret key");
+        RejectRestrictedKey(input.PublishableKey,"Publishable key");
+        RejectRestrictedKey(input.WebhookSecret, "Webhook secret");
+
+        // A key carrying the OTHER mode's prefix (e.g. sk_live_ while saving Test, or sk_test_ while saving
+        // Live) is rejected with a mode-specific message — a Test key can never land in the Live row and
+        // vice-versa.
+        RejectWrongModeKey(input.SecretKey,     mode, "Secret key");
+        RejectWrongModeKey(input.PublishableKey,mode, "Publishable key");
 
         var secretKeyProvided     = !string.IsNullOrWhiteSpace(input.SecretKey);
         var webhookSecretProvided = !string.IsNullOrWhiteSpace(input.WebhookSecret);
         var publishableProvided   = !string.IsNullOrWhiteSpace(input.PublishableKey);
 
-        if (secretKeyProvided && !StripeTestKeyRules.IsValidTestSecretKey(input.SecretKey))
-            throw new UserFriendlyException("Secret key must be a Stripe test key beginning with 'sk_test_' and contain no whitespace.");
+        var secretPrefix      = StripeTestKeyRules.SecretKeyPrefix(mode);
+        var publishablePrefix = StripeTestKeyRules.PublishableKeyPrefix(mode);
+
+        if (secretKeyProvided && !StripeTestKeyRules.IsValidSecretKey(input.SecretKey, mode))
+            throw new UserFriendlyException($"Secret key must be a Stripe {mode} key beginning with '{secretPrefix}' and contain no whitespace.");
 
         if (webhookSecretProvided && !StripeTestKeyRules.IsValidWebhookSecret(input.WebhookSecret))
             throw new UserFriendlyException("Webhook secret must begin with 'whsec_' and contain no whitespace.");
 
-        if (publishableProvided && !StripeTestKeyRules.IsValidTestPublishableKey(input.PublishableKey))
-            throw new UserFriendlyException("Publishable key must be a Stripe test key beginning with 'pk_test_'.");
+        if (publishableProvided && !StripeTestKeyRules.IsValidPublishableKey(input.PublishableKey, mode))
+            throw new UserFriendlyException($"Publishable key must be a Stripe {mode} key beginning with '{publishablePrefix}'.");
 
         ValidateReturnUrl(input.SuccessReturnBaseUrl, "/checkout/success", "Success return URL");
         ValidateReturnUrl(input.CancelReturnBaseUrl,  "/checkout/cancel",  "Cancel return URL");
 
-        // ── Load or create the single Stripe/Test row ────────────────────────────────────────────────
-        var setting = await FindStripeTestAsync();
+        // ── Load or create the single Stripe row for this mode ────────────────────────────────────────
+        var setting = await FindAsync(mode);
         var isNew   = setting is null;
-        setting ??= new PaymentProviderSetting(GuidGenerator.Create(), PaymentProvider.Stripe, PaymentProviderMode.Test);
+        setting ??= new PaymentProviderSetting(GuidGenerator.Create(), PaymentProvider.Stripe, mode);
 
-        setting.ConfigureStripeTest(
+        setting.ConfigureStripe(
             currency,
             publishableProvided ? input.PublishableKey!.Trim() : setting.PublishableKey,
             input.SuccessReturnBaseUrl,
@@ -111,7 +214,7 @@ public class PaymentProviderSettingsAppService : ApplicationService, IPaymentPro
         if (input.IsEnabled)
         {
             if (!setting.HasSecretKey)
-                throw new UserFriendlyException("Cannot enable Stripe: a test secret key (sk_test_...) is required.");
+                throw new UserFriendlyException($"Cannot enable Stripe: a {mode.ToString().ToLowerInvariant()} secret key ('{secretPrefix}...') is required.");
             if (!setting.HasWebhookSecret)
                 throw new UserFriendlyException("Cannot enable Stripe: a webhook signing secret (whsec_...) is required.");
 
@@ -131,68 +234,61 @@ public class PaymentProviderSettingsAppService : ApplicationService, IPaymentPro
         else
             await _repository.UpdateAsync(setting, autoSave: true);
 
-        // Safe, non-secret audit line: configured/enabled state and last-4 only.
+        // Safe, non-secret audit line: mode, configured/enabled state and last-4 only.
         _logger.LogInformation(
-            "[PaymentSettings] Stripe Test settings saved — Enabled: {Enabled}, SecretKey: {SecretState}, " +
+            "[PaymentSettings] Stripe {Mode} settings saved — Enabled: {Enabled}, SecretKey: {SecretState}, " +
             "WebhookSecret: {WebhookState}, Currency: {Currency}.",
+            mode,
             setting.IsEnabled,
             setting.HasSecretKey     ? $"configured(••••{setting.SecretKeyLast4})"     : "missing",
             setting.HasWebhookSecret ? $"configured(••••{setting.WebhookSecretLast4})" : "missing",
             setting.Currency);
 
-        return BuildDto(setting);
+        return BuildDto(setting, mode);
     }
 
-    public async Task<PaymentProviderSettingDto> DisableStripeTestAsync()
+    private async Task<PaymentProviderSettingDto> DisableAsync(PaymentProviderMode mode)
     {
-        var setting = await FindStripeTestAsync();
+        var setting = await FindAsync(mode);
         if (setting is null)
-            return BuildDto(null);
+            return BuildDto(null, mode);
 
         // Disable only flips the enabled flag — the encrypted secrets are intentionally retained so the
         // configuration can be re-enabled without re-entering keys. No secret is deleted here.
         setting.Disable();
         await _repository.UpdateAsync(setting, autoSave: true);
 
-        _logger.LogInformation("[PaymentSettings] Stripe Test settings disabled by admin (secrets retained).");
-        return BuildDto(setting);
-    }
-
-    public async Task<StripeTestSettingsValidationResultDto> ValidateStripeTestAsync()
-    {
-        var setting  = await FindStripeTestAsync();
-        var readiness = ComputeReadiness(setting);
-
-        // Persist the recorded outcome only when a row exists.
-        if (setting is not null)
-        {
-            setting.RecordValidation(readiness.Status, readiness.Code, Clock.Now);
-            await _repository.UpdateAsync(setting, autoSave: true);
-        }
-
-        return new StripeTestSettingsValidationResultDto
-        {
-            Status                         = readiness.Status,
-            MessageCode                    = readiness.Code,
-            IsEnabled                      = setting?.IsEnabled       ?? false,
-            SecretKeyConfigured            = setting?.HasSecretKey     ?? false,
-            WebhookSecretConfigured        = setting?.HasWebhookSecret ?? false,
-            ReturnUrlsValid                = readiness.ReturnUrlsValid,
-            CanCreateCheckoutSession       = readiness.CanCreate,
-            EncryptionPassphraseConfigured = EncryptionPassphraseConfigured,
-            LiveModeBlocked                = true,
-            MissingPrerequisites           = readiness.Missing,
-        };
+        _logger.LogInformation("[PaymentSettings] Stripe {Mode} settings disabled by admin (secrets retained).", mode);
+        return BuildDto(setting, mode);
     }
 
     // ── Helpers ──────────────────────────────────────────────────────────────────────────────────────
 
-    private async Task<PaymentProviderSetting?> FindStripeTestAsync()
+    private async Task<PaymentProviderSetting?> FindAsync(PaymentProviderMode mode)
     {
         var query = await _repository.GetQueryableAsync();
         return await query
-            .Where(s => s.Provider == PaymentProvider.Stripe && s.Mode == PaymentProviderMode.Test)
+            .Where(s => s.Provider == PaymentProvider.Stripe && s.Mode == mode)
             .FirstOrDefaultAsync();
+    }
+
+    /// <summary>Whether the server-side Live-mode configuration unlock flag is set.</summary>
+    private bool LiveConfigurationUnlocked
+        => _configuration.GetValue<bool>("OnlinePayments:AllowLiveModeConfiguration");
+
+    /// <summary>
+    /// The runtime active mode. Live is honoured only when the unlock flag is set AND the configured active
+    /// mode is exactly "Live"; anything else falls back to Test (fail-closed). Mirrors the resolver.
+    /// </summary>
+    private PaymentProviderMode ResolveActiveMode()
+    {
+        if (!LiveConfigurationUnlocked)
+            return PaymentProviderMode.Test;
+
+        var configured = _configuration["OnlinePayments:ActiveMode"];
+        return string.Equals((configured ?? string.Empty).Trim(), "Live", StringComparison.OrdinalIgnoreCase)
+            ? PaymentProviderMode.Live
+            : PaymentProviderMode.Test;
     }
 
     // Whether the application encryption passphrase is explicitly configured (safe boolean — never the value).
@@ -246,7 +342,7 @@ public class PaymentProviderSettingsAppService : ApplicationService, IPaymentPro
         else if (!setting.HasWebhookSecret) { code = "MissingWebhookSecret";  status = PaymentProviderValidationStatus.Invalid; }
         else if (!returnUrlsValid)          { code = "InvalidReturnUrl";      status = PaymentProviderValidationStatus.Invalid; }
         else if (!setting.IsEnabled)        { code = "ConfiguredButDisabled"; status = PaymentProviderValidationStatus.Valid;   }
-        else                                { code = "ReadyForManualTestModeSmoke"; status = PaymentProviderValidationStatus.Valid; }
+        else                                { code = "ReadyForManualSmoke";   status = PaymentProviderValidationStatus.Valid;   }
 
         return new Readiness(code, missing, canCreate, returnUrlsValid, status);
     }
@@ -267,11 +363,21 @@ public class PaymentProviderSettingsAppService : ApplicationService, IPaymentPro
         return $"{selfUrl.Trim().TrimEnd('/')}{StripeWebhookPath}";
     }
 
-    private static void RejectLiveKey(string? value, string label)
+    private static void RejectRestrictedKey(string? value, string label)
     {
-        if (StripeTestKeyRules.IsForbiddenLiveKey(value))
+        if (StripeTestKeyRules.IsRestrictedKey(value))
             throw new UserFriendlyException(
-                $"{label} uses a live/restricted key prefix. Live mode is not permitted — use a Stripe test key only.");
+                $"{label} uses a restricted (rk_) key prefix, which is never accepted — use a standard Stripe secret key.");
+    }
+
+    private static void RejectWrongModeKey(string? value, PaymentProviderMode mode, string label)
+    {
+        if (StripeTestKeyRules.IsWrongModeKey(value, mode))
+        {
+            var otherMode = mode == PaymentProviderMode.Live ? "test" : "live";
+            throw new UserFriendlyException(
+                $"{label} is a Stripe {otherMode}-mode key but you are configuring {mode} mode. Use a {mode.ToString().ToLowerInvariant()} key.");
+        }
     }
 
     /// <summary>Throws when a supplied return URL is not a safe absolute URL resolving to the expected path.</summary>
@@ -309,17 +415,17 @@ public class PaymentProviderSettingsAppService : ApplicationService, IPaymentPro
 
     /// <summary>
     /// Builds the masked read DTO (base fields + Jira 9903 readiness signals) for either the persisted row or
-    /// the default "not configured" view. Contains no secret material or ciphertext — only configured/last-4
-    /// flags and safe readiness codes.
+    /// the default "not configured" view for the given mode. Contains no secret material or ciphertext — only
+    /// configured/last-4 flags and safe readiness codes.
     /// </summary>
-    private PaymentProviderSettingDto BuildDto(PaymentProviderSetting? s)
+    private PaymentProviderSettingDto BuildDto(PaymentProviderSetting? s, PaymentProviderMode mode)
     {
         var readiness = ComputeReadiness(s);
 
         var dto = new PaymentProviderSettingDto
         {
             Provider                  = PaymentProvider.Stripe,
-            Mode                      = PaymentProviderMode.Test,
+            Mode                      = mode,
             IsEnabled                 = s?.IsEnabled ?? false,
             Currency                  = s?.Currency ?? "NZD",
             PublishableKey            = s?.PublishableKey,
@@ -336,7 +442,7 @@ public class PaymentProviderSettingsAppService : ApplicationService, IPaymentPro
             // Readiness signals (all safe/non-secret).
             IsConfigured                   = s is not null,
             CanCreateCheckoutSession       = readiness.CanCreate,
-            LiveModeBlocked                = true,
+            LiveModeBlocked                = !LiveConfigurationUnlocked,
             EncryptionPassphraseConfigured = EncryptionPassphraseConfigured,
             WebhookEndpointPath            = StripeWebhookPath,
             WebhookEndpointUrl             = ResolveWebhookEndpointUrl(),

@@ -6,8 +6,9 @@ namespace TeeNova.Payments;
 
 /// <summary>
 /// Persisted, admin-managed configuration for a real online payment provider (Jira 9902) — the
-/// WordPress/WooCommerce-style "settings in the database" model. In this phase the only supported row is
-/// Stripe in <see cref="PaymentProviderMode.Test"/> mode.
+/// WordPress/WooCommerce-style "settings in the database" model. Rows are keyed by (provider, mode); Stripe
+/// in <see cref="PaymentProviderMode.Test"/> and, when the server-side unlock is enabled (Jira 9908),
+/// <see cref="PaymentProviderMode.Live"/> are supported.
 ///
 /// Secret material (Stripe secret key, webhook signing secret) is stored ONLY as ciphertext
 /// (<see cref="SecretKeyCipherText"/>, <see cref="WebhookSecretCipherText"/>) encrypted by the application
@@ -15,8 +16,10 @@ namespace TeeNova.Payments;
 /// non-secret last-4 fragment is kept for masked display. This entity never exposes plaintext secrets and
 /// its DTO projection never includes ciphertext.
 ///
-/// Live mode is intentionally rejected: the constructor refuses <see cref="PaymentProviderMode.Live"/> and
-/// non-Stripe providers, so a live configuration can never be persisted here.
+/// The entity is mode-agnostic and enforces only structural invariants (Stripe provider; an enabled row must
+/// carry both secrets). Whether a Live row may be created/enabled at all is gated OUTSIDE the domain, by the
+/// app service reading the <c>OnlinePayments:AllowLiveModeConfiguration</c> unlock flag — so a Live row can
+/// never be persisted through the admin surface while the server keeps live configuration locked.
 /// </summary>
 public class PaymentProviderSetting : FullAuditedAggregateRoot<Guid>
 {
@@ -50,11 +53,8 @@ public class PaymentProviderSetting : FullAuditedAggregateRoot<Guid>
             throw new ArgumentException(
                 "Only the Stripe provider is supported for persisted settings in this phase.", nameof(provider));
 
-        // Fail-closed: a Live configuration can never be constructed/persisted in Jira 9902.
-        if (mode != PaymentProviderMode.Test)
-            throw new ArgumentException(
-                "Only Test mode may be persisted. Live mode is intentionally blocked.", nameof(mode));
-
+        // Live-mode gating is enforced by the app service via the server-side unlock flag (Jira 9908);
+        // the domain accepts either mode but only ever the Stripe provider.
         Provider             = provider;
         Mode                 = mode;
         IsEnabled            = false;
@@ -65,8 +65,8 @@ public class PaymentProviderSetting : FullAuditedAggregateRoot<Guid>
     public bool HasSecretKey     => !string.IsNullOrWhiteSpace(SecretKeyCipherText);
     public bool HasWebhookSecret => !string.IsNullOrWhiteSpace(WebhookSecretCipherText);
 
-    /// <summary>Applies non-secret Stripe Test-mode configuration (currency, publishable key, return URLs).</summary>
-    public void ConfigureStripeTest(
+    /// <summary>Applies non-secret Stripe configuration (currency, publishable key, return URLs) — mode-agnostic.</summary>
+    public void ConfigureStripe(
         string  currency,
         string? publishableKey,
         string? successReturnBaseUrl,
@@ -102,9 +102,6 @@ public class PaymentProviderSetting : FullAuditedAggregateRoot<Guid>
     /// </summary>
     public void Enable()
     {
-        if (Mode != PaymentProviderMode.Test)
-            throw new InvalidOperationException("Only Test mode may be enabled in this phase.");
-
         if (!HasSecretKey || !HasWebhookSecret)
             throw new InvalidOperationException(
                 "Cannot enable Stripe Test mode without both a secret key and a webhook secret configured.");

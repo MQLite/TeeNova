@@ -5,8 +5,10 @@ import { AdminPageHeader } from '@/components/admin/AdminPageHeader'
 import { makePaymentSettingsApi } from '@/api/payment-settings'
 import { adminApiClient, redirectToLogin } from '@/lib/admin-client'
 import { ApiError } from '@/lib/api-client'
+import LiveModeSection from './LiveModeSection'
 import type {
   PaymentProviderSetting,
+  PaymentSettingsOverview,
   StripeTestSettingsValidationResult,
 } from '@/types'
 
@@ -56,6 +58,7 @@ function CheckRow({ state, label, note }: { state: CheckState; label: string; no
 
 export default function PaymentSettingsClient({ role }: { role?: string }) {
   const [settings, setSettings] = useState<PaymentProviderSetting | null>(null)
+  const [overview, setOverview] = useState<PaymentSettingsOverview | null>(null)
   const [loading,  setLoading]  = useState(true)
   const [saving,   setSaving]   = useState(false)
   const [busy,     setBusy]     = useState(false)
@@ -94,9 +97,20 @@ export default function PaymentSettingsClient({ role }: { role?: string }) {
     setWebhookSecret('')
   }
 
+  function loadOverview() {
+    return paymentSettingsApi.getOverview()
+      .then(setOverview)
+      .catch((err) => {
+        if (err instanceof ApiError && err.status === 401) { redirectToLogin('session-expired'); return }
+        // Non-fatal for the Test panel — the Live section simply won't render.
+      })
+  }
+
   useEffect(() => {
-    paymentSettingsApi.getStripe()
-      .then(hydrate)
+    Promise.all([
+      paymentSettingsApi.getStripe().then(hydrate),
+      loadOverview(),
+    ])
       .catch((err) => {
         if (err instanceof ApiError && err.status === 401) { redirectToLogin('session-expired'); return }
         showToast('Failed to load payment settings.', 'error')
@@ -203,10 +217,24 @@ export default function PaymentSettingsClient({ role }: { role?: string }) {
     <div className="admin-page admin-stack">
       <AdminPageHeader
         title="Payment Settings"
-        subtitle="Stripe Test-mode gateway. Secrets are encrypted at rest and never displayed. Live mode is blocked."
+        subtitle="Stripe gateway. Secrets are encrypted at rest and never displayed. Live mode is guarded by a server-side unlock."
       />
 
       <div className="max-w-2xl space-y-6">
+
+        {/* ── Active runtime mode banner ──────────────────────────────────── */}
+        {overview && (
+          <div className={`flex items-center justify-between gap-3 rounded-xl border px-4 py-3 text-sm ${overview.activeModeIsLive ? 'border-red-200 bg-red-50 text-red-800' : 'border-black/[0.08] bg-black/[0.02] text-black/70'}`}>
+            <span>
+              Active runtime mode:{' '}
+              <strong className={overview.activeModeIsLive ? 'text-red-700' : 'text-black/80'}>{overview.activeMode}</strong>
+              <span className="text-black/40"> · public checkout resolves {overview.activeMode}-mode secrets (server config)</span>
+            </span>
+            <span className={`shrink-0 rounded-full px-2.5 py-1 text-xs font-medium ${overview.liveModeConfigurationUnlocked ? 'bg-amber-100 text-amber-800' : 'bg-black/[0.05] text-black/50'}`}>
+              {overview.liveModeConfigurationUnlocked ? 'Live config unlocked' : 'Live config locked'}
+            </span>
+          </div>
+        )}
 
         {/* ── Read-only banner for Viewer ─────────────────────────────────── */}
         {!canWrite && (
@@ -255,7 +283,14 @@ export default function PaymentSettingsClient({ role }: { role?: string }) {
             </div>
             <div className="flex items-center justify-between">
               <span className="text-sm text-black/70">Live mode</span>
-              <span className="inline-flex items-center gap-1.5 rounded-full bg-black/[0.05] px-2.5 py-1 text-xs font-medium text-black/50">Locked · not available</span>
+              {overview?.liveModeConfigurationUnlocked ? (
+                <span className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-medium ${overview.live.isEnabled ? 'bg-red-100 text-red-700' : 'bg-amber-50 text-amber-700'}`}>
+                  <span className={`h-1.5 w-1.5 rounded-full ${overview.live.isEnabled ? 'bg-red-500' : 'bg-amber-500'}`} />
+                  {overview.live.isEnabled ? 'Enabled' : 'Unlocked · configurable'}
+                </span>
+              ) : (
+                <span className="inline-flex items-center gap-1.5 rounded-full bg-black/[0.05] px-2.5 py-1 text-xs font-medium text-black/50">Locked · not available</span>
+              )}
             </div>
             <div className="flex items-center justify-between">
               <span className="text-sm text-black/70">Secret key</span>
@@ -321,7 +356,11 @@ export default function PaymentSettingsClient({ role }: { role?: string }) {
             <CheckRow state={s?.secretKeyConfigured ? 'pass' : 'fail'} label="Secret key configured" />
             <CheckRow state={s?.webhookSecretConfigured ? 'pass' : 'fail'} label="Webhook secret configured" />
             <CheckRow state="pass" label="Mode is Test" />
-            <CheckRow state="pass" label="Live mode blocked" />
+            <CheckRow
+              state={overview ? (overview.liveModeConfigurationUnlocked ? 'warn' : 'pass') : 'pass'}
+              label="Live mode configuration"
+              note={overview?.liveModeConfigurationUnlocked ? 'unlocked (server flag on)' : 'locked'}
+            />
             <CheckRow state={s?.currency === 'NZD' ? 'pass' : 'warn'} label="Currency is NZD" />
             <CheckRow state={s && s.missingPrerequisites.includes('InvalidReturnUrl') ? 'fail' : 'pass'} label="Return URLs valid" note="blank = server config" />
             <CheckRow state={s?.encryptionPassphraseConfigured ? 'pass' : 'warn'} label="Encryption passphrase configured" note={s?.encryptionPassphraseConfigured ? undefined : 'dev default in use'} />
@@ -424,23 +463,15 @@ export default function PaymentSettingsClient({ role }: { role?: string }) {
           </div>
         </div>
 
-        {/* ── Live mode locked ────────────────────────────────────────────── */}
-        <div>
-          <p className={sectionCls}>Live Mode</p>
-          <div className="flex items-start gap-3 rounded-xl border border-black/[0.08] bg-black/[0.02] p-5">
-            <svg className="mt-0.5 h-5 w-5 shrink-0 text-black/40" viewBox="0 0 20 20" fill="currentColor">
-              <path fillRule="evenodd" d="M5 9V7a5 5 0 0110 0v2a2 2 0 012 2v5a2 2 0 01-2 2H5a2 2 0 01-2-2v-5a2 2 0 012-2zm8-2v2H7V7a3 3 0 016 0z" clipRule="evenodd" />
-            </svg>
-            <div>
-              <p className="text-sm font-medium text-black/70">Live mode is locked</p>
-              <p className="mt-1 text-sm text-black/50">
-                Only Stripe Test mode (sk_test_ / whsec_) is permitted; live keys are rejected on save. Live payment
-                activation is intentionally out of scope until the runtime test matrix passes and is separately reviewed.
-                Test-card checkout is exercised in Jira 9904 — not here.
-              </p>
-            </div>
-          </div>
-        </div>
+        {/* ── Live mode (locked or guarded config) ────────────────────────── */}
+        {overview && (
+          <LiveModeSection
+            canWrite={canWrite}
+            overview={overview}
+            onChanged={loadOverview}
+            showToast={showToast}
+          />
+        )}
 
         {/* ── Actions ─────────────────────────────────────────────────────── */}
         {canWrite && (

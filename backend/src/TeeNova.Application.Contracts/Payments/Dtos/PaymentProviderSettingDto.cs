@@ -43,7 +43,11 @@ public class PaymentProviderSettingDto
     /// <summary>Derived (no secrets read): enabled AND both secrets configured. Whether a checkout session could be created.</summary>
     public bool                            CanCreateCheckoutSession       { get; set; }
 
-    /// <summary>Always true in this phase — live mode is intentionally blocked.</summary>
+    /// <summary>
+    /// True when Live-mode configuration is locked by the server-side unlock flag
+    /// (<c>OnlinePayments:AllowLiveModeConfiguration</c> is false). Defaults true (locked). For a Live-mode DTO
+    /// this reflects whether the unlock is off; for a Test-mode DTO it reports the same server gate.
+    /// </summary>
     public bool                            LiveModeBlocked                { get; set; } = true;
 
     /// <summary>Whether the application encryption passphrase (Encryption:PassPhrase) is configured. Safe boolean — never the value.</summary>

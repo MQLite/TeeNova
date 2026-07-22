@@ -1,17 +1,20 @@
 namespace TeeNova.Payments;
 
 /// <summary>
-/// Operating mode of a persisted payment provider configuration (Jira 9902).
+/// Operating mode of a persisted payment provider configuration (Jira 9902, extended in Jira 9908).
 ///
-/// Only <see cref="Test"/> is usable in this phase. <see cref="Live"/> exists solely so the enum is
-/// future-proof and so every write/runtime path can explicitly REJECT it — live payment is intentionally
-/// not enabled here. No code path may persist, enable, or resolve a <see cref="Live"/> configuration.
+/// <see cref="Test"/> is the default and is always available. <see cref="Live"/> is GUARDED: a Live
+/// configuration may only be persisted/enabled when the server-side unlock flag
+/// (<c>OnlinePayments:AllowLiveModeConfiguration</c>) is set — the app service enforces this before ever
+/// constructing a Live row. Persisting or enabling a Live row does NOT by itself route public checkout to
+/// Live; the active runtime mode is selected separately (<c>OnlinePayments:ActiveMode</c>). Every runtime
+/// path still fails closed.
 /// </summary>
 public enum PaymentProviderMode
 {
-    /// <summary>Stripe test mode — sk_test_/whsec_ keys only. The only mode allowed in Jira 9902.</summary>
+    /// <summary>Stripe test mode — sk_test_/pk_test_/whsec_ keys only. Default; always available.</summary>
     Test = 0,
 
-    /// <summary>Live mode — intentionally blocked in Jira 9902. Present only so it can be rejected explicitly.</summary>
+    /// <summary>Stripe live mode — sk_live_/pk_live_/whsec_ keys only. Guarded by the server-side unlock flag.</summary>
     Live = 1,
 }

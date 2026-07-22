@@ -13,4 +13,9 @@ frontend/fe.log
 
 # Stray docs accidentally written under subprojects (canonical docs live in /docs)
 docs/
-docs/
+
+# Local QA / evidence / runtime-matrix artifacts (operator-generated, not part of the codebase)
+_evidence_*/
+_logsample/
+outputs/
+jira_*.xlsx

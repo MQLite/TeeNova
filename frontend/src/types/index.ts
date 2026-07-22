@@ -1131,6 +1131,32 @@ export interface UpdateStripeTestSettings {
   cancelReturnBaseUrl?: string | null
 }
 
+// ── Live mode (Jira 9908) ──────────────────────────────────────────────────
+// Guarded Live-mode write. Rejected by the server unless the unlock flag is set
+// AND confirmationPhrase is exactly "ENABLE LIVE MODE". Only live keys accepted.
+export interface UpdateStripeLiveSettings {
+  confirmationPhrase: string
+  isEnabled: boolean
+  currency: string
+  publishableKey?: string | null
+  // Write-only secrets. Leave blank/undefined to keep the currently stored value.
+  secretKey?: string | null
+  webhookSecret?: string | null
+  successReturnBaseUrl?: string | null
+  cancelReturnBaseUrl?: string | null
+}
+
+// Combined masked overview of both modes plus server-side Live-mode gating state.
+export interface PaymentSettingsOverview {
+  test: PaymentProviderSetting
+  live: PaymentProviderSetting
+  liveModeConfigurationUnlocked: boolean
+  activeMode: PaymentProviderMode
+  activeModeIsLive: boolean
+  activeModeSource: string
+  liveConfirmationPhrase: string
+}
+
 export interface StripeTestSettingsValidationResult {
   status: PaymentProviderValidationStatus
   messageCode: string | null

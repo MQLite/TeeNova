@@ -26,22 +26,42 @@ public class PaymentProviderSettingsAdminController : TeeNovaControllerBase
         _appService = appService;
     }
 
-    /// <summary>GET — masked Stripe configuration status (Admin + Viewer).</summary>
+    /// <summary>GET — masked Stripe Test-mode configuration status (Admin + Viewer).</summary>
     [HttpGet]
     public Task<PaymentProviderSettingDto> GetStripeAsync()
         => _appService.GetStripeAsync();
 
-    /// <summary>PUT — save the Stripe Test-mode configuration (Admin only). Rejects live keys/mode.</summary>
+    /// <summary>GET — combined masked overview of Test + Live settings and Live-mode gating (Admin + Viewer).</summary>
+    [HttpGet("overview")]
+    public Task<PaymentSettingsOverviewDto> GetOverviewAsync()
+        => _appService.GetOverviewAsync();
+
+    /// <summary>PUT — save the Stripe Test-mode configuration (Admin only). Rejects live/restricted keys.</summary>
     [HttpPut("stripe-test")]
     [Authorize(Roles = TeeNovaRoles.Admin)]
     public Task<PaymentProviderSettingDto> UpdateStripeTestAsync([FromBody] UpdateStripeTestSettingsDto input)
         => _appService.UpdateStripeTestAsync(input);
 
-    /// <summary>POST — disable Stripe online payments without discarding stored secrets (Admin only).</summary>
+    /// <summary>
+    /// PUT — save the Stripe Live-mode configuration (Admin only). Additionally rejected by the app service
+    /// unless the server-side unlock flag is set and the confirmation phrase is supplied. (Jira 9908.)
+    /// </summary>
+    [HttpPut("stripe-live")]
+    [Authorize(Roles = TeeNovaRoles.Admin)]
+    public Task<PaymentProviderSettingDto> UpdateStripeLiveAsync([FromBody] UpdateStripeLiveSettingsDto input)
+        => _appService.UpdateStripeLiveAsync(input);
+
+    /// <summary>POST — disable Stripe Test-mode payments without discarding stored secrets (Admin only).</summary>
     [HttpPost("stripe-test/disable")]
     [Authorize(Roles = TeeNovaRoles.Admin)]
     public Task<PaymentProviderSettingDto> DisableStripeTestAsync()
         => _appService.DisableStripeTestAsync();
+
+    /// <summary>POST — disable Stripe Live-mode payments without discarding stored secrets (Admin only). (Jira 9908.)</summary>
+    [HttpPost("stripe-live/disable")]
+    [Authorize(Roles = TeeNovaRoles.Admin)]
+    public Task<PaymentProviderSettingDto> DisableStripeLiveAsync()
+        => _appService.DisableStripeLiveAsync();
 
     /// <summary>POST — run static (offline) validation over the stored Stripe configuration (Admin only).</summary>
     [HttpPost("stripe-test/validate")]
