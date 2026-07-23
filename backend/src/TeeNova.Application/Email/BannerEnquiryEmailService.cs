@@ -3,10 +3,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Net;
 using System.Threading.Tasks;
-using MailKit.Net.Smtp;
-using MailKit.Security;
 using Microsoft.Extensions.Logging;
-using MimeKit;
 using TeeNova.Enquiries;
 using TeeNova.Notifications;
 using TeeNova.Orders;
@@ -36,17 +33,23 @@ public class BannerEnquiryEmailService : IBannerEnquiryEmailService, ITransientD
 {
     private readonly IEmailSettingsProvider                   _settingsProvider;
     private readonly IRepository<EmailNotificationLog, Guid>  _logRepository;
+    private readonly IEmailDispatcher                         _dispatcher;
+    private readonly IStagingEmailGuard                       _stagingGuard;
     private readonly IGuidGenerator                           _guidGenerator;
     private readonly ILogger<BannerEnquiryEmailService>       _logger;
 
     public BannerEnquiryEmailService(
         IEmailSettingsProvider                  settingsProvider,
         IRepository<EmailNotificationLog, Guid> logRepository,
+        IEmailDispatcher                        dispatcher,
+        IStagingEmailGuard                      stagingGuard,
         IGuidGenerator                          guidGenerator,
         ILogger<BannerEnquiryEmailService>      logger)
     {
         _settingsProvider = settingsProvider;
         _logRepository    = logRepository;
+        _dispatcher       = dispatcher;
+        _stagingGuard     = stagingGuard;
         _guidGenerator    = guidGenerator;
         _logger           = logger;
     }
@@ -95,13 +98,14 @@ public class BannerEnquiryEmailService : IBannerEnquiryEmailService, ITransientD
         {
             _logger.LogInformation(
                 "[Email] Duplicate skipped: {EventType} already sent for banner enquiry {Id} to {Recipient}.",
-                eventType, relatedId, recipient);
+                eventType, relatedId, _stagingGuard.ForLog(recipient));
             return;
         }
 
         try
         {
-            await SendSmtpAsync(recipient, subject, htmlBody, textBody, settings);
+            // Single guarded boundary (staging-safe re-targeting/decoration in staging; passthrough in prod).
+            await _dispatcher.DispatchAsync(settings, recipient, subject, htmlBody, textBody);
             _logger.LogInformation("[Email] Sent {EventType} for banner enquiry {Id}.", eventType, relatedId);
             await WriteLogAsync(EmailNotificationLog.Sent(
                 _guidGenerator.Create(), relatedId, eventType, recipient, subject));
@@ -139,26 +143,6 @@ public class BannerEnquiryEmailService : IBannerEnquiryEmailService, ITransientD
             _logger.LogError(ex, "[Email] Failed to write EmailNotificationLog for enquiry {Id} / {EventType}.",
                 log.OrderId, log.EventType);
         }
-    }
-
-    private static async Task SendSmtpAsync(
-        string recipient, string subject, string htmlBody, string textBody, EmailSettingsSnapshot settings)
-    {
-        var message = new MimeMessage();
-        message.From.Add(new MailboxAddress(settings.SenderName, settings.SenderAddress));
-        message.To.Add(MailboxAddress.Parse(recipient));
-        if (!string.IsNullOrWhiteSpace(settings.ReplyToAddress))
-            message.ReplyTo.Add(MailboxAddress.Parse(settings.ReplyToAddress));
-        message.Subject = subject;
-        message.Body = new BodyBuilder { HtmlBody = htmlBody, TextBody = textBody }.ToMessageBody();
-
-        using var smtp = new SmtpClient();
-        var secureOption = settings.Smtp.EnableSsl ? SecureSocketOptions.StartTls : SecureSocketOptions.None;
-        await smtp.ConnectAsync(settings.Smtp.Host, settings.Smtp.Port, secureOption);
-        if (!string.IsNullOrWhiteSpace(settings.Smtp.UserName))
-            await smtp.AuthenticateAsync(settings.Smtp.UserName, settings.Smtp.Password);
-        await smtp.SendAsync(message);
-        await smtp.DisconnectAsync(quit: true);
     }
 
     private static bool IsSmtpConfigured(EmailSettingsSnapshot settings)

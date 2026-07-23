@@ -57,6 +57,9 @@ public class TeeNovaApplicationModule : AbpModule
         context.Services.Configure<JwtOptions>(configuration.GetSection("Jwt"));
 
         context.Services.Configure<EmailOptions>(configuration.GetSection("Email"));
+        // Staging outbound-email guard (Jira 9908.2). Bound from Email:Staging (staging env file only);
+        // Mode defaults false so production email behaviour is unchanged.
+        context.Services.Configure<EmailStagingOptions>(configuration.GetSection(EmailStagingOptions.SectionName));
 
         context.Services.AddTransient<IEmailSettingsProvider, EmailSettingsProvider>();
         context.Services.AddTransient<IOrderEmailNotificationService, OrderEmailNotificationService>();

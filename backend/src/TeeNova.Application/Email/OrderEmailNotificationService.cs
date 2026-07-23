@@ -1,10 +1,6 @@
 using System;
-using System.Linq;
 using System.Threading.Tasks;
-using MailKit.Net.Smtp;
-using MailKit.Security;
 using Microsoft.Extensions.Logging;
-using MimeKit;
 using TeeNova.Notifications;
 using TeeNova.Orders;
 using Volo.Abp.Domain.Repositories;
@@ -16,17 +12,23 @@ public class OrderEmailNotificationService : IOrderEmailNotificationService
 {
     private readonly IEmailSettingsProvider                     _settingsProvider;
     private readonly IRepository<EmailNotificationLog, Guid>   _logRepository;
+    private readonly IEmailDispatcher                          _dispatcher;
+    private readonly IStagingEmailGuard                        _stagingGuard;
     private readonly IGuidGenerator                            _guidGenerator;
     private readonly ILogger<OrderEmailNotificationService>    _logger;
 
     public OrderEmailNotificationService(
         IEmailSettingsProvider                  settingsProvider,
         IRepository<EmailNotificationLog, Guid> logRepository,
+        IEmailDispatcher                        dispatcher,
+        IStagingEmailGuard                      stagingGuard,
         IGuidGenerator                          guidGenerator,
         ILogger<OrderEmailNotificationService>  logger)
     {
         _settingsProvider = settingsProvider;
         _logRepository    = logRepository;
+        _dispatcher       = dispatcher;
+        _stagingGuard     = stagingGuard;
         _guidGenerator    = guidGenerator;
         _logger           = logger;
     }
@@ -185,17 +187,19 @@ public class OrderEmailNotificationService : IOrderEmailNotificationService
         {
             _logger.LogInformation(
                 "[Email] Duplicate skipped: {EventType} already sent for order {OrderId} to {Recipient}.",
-                eventType, orderId, recipient);
+                eventType, orderId, _stagingGuard.ForLog(recipient));
             return;
         }
 
         try
         {
-            await SendSmtpAsync(recipient, subject, htmlBody, textBody, settings);
+            // Single guarded boundary: in staging mode this rewrites the recipient to an approved test
+            // mailbox and decorates the message; in production it is a faithful passthrough.
+            await _dispatcher.DispatchAsync(settings, recipient, subject, htmlBody, textBody);
 
             _logger.LogInformation(
                 "[Email] Sent {EventType} for order {OrderId} to {Recipient}.",
-                eventType, orderId, recipient);
+                eventType, orderId, _stagingGuard.ForLog(recipient));
 
             await WriteLogAsync(EmailNotificationLog.Sent(
                 _guidGenerator.Create(), orderId, eventType, recipient, subject, paymentTransactionId));
@@ -204,7 +208,7 @@ public class OrderEmailNotificationService : IOrderEmailNotificationService
         {
             _logger.LogError(ex,
                 "[Email] Failed to send {EventType} for order {OrderId} to {Recipient}.",
-                eventType, orderId, recipient);
+                eventType, orderId, _stagingGuard.ForLog(recipient));
 
             await WriteLogAsync(EmailNotificationLog.Failed(
                 _guidGenerator.Create(), orderId, eventType, recipient, subject, ex.Message, paymentTransactionId));
@@ -251,44 +255,6 @@ public class OrderEmailNotificationService : IOrderEmailNotificationService
                 "[Email] Failed to write EmailNotificationLog for order {OrderId} / {EventType}.",
                 log.OrderId, log.EventType);
         }
-    }
-
-    private static async Task SendSmtpAsync(
-        string                recipient,
-        string                subject,
-        string                htmlBody,
-        string                textBody,
-        EmailSettingsSnapshot settings)
-    {
-        var message = new MimeMessage();
-        message.From.Add(new MailboxAddress(settings.SenderName, settings.SenderAddress));
-        message.To.Add(MailboxAddress.Parse(recipient));
-
-        if (!string.IsNullOrWhiteSpace(settings.ReplyToAddress))
-            message.ReplyTo.Add(MailboxAddress.Parse(settings.ReplyToAddress));
-
-        message.Subject = subject;
-
-        var body = new BodyBuilder
-        {
-            HtmlBody = htmlBody,
-            TextBody = textBody,
-        };
-        message.Body = body.ToMessageBody();
-
-        using var smtp = new SmtpClient();
-
-        var secureOption = settings.Smtp.EnableSsl
-            ? SecureSocketOptions.StartTls
-            : SecureSocketOptions.None;
-
-        await smtp.ConnectAsync(settings.Smtp.Host, settings.Smtp.Port, secureOption);
-
-        if (!string.IsNullOrWhiteSpace(settings.Smtp.UserName))
-            await smtp.AuthenticateAsync(settings.Smtp.UserName, settings.Smtp.Password);
-
-        await smtp.SendAsync(message);
-        await smtp.DisconnectAsync(quit: true);
     }
 
     private static bool IsSmtpConfigured(EmailSettingsSnapshot settings)
