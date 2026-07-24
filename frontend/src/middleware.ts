@@ -57,13 +57,23 @@ export function middleware(req: NextRequest) {
   const token = req.cookies.get(COOKIE_NAME)?.value
 
   // Authenticated user visits /admin/login → send them to /admin.
-  // Expiry must be checked here too: a present-but-expired cookie sent to /admin is
-  // redirected to the login page below, and if this branch bounced it straight back on
-  // mere presence the two would ping-pong — the browser reports ERR_TOO_MANY_REDIRECTS
-  // and the user can never reach the form to re-authenticate. An expired cookie instead
-  // falls through to the login page and is cleared on the way.
+  //
+  // Two things must hold before bouncing them, or the browser ends up in an infinite
+  // redirect (ERR_TOO_MANY_REDIRECTS) with no way to reach the form and re-authenticate:
+  //
+  //  1. The token must not be expired. An expired cookie is sent here by the branch below,
+  //     so bouncing it back on mere presence ping-pongs.
+  //  2. reason=session-expired must be absent. Only a rejected session lands here with that
+  //     marker — the server components call redirectToExpiredLogin() when the BACKEND answers
+  //     401. That happens for reasons this edge check cannot see (bad signature, rotated
+  //     Jwt:Secret, deactivated account), so the exp claim can look perfectly valid while the
+  //     backend refuses the token. Trusting exp alone would bounce them straight back into
+  //     the 401 and loop.
+  //
+  // Either way the stale cookie is cleared as the form renders, so the state is self-healing.
   if (pathname === LOGIN_PATH) {
-    if (token && !isExpired(token)) {
+    const sessionRejected = req.nextUrl.searchParams.get('reason') === 'session-expired'
+    if (token && !isExpired(token) && !sessionRejected) {
       return NextResponse.redirect(buildRedirectUrl(req, '/admin'))
     }
     const response = NextResponse.next()

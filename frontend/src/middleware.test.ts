@@ -57,13 +57,31 @@ describe('admin middleware', () => {
     expect(res.headers.get('set-cookie')).toMatch(/admin_token=;/)
   })
 
+  // Regression: the backend can reject a token whose exp claim still looks valid (bad
+  // signature, rotated Jwt:Secret, deactivated account). The server components then call
+  // redirectToExpiredLogin(), and middleware used to bounce it straight back to /admin —
+  // into the same 401 — looping until the browser gave up.
+  it('does NOT redirect a backend-rejected session away from the login page', () => {
+    const res = middleware(
+      request('/admin/login?reason=session-expired&returnUrl=%2Fadmin', tokenExpiring(3600)),
+    )
+    expect(locationOf(res)).toBeNull()
+    expect(res.headers.get('set-cookie')).toMatch(/admin_token=;/)
+  })
+
   it('cannot loop between /admin and /admin/login for any token state', () => {
-    for (const token of [undefined, tokenExpiring(-60), 'not-a-jwt']) {
-      const protectedRes = middleware(request('/admin', token))
-      const target = locationOf(protectedRes)
-      if (!target) continue
-      const loginRes = middleware(request(new URL(target).pathname, token))
-      expect(locationOf(loginRes)).toBeNull()
+    const tokens = [undefined, tokenExpiring(-60), tokenExpiring(3600), 'not-a-jwt']
+    for (const token of tokens) {
+      // Both ways into the login page: middleware's own expiry redirect, and the
+      // server-component 401 redirect that carries the same marker.
+      for (const entry of [
+        locationOf(middleware(request('/admin', token))),
+        '/admin/login?reason=session-expired&returnUrl=%2Fadmin',
+      ]) {
+        if (!entry) continue
+        const path = entry.startsWith('http') ? new URL(entry).pathname + new URL(entry).search : entry
+        expect(locationOf(middleware(request(path, token)))).toBeNull()
+      }
     }
   })
 })

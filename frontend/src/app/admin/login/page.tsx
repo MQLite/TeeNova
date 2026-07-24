@@ -24,15 +24,20 @@ export default function LoginPage({
 }: {
   searchParams?: Record<string, string | string[] | undefined>
 }) {
+  const sessionExpired = searchParams?.reason === 'session-expired'
+
+  // Mirror of the middleware rule — this page is reachable on a cache hit or a direct
+  // navigation, so it must not re-open the loop the middleware closes. A session the
+  // backend rejected arrives here with reason=session-expired while still carrying its
+  // cookie; redirecting on mere presence would bounce it back into the 401 that sent it
+  // here, forever. Show the form instead and let the operator sign in again.
   const token = cookies().get('admin_token')
-  if (token?.value) {
+  if (token?.value && !sessionExpired) {
     redirect('/admin')
   }
 
   const raw = typeof searchParams?.returnUrl === 'string' ? searchParams.returnUrl : undefined
   const returnUrl = sanitiseReturnUrl(raw)
-
-  const sessionExpired = searchParams?.reason === 'session-expired'
 
   return <LoginForm returnUrl={returnUrl} sessionExpired={sessionExpired} />
 }
