@@ -26,6 +26,15 @@ function decodeJwtExp(token: string): number | null {
   }
 }
 
+// A token counts as expired only when an exp claim is present and in the past.
+// An undecodable token is NOT treated as expired — the backend stays the source of
+// truth and rejects it — but it must be judged identically on every path here, or the
+// login and protected branches can disagree and bounce the browser between them.
+function isExpired(token: string): boolean {
+  const exp = decodeJwtExp(token)
+  return exp !== null && exp < Math.floor(Date.now() / 1000)
+}
+
 // Build an absolute redirect URL using the public hostname and scheme.
 // req.nextUrl.host is always the internal bind address (127.0.0.1:3000) when Next.js
 // is started with -H 127.0.0.1, so we must read the proxy headers directly.
@@ -47,12 +56,21 @@ export function middleware(req: NextRequest) {
   const { pathname } = req.nextUrl
   const token = req.cookies.get(COOKIE_NAME)?.value
 
-  // Authenticated user visits /admin/login → send them to /admin
+  // Authenticated user visits /admin/login → send them to /admin.
+  // Expiry must be checked here too: a present-but-expired cookie sent to /admin is
+  // redirected to the login page below, and if this branch bounced it straight back on
+  // mere presence the two would ping-pong — the browser reports ERR_TOO_MANY_REDIRECTS
+  // and the user can never reach the form to re-authenticate. An expired cookie instead
+  // falls through to the login page and is cleared on the way.
   if (pathname === LOGIN_PATH) {
-    if (token) {
+    if (token && !isExpired(token)) {
       return NextResponse.redirect(buildRedirectUrl(req, '/admin'))
     }
-    return NextResponse.next()
+    const response = NextResponse.next()
+    if (token) {
+      response.cookies.set(COOKIE_NAME, '', { path: '/', maxAge: 0 })
+    }
+    return response
   }
 
   // No token → redirect to login without a reason (user may never have logged in)
@@ -63,8 +81,7 @@ export function middleware(req: NextRequest) {
   }
 
   // Token present but JWT is expired → redirect with session-expired reason
-  const exp = decodeJwtExp(token)
-  if (exp !== null && exp < Math.floor(Date.now() / 1000)) {
+  if (isExpired(token)) {
     const returnUrl = sanitizeReturnUrl(pathname)
     const params = new URLSearchParams({ reason: 'session-expired', returnUrl })
     return NextResponse.redirect(buildRedirectUrl(req, LOGIN_PATH, params))
