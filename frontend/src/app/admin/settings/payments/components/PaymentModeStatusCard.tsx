@@ -35,6 +35,12 @@ function Row({ label, children }: { label: string; children: React.ReactNode }) 
   )
 }
 
+function formatSurcharge(setting: PaymentProviderSetting): string {
+  if (!setting.surchargeEnabled) return 'Disabled'
+  const percentage = `${Math.floor(setting.surchargePercentageBasisPoints / 100)}.${String(setting.surchargePercentageBasisPoints % 100).padStart(2, '0')}%`
+  return `Enabled · ${percentage} + NZ$${setting.surchargeFixedAmount.toFixed(2)}`
+}
+
 export function PaymentModeStatusCard({
   mode,
   setting,
@@ -91,6 +97,9 @@ export function PaymentModeStatusCard({
           {setting.canCreateCheckoutSession
             ? <Pill tone="green">Ready</Pill>
             : <Pill tone="amber">Not ready</Pill>}
+        </Row>
+        <Row label="Card surcharge">
+          <span className="text-right text-xs text-black/60">{formatSurcharge(setting)}</span>
         </Row>
       </div>
 

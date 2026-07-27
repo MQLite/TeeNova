@@ -1017,6 +1017,46 @@ export type OnlinePaymentSessionStatus =
 export interface CreateOnlinePaymentSessionInput {
   provider?: PaymentProvider
   purpose?: PaymentPurpose
+  /**
+   * Fingerprint of the payment quote the customer was actually shown. NOT an amount and NOT an
+   * authorisation token — the backend recalculates every monetary value and uses this only to reject a
+   * payment based on a stale disclosure. Required once the Stripe surcharge is enabled; omitted otherwise.
+   *
+   * Only ever send the fingerprint of the CURRENTLY displayed, successfully loaded quote.
+   */
+  paymentQuoteFingerprint?: string | null
+}
+
+/**
+ * Server-authoritative online payment quote. Every amount here is calculated by the backend from trusted
+ * commercial pricing and the persisted surcharge configuration — the browser must never recompute, adjust
+ * or submit any of these values. The response carries no secret and no provider (Test/Live) mode.
+ */
+export interface OnlinePaymentQuote {
+  provider: PaymentProvider
+  currency: string
+  /** Purpose the server derived from the order/draft state; drives the breakdown's first-row label. */
+  purpose: PaymentPurpose
+  /** Commercial amount due — the only amount ever applied to the order. */
+  baseAmount: number
+  surchargeEnabled: boolean
+  /** Card-processing surcharge. Zero when the surcharge is disabled. */
+  surchargeAmount: number
+  /** Total the card will be charged. Authoritative — never display baseAmount + surchargeAmount instead. */
+  chargedAmount: number
+  /** Exact disclosure to display verbatim. Null when the surcharge is disabled. */
+  surchargeDisclosureText?: string | null
+  surchargePercentageBasisPoints: number
+  surchargeFixedAmount: number
+  calculationVersion?: string | null
+  /** Echo back on session creation. Empty/null for providers that issue no quote contract. */
+  quoteFingerprint?: string | null
+}
+
+/** Quote request for an existing order. Carries no monetary value. */
+export interface CreateOnlinePaymentQuoteInput {
+  provider?: PaymentProvider
+  purpose?: PaymentPurpose
 }
 
 export interface OnlinePaymentSession {
@@ -1118,6 +1158,46 @@ export interface PaymentProviderSetting {
   configRuntimeSource: string
   missingPrerequisites: string[]
   readinessCode: string
+  surchargeEnabled: boolean
+  surchargePercentageBasisPoints: number
+  surchargeFixedAmount: number
+  surchargeDisclosureText: string
+  surchargeCalculationVersion: string
+}
+
+export type PaymentWebhookEventStatus =
+  | 'Received' | 'Processing' | 'Processed' | 'Duplicate' | 'Ignored'
+  | 'Rejected' | 'RequiresManualReview' | 'Failed'
+export type AdminPaymentReconciliationStatus =
+  | 'Reconciled' | 'Pending' | 'RequiresReview' | 'Failed' | 'Cancelled' | 'Expired'
+
+export interface AdminOnlinePaymentSession {
+  id: string
+  provider: PaymentProvider
+  providerMode: PaymentProviderMode | null
+  purpose: PaymentPurpose
+  status: OnlinePaymentSessionStatus
+  currency: string
+  baseAmount: number
+  surchargeAmount: number
+  chargedAmount: number
+  surchargePercentageBasisPoints: number
+  surchargeFixedAmount: number
+  surchargeCalculationVersion: string
+  providerSessionId: string
+  providerPaymentId: string | null
+  providerEventId: string | null
+  paymentTransactionId: string | null
+  commercialTransactionAmount: number | null
+  creationTime: string
+  completedTime: string | null
+  rawProviderStatus: string | null
+  webhookStatus: PaymentWebhookEventStatus | null
+  observedProviderAmount: number | null
+  observedCurrency: string | null
+  reviewReasonCode: string | null
+  reconciliationStatus: AdminPaymentReconciliationStatus
+  reconciliationMessage: string | null
 }
 
 export interface UpdateStripeTestSettings {
@@ -1129,6 +1209,11 @@ export interface UpdateStripeTestSettings {
   webhookSecret?: string | null
   successReturnBaseUrl?: string | null
   cancelReturnBaseUrl?: string | null
+  surchargeEnabled?: boolean
+  surchargePercentageBasisPoints?: number
+  surchargeFixedAmount?: number
+  surchargeDisclosureText?: string
+  surchargeCalculationVersion?: string
 }
 
 // ── Live mode (Jira 9908) ──────────────────────────────────────────────────
@@ -1144,6 +1229,11 @@ export interface UpdateStripeLiveSettings {
   webhookSecret?: string | null
   successReturnBaseUrl?: string | null
   cancelReturnBaseUrl?: string | null
+  surchargeEnabled?: boolean
+  surchargePercentageBasisPoints?: number
+  surchargeFixedAmount?: number
+  surchargeDisclosureText?: string
+  surchargeCalculationVersion?: string
 }
 
 // Combined masked overview of both modes plus server-side Live-mode gating state.

@@ -5,6 +5,7 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.RateLimiting;
 using TeeNova.Auth;
 using TeeNova.Orders.Dtos;
+using TeeNova.Payments.Dtos;
 using Volo.Abp.Application.Dtos;
 
 namespace TeeNova.Orders;
@@ -50,6 +51,29 @@ public class OrderController : TeeNovaControllerBase
     public async Task<OnlinePaymentSessionDto> CreateOnlinePaymentSessionAsync(
         Guid id, [FromBody] CreateOnlinePaymentSessionDto input)
         => await _orderAppService.CreateOnlinePaymentSessionAsync(id, input);
+
+    // Read-only payment quote for an existing order (Phase 3): discloses any card-processing surcharge
+    // before the customer commits. Same anonymous-checkout exposure, rate limit and body cap as the
+    // session-creation route above; creates no order, no payment session and no payment record, and
+    // makes no provider API call.
+    [HttpPost("{id:guid}/online-payment-quote")]
+    [AllowAnonymous]
+    [EnableRateLimiting("PublicCheckoutPolicy")]
+    [RequestSizeLimit(32 * 1024)]
+    public async Task<OnlinePaymentQuoteDto> GetOnlinePaymentQuoteAsync(
+        Guid id, [FromBody] CreateOnlinePaymentQuoteDto input)
+        => await _orderAppService.GetOnlinePaymentQuoteAsync(id, input);
+
+    // Read-only payment quote for a draft that has not been placed yet (Phase 3). Priced through the same
+    // authoritative server pricing path as CreateAsync, and capped the same way (per-IP rate limit +
+    // 512 KB body); nothing is persisted.
+    [HttpPost("online-payment-quote")]
+    [AllowAnonymous]
+    [EnableRateLimiting("PublicCheckoutPolicy")]
+    [RequestSizeLimit(512 * 1024)]
+    public async Task<OnlinePaymentQuoteDto> GetDraftOnlinePaymentQuoteAsync(
+        [FromBody] CreateDraftOnlinePaymentQuoteDto input)
+        => await _orderAppService.GetDraftOnlinePaymentQuoteAsync(input);
 
     [HttpGet]
     public async Task<PagedResultDto<OrderDto>> GetListAsync([FromQuery] GetOrdersInput input)

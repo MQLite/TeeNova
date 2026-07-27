@@ -5,6 +5,7 @@ using System.Threading.Tasks;
 using Microsoft.Extensions.Logging;
 using Stripe;
 using Stripe.Checkout;
+using Volo.Abp;
 
 namespace TeeNova.Payments.Stripe;
 
@@ -19,15 +20,18 @@ namespace TeeNova.Payments.Stripe;
 public sealed class StripeOnlinePaymentProvider : IOnlinePaymentProvider
 {
     private readonly IStripePaymentSettingsResolver       _settingsResolver;
+    private readonly IStripePaymentQuoteService           _quoteService;
     private readonly ILogger<StripeOnlinePaymentProvider> _logger;
 
     public PaymentProvider Provider => PaymentProvider.Stripe;
 
     public StripeOnlinePaymentProvider(
         IStripePaymentSettingsResolver        settingsResolver,
+        IStripePaymentQuoteService            quoteService,
         ILogger<StripeOnlinePaymentProvider>  logger)
     {
         _settingsResolver = settingsResolver;
+        _quoteService     = quoteService;
         _logger           = logger;
     }
 
@@ -53,60 +57,14 @@ public sealed class StripeOnlinePaymentProvider : IOnlinePaymentProvider
         if (string.IsNullOrWhiteSpace(request.CancelUrl))
             throw new ArgumentException("CancelUrl is required.", nameof(request));
 
-        var secretKey = await _settingsResolver.ResolveSecretKeyForCheckoutAsync(cancellationToken);
+        var secretKey = await ResolveSecretKeyForRequestAsync(request, cancellationToken);
 
-        // Stripe requires amounts in minor units (cents). NZD has 2 decimal places.
-        // AwayFromZero matches standard financial rounding.
-        var amountMinorUnits = (long)Math.Round(request.Amount * 100m, MidpointRounding.AwayFromZero);
+        // Pure, side-effect-free translation of the server-authoritative snapshot into Checkout options
+        // (line items, card-only rule, metadata) plus the snapshot-scoped idempotency key.
+        var (sessionOptions, idempotencyKey) = StripeCheckoutSessionOptionsBuilder.Build(request);
 
-        // Stripe currency codes must be lowercase.
-        var currency = request.Currency.ToLowerInvariant();
-
-        var sessionOptions = new SessionCreateOptions
-        {
-            Mode          = "payment",
-            CustomerEmail = string.IsNullOrWhiteSpace(request.CustomerEmail) ? null : request.CustomerEmail,
-            SuccessUrl    = request.SuccessUrl,
-            CancelUrl     = request.CancelUrl,
-            LineItems     = new List<SessionLineItemOptions>
-            {
-                new()
-                {
-                    PriceData = new SessionLineItemPriceDataOptions
-                    {
-                        Currency    = currency,
-                        UnitAmount  = amountMinorUnits,
-                        ProductData = new SessionLineItemPriceDataProductDataOptions
-                        {
-                            Name = $"Order #{request.OrderNumber}",
-                        },
-                    },
-                    Quantity = 1,
-                },
-            },
-            Metadata = new Dictionary<string, string>
-            {
-                ["order_id"]        = request.OrderId.ToString(),
-                ["order_number"]    = request.OrderNumber,
-                ["payment_purpose"] = request.Purpose.ToString(),
-            },
-            PaymentIntentData = new SessionPaymentIntentDataOptions
-            {
-                Metadata = new Dictionary<string, string>
-                {
-                    ["order_id"]     = request.OrderId.ToString(),
-                    ["order_number"] = request.OrderNumber,
-                },
-            },
-        };
-
-        // Idempotency key scoped to order + purpose + amount + currency (Jira 9804). Including the
-        // minor-unit amount and currency means identical retries/double-submits collapse to ONE Stripe
-        // session, while a changed amount (e.g. after an admin price adjustment or a partial payment)
-        // produces a DIFFERENT key — so Stripe returns a fresh session instead of an idempotency
-        // conflict against a session frozen at the old amount.
-        var idempotencyKey =
-            $"stripe_session_{request.OrderId}_{request.Purpose}_{amountMinorUnits}_{currency}";
+        var amountMinorUnits = StripeMoney.ToCents(request.Amount, "chargedAmount");
+        var currency         = request.Currency.ToLowerInvariant();
 
         Session session;
         try
@@ -140,9 +98,14 @@ public sealed class StripeOnlinePaymentProvider : IOnlinePaymentProvider
 
         _logger.LogInformation(
             "[Stripe] Checkout session {SessionId} created for order {OrderNumber} — " +
-            "{Amount} {Currency} ({MinorUnits} minor units).",
+            "{Amount} {Currency} ({MinorUnits} minor units); base {BaseCents}c + surcharge {SurchargeCents}c, " +
+            "mode {Mode}, local session {PaymentSessionId}.",
             session.Id, request.OrderNumber,
-            request.Amount, request.Currency.ToUpperInvariant(), amountMinorUnits);
+            request.Amount, request.Currency.ToUpperInvariant(), amountMinorUnits,
+            StripeMoney.ToCents(request.BaseAmount, "baseAmount"),
+            StripeMoney.ToCents(request.SurchargeAmount, "surchargeAmount"),
+            request.ProviderMode?.ToString() ?? "legacy",
+            request.PaymentSessionId);
 
         return new CreateOnlinePaymentProviderSessionResult
         {
@@ -154,11 +117,57 @@ public sealed class StripeOnlinePaymentProvider : IOnlinePaymentProvider
         };
     }
 
+    /// <summary>
+    /// Resolves the secret key for this request and, when the caller supplied a quote fingerprint, closes the
+    /// settings/mode race window first (Phase 3).
+    ///
+    /// Between <c>OrderAppService</c> computing the quote and this call, an admin could switch the active mode
+    /// or change the surcharge configuration. Rather than tolerate that silently, the CURRENT full checkout
+    /// settings are resolved once here and the expected fingerprint is rebuilt from the same trusted base
+    /// amount and purpose. A mismatch throws the stale-quote business failure BEFORE any Stripe API call, and
+    /// the credentials used for the call come from that very same resolution — so Stripe can never receive a
+    /// total that differs from the one the order layer validated.
+    /// </summary>
+    private async Task<string> ResolveSecretKeyForRequestAsync(
+        CreateOnlinePaymentProviderSessionRequest request,
+        CancellationToken                         cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(request.PaymentQuoteFingerprint))
+        {
+            // No quote contract (e.g. a direct legacy caller): preserve the pre-Phase-3 resolution path.
+            return await _settingsResolver.ResolveSecretKeyForCheckoutAsync(cancellationToken);
+        }
+
+        var resolved = await _quoteService.ResolveCheckoutAsync(
+            request.BaseAmount, request.Purpose, cancellationToken);
+
+        if (!StripePaymentQuoteFingerprint.Matches(
+                request.PaymentQuoteFingerprint, resolved.Quote.QuoteFingerprint))
+        {
+            _logger.LogWarning(
+                "[Stripe] Aborting session creation for order {OrderNumber} — the Stripe configuration " +
+                "changed after the quote was calculated (expected mode {ExpectedMode}, now {CurrentMode}; " +
+                "expected charged {ExpectedCents}c, now {CurrentCents}c). No Stripe API call was made.",
+                request.OrderNumber,
+                request.ProviderMode?.ToString() ?? "legacy",
+                resolved.Quote.ProviderMode,
+                StripeMoney.ToCents(request.Amount, "chargedAmount"),
+                resolved.Quote.ChargedAmountCents);
+
+            throw new BusinessException(StripePaymentQuoteGate.QuoteStaleErrorCode)
+                .WithData("OrderId", request.OrderId)
+                .WithData("Purpose", request.Purpose);
+        }
+
+        return resolved.Settings.SecretKey;
+    }
+
     // ── Session expiration ────────────────────────────────────────────────────
 
     public async Task ExpireSessionAsync(
-        string            providerSessionId,
-        CancellationToken cancellationToken = default)
+        string               providerSessionId,
+        PaymentProviderMode? providerMode      = null,
+        CancellationToken    cancellationToken = default)
     {
         // Best-effort (Jira 9804): expire a still-open Checkout Session so a lingering customer tab
         // cannot complete a charge the local system has already superseded/cancelled. Never throws —
@@ -167,10 +176,16 @@ public sealed class StripeOnlinePaymentProvider : IOnlinePaymentProvider
         if (string.IsNullOrWhiteSpace(providerSessionId))
             return;
 
-        string secretKey;
+        string? secretKey;
         try
         {
-            secretKey = await _settingsResolver.ResolveSecretKeyForCheckoutAsync(cancellationToken);
+            // Mode-pinned expiration (Phase 3): a session created in Test must be expired with the Test key
+            // and a Live session with the Live key — never with whichever mode happens to be active now, and
+            // never with a cross-mode fallback. A legacy session (null mode) has no provable historical mode,
+            // so it keeps the pre-Phase-3 behaviour of using the currently active configuration.
+            secretKey = providerMode.HasValue
+                ? await _settingsResolver.TryResolveSecretKeyForModeAsync(providerMode.Value, cancellationToken)
+                : await _settingsResolver.ResolveSecretKeyForCheckoutAsync(cancellationToken);
         }
         catch (Exception ex)
         {
@@ -179,6 +194,14 @@ public sealed class StripeOnlinePaymentProvider : IOnlinePaymentProvider
             _logger.LogWarning(ex,
                 "[Stripe] Skipping best-effort expire of session {SessionId} — Stripe settings unavailable.",
                 providerSessionId);
+            return;
+        }
+
+        if (string.IsNullOrWhiteSpace(secretKey))
+        {
+            _logger.LogWarning(
+                "[Stripe] Skipping best-effort expire of session {SessionId} — no usable {Mode}-mode key.",
+                providerSessionId, providerMode?.ToString() ?? "active");
             return;
         }
 
@@ -300,16 +323,17 @@ public sealed class StripeOnlinePaymentProvider : IOnlinePaymentProvider
 
         return new OnlinePaymentWebhookResult
         {
-            Provider          = Provider,
-            Outcome           = OnlinePaymentWebhookOutcome.PaymentCompleted,
-            SignatureVerified = true,
-            ProviderEventType = stripeEvent.Type,
-            ProviderSessionId = session.Id,
-            ProviderPaymentId = session.PaymentIntentId,
-            ProviderEventId   = stripeEvent.Id,
-            Amount            = amount,
-            Currency          = session.Currency?.ToUpperInvariant(),
-            RawProviderStatus = session.Status,
+            Provider             = Provider,
+            Outcome              = OnlinePaymentWebhookOutcome.PaymentCompleted,
+            SignatureVerified    = true,
+            ProviderEventType    = stripeEvent.Type,
+            ProviderSessionId    = session.Id,
+            ProviderPaymentId    = session.PaymentIntentId,
+            ProviderEventId      = stripeEvent.Id,
+            Amount               = amount,
+            Currency             = session.Currency?.ToUpperInvariant(),
+            RawProviderStatus    = session.Status,
+            ProviderModeObserved = ToProviderMode(stripeEvent),
         };
     }
 
@@ -372,6 +396,14 @@ public sealed class StripeOnlinePaymentProvider : IOnlinePaymentProvider
     }
 
     // ── Private helpers ───────────────────────────────────────────────────────
+
+    /// <summary>
+    /// Maps the verified Stripe event's <c>livemode</c> flag onto the internal Test/Live mode (Phase 3), so
+    /// the webhook can prove a surcharge-aware payment was completed under the mode its session was created
+    /// in. Read from the signed event envelope only — no raw event JSON is exposed.
+    /// </summary>
+    private static PaymentProviderMode ToProviderMode(Event stripeEvent)
+        => stripeEvent.Livemode ? PaymentProviderMode.Live : PaymentProviderMode.Test;
 
     // Pre-verification ignore: no trusted event id, SignatureVerified stays false so the app service
     // never creates a durable idempotency record for an unauthenticated payload (empty body, missing

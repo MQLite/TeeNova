@@ -30,10 +30,16 @@ public interface IOnlinePaymentProvider
     /// Implementations MUST be idempotent and MUST NOT throw for already-expired / already-completed
     /// / unknown sessions — expiration is advisory; local cancellation remains authoritative.
     /// Implementations MUST NOT log provider secrets.
+    ///
+    /// <paramref name="providerMode"/> is the Test/Live mode stored on the local session (Phase 3).
+    /// Implementations MUST use it to resolve credentials for THAT mode rather than whichever mode is
+    /// currently active, and MUST NOT fall back across modes. Null means the historical mode is unknown
+    /// (legacy sessions), in which case the pre-Phase-3 behaviour applies and no mode is guessed.
     /// </summary>
     Task ExpireSessionAsync(
-        string            providerSessionId,
-        CancellationToken cancellationToken = default);
+        string               providerSessionId,
+        PaymentProviderMode? providerMode      = null,
+        CancellationToken    cancellationToken = default);
 
     /// <summary>
     /// Parses and verifies an incoming webhook event from the provider.

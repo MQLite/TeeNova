@@ -40,4 +40,12 @@ public class OnlinePaymentWebhookResult
     public string?                     RawProviderStatus { get; set; }
     public decimal?                    Amount            { get; set; }
     public string?                     Currency          { get; set; }
+
+    /// <summary>
+    /// Test/Live mode the provider reports the event was produced in (Phase 3; from Stripe's signed
+    /// <c>livemode</c> flag). Null when the provider exposes no such indicator. For a surcharge-aware session
+    /// this must equal <c>OnlinePaymentSession.ProviderMode</c>; a mismatch forces manual review. Legacy
+    /// sessions carry no stored mode, so nothing is inferred or written for them.
+    /// </summary>
+    public PaymentProviderMode?        ProviderModeObserved { get; set; }
 }

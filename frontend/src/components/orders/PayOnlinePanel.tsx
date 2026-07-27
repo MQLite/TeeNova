@@ -1,8 +1,17 @@
 'use client'
 
-import { useState } from 'react'
+import { useMemo, useState } from 'react'
 import { ordersApi } from '@/api/orders'
 import { Button } from '@/components/ui/Button'
+import { OnlinePaymentQuoteSummary } from '@/components/checkout/OnlinePaymentQuoteSummary'
+import {
+  chargedAmountOf,
+  isStripePaymentBlocked,
+  usableQuoteFingerprint,
+} from '@/features/checkout/online-payment-quote-state'
+import { useOnlinePaymentQuote } from '@/features/checkout/useOnlinePaymentQuote'
+import { formatPaymentAmount } from '@/lib/money'
+import { classifySessionError, requiresFreshQuote } from '@/lib/payment-errors'
 import type { OrderStatus, PaymentProvider, PaymentStatus } from '@/types'
 
 const PROVIDER_OPTIONS: { value: PaymentProvider; label: string }[] = [
@@ -24,23 +33,88 @@ export function PayOnlinePanel({ orderId, balanceAmount, orderStatus, paymentSta
   const [isCreatingSession, setIsCreatingSession] = useState(false)
   const [sessionError, setSessionError] = useState<string | null>(null)
 
-  if (balanceAmount <= 0 || paymentStatus === 'Paid' || orderStatus === 'Cancelled' || orderStatus === 'Completed') {
+  const eligible =
+    balanceAmount > 0 &&
+    paymentStatus !== 'Paid' &&
+    orderStatus !== 'Cancelled' &&
+    orderStatus !== 'Completed'
+
+  const stripeSelected = selectedProvider === 'Stripe'
+
+  // ── Server-authoritative payment quote (Stripe surcharge, Phase 4) ────────────
+  // The panel never assumes the payable amount is `balanceAmount`: a pickup order may owe only its
+  // outstanding deposit. The backend returns the purpose and the commercial base actually payable now.
+  //
+  // The signature includes the order's payment state, so when the page re-renders with refreshed order
+  // data (a payment landed, an admin adjusted the price) the previous quote and its fingerprint are
+  // invalidated and a fresh quote is fetched before payment can continue.
+  const quoteSignature = useMemo(
+    () =>
+      JSON.stringify({
+        orderId,
+        provider: selectedProvider,
+        balanceAmount,
+        orderStatus,
+        paymentStatus,
+      }),
+    [orderId, selectedProvider, balanceAmount, orderStatus, paymentStatus],
+  )
+
+  const { state: quoteState, refresh: refreshQuote } = useOnlinePaymentQuote({
+    enabled: eligible && stripeSelected,
+    signature: quoteSignature,
+    fetchQuote: () =>
+      ordersApi.getExistingOrderOnlinePaymentQuote(orderId, { provider: selectedProvider }),
+  })
+
+  if (!eligible) {
     return null
+  }
+
+  const stripeBlocked = stripeSelected && isStripePaymentBlocked(quoteState)
+  const chargedAmount = chargedAmountOf(quoteState)
+  const showChargedTotal = stripeSelected && chargedAmount != null && quoteState.quote?.surchargeEnabled
+
+  function selectProvider(provider: PaymentProvider) {
+    // Switching provider clears any Stripe-specific failure alongside the quote (the hook resets its own
+    // state via the changed signature / disabled flag).
+    setSelectedProvider(provider)
+    setSessionError(null)
   }
 
   async function handlePayOnline() {
     if (isCreatingSession) return
+
+    if (stripeBlocked) {
+      setSessionError(
+        quoteState.errorMessage ??
+          'We’re still calculating the secure card payment total. Please wait a moment and try again.',
+      )
+      return
+    }
+
+    // Only ever the fingerprint of the quote currently on screen; null when no surcharge applies.
+    const paymentQuoteFingerprint = usableQuoteFingerprint(quoteState)
+
     setIsCreatingSession(true)
     setSessionError(null)
+
     try {
-      const session = await ordersApi.createOnlinePaymentSession(orderId, { provider: selectedProvider })
+      const session = await ordersApi.createOnlinePaymentSession(orderId, {
+        provider: selectedProvider,
+        ...(paymentQuoteFingerprint ? { paymentQuoteFingerprint } : {}),
+      })
       window.location.href = session.providerCheckoutUrl
     } catch (err) {
-      setSessionError(
-        err instanceof Error
-          ? err.message
-          : 'The online payment session could not be created. You can still arrange payment manually with the shop.',
-      )
+      const classified = classifySessionError(err)
+      setSessionError(classified.message)
+
+      // Quote required / stale: fetch a fresh quote so the customer sees the current total, then require
+      // another deliberate click. Never auto-resubmit and never redirect at an undisclosed amount.
+      if (requiresFreshQuote(classified.kind)) {
+        refreshQuote()
+      }
+
       setIsCreatingSession(false)
     }
   }
@@ -69,7 +143,7 @@ export function PayOnlinePanel({ orderId, balanceAmount, orderStatus, paymentSta
                 name="payOnlineProvider"
                 value={value}
                 checked={selected}
-                onChange={() => setSelectedProvider(value)}
+                onChange={() => selectProvider(value)}
                 className="sr-only"
               />
               <span style={{ fontWeight: selected ? 540 : 480, letterSpacing: '-0.14px' }}>
@@ -80,18 +154,29 @@ export function PayOnlinePanel({ orderId, balanceAmount, orderStatus, paymentSta
         })}
       </div>
 
+      {/* Amount breakdown + exact server disclosure, above the payment button. */}
+      {stripeSelected && <OnlinePaymentQuoteSummary state={quoteState} onRetry={refreshQuote} />}
+
       <Button
         type="button"
         className="w-full"
         size="lg"
         loading={isCreatingSession}
+        disabled={isCreatingSession || stripeBlocked}
         onClick={handlePayOnline}
       >
-        {isCreatingSession ? 'Creating payment session…' : `Pay Online with ${selectedProvider} →`}
+        {isCreatingSession
+          ? 'Creating payment session…'
+          : showChargedTotal
+            ? `Pay ${formatPaymentAmount(chargedAmount!, quoteState.quote?.currency)} securely with Stripe →`
+            : `Pay Online with ${selectedProvider} →`}
       </Button>
 
       {sessionError && (
-        <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+        <div
+          role="alert"
+          className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800"
+        >
           {sessionError}
         </div>
       )}

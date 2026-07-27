@@ -272,6 +272,8 @@ public class OnlinePaymentWebhookAppService : ApplicationService, IOnlinePayment
             return;
         }
 
+        // The provider charged the CARD, so its total is reconciled against the session's charged total
+        // (Amount = BaseAmount + SurchargeAmount). Exact comparison — never a tolerance.
         if (result.Amount.Value != session.Amount)
         {
             Logger.LogWarning(
@@ -292,6 +294,28 @@ public class OnlinePaymentWebhookAppService : ApplicationService, IOnlinePayment
             await RejectPendingCompletedAsync(webhookEvent, session,
                 "TeeNova:Payment:WebhookCurrencyMismatch",
                 $"Completed currency '{result.Currency ?? "(null)"}' did not match session currency '{session.Currency}'.");
+            return;
+        }
+
+        // Snapshot + Test/Live reconciliation (Phase 3): the session's own pricing snapshot must be internally
+        // consistent, its calculation version supported, and — for a surcharge-aware session — the mode the
+        // provider completed the payment in must be the mode the session was created under. Anything else on
+        // a CHARGED event goes to manual review rather than being applied.
+        var snapshotFailure = OnlinePaymentSessionReconciliation.ValidateSnapshot(
+            session, result.ProviderModeObserved);
+
+        if (snapshotFailure is not null)
+        {
+            Logger.LogWarning(
+                "[Webhook] Snapshot reconciliation failed for session '{SessionId}' ({Code}): expected base " +
+                "{BaseAmount}, surcharge {SurchargeAmount}, charged {ChargedAmount}; session mode {SessionMode}, " +
+                "observed mode {ObservedMode}.",
+                session.Id, snapshotFailure.Code, session.BaseAmount, session.SurchargeAmount, session.Amount,
+                session.ProviderMode?.ToString() ?? "(none)",
+                result.ProviderModeObserved?.ToString() ?? "(unknown)");
+
+            await RejectPendingCompletedAsync(
+                webhookEvent, session, snapshotFailure.Code, snapshotFailure.Message);
             return;
         }
 
@@ -329,14 +353,20 @@ public class OnlinePaymentWebhookAppService : ApplicationService, IOnlinePayment
             return;
         }
 
-        if (session.Amount > order.BalanceAmount)
+        // COMMERCIAL boundary (Phase 3): the order balance is compared with — and settled by — the session's
+        // BaseAmount only. The card-processing surcharge is a provider fee, never order revenue, so comparing
+        // the charged total here would reject every correctly surcharged payment as an overpayment.
+        // Legacy sessions are unaffected: BaseAmount == Amount.
+        var commercialAmount = OnlinePaymentSessionReconciliation.CommercialAmount(session);
+
+        if (commercialAmount > order.BalanceAmount)
         {
             Logger.LogWarning(
-                "[Webhook] Overpayment for order '{OrderId}': session amount {Amount} > balance {Balance}.",
-                order.Id, session.Amount, order.BalanceAmount);
+                "[Webhook] Overpayment for order '{OrderId}': commercial amount {Amount} > balance {Balance}.",
+                order.Id, commercialAmount, order.BalanceAmount);
             await RejectPendingCompletedAsync(webhookEvent, session,
                 "TeeNova:Payment:WebhookOverpayment",
-                $"Session amount {session.Amount} exceeds order balance {order.BalanceAmount}.");
+                $"Session base amount {commercialAmount} exceeds order balance {order.BalanceAmount}.");
             return;
         }
 
@@ -344,12 +374,12 @@ public class OnlinePaymentWebhookAppService : ApplicationService, IOnlinePayment
         var reference = result.ProviderPaymentId ?? session.ProviderSessionId;
         var note      = $"Online payment via {session.Provider}.";
 
-        order.ApplyPayment(session.Amount, ManualPaymentMethod.Online, reference, note, Clock.Now);
+        order.ApplyPayment(commercialAmount, ManualPaymentMethod.Online, reference, note, Clock.Now);
 
         var transaction = new PaymentTransaction(
             GuidGenerator.Create(),
             order.Id,
-            session.Amount,
+            commercialAmount,
             ManualPaymentMethod.Online,
             reference,
             note);
@@ -377,20 +407,29 @@ public class OnlinePaymentWebhookAppService : ApplicationService, IOnlinePayment
         // customer PII, no raw payload. Lets support tie a Stripe dashboard charge to the local records.
         Logger.LogInformation(
             "[Webhook] Payment applied — order {OrderNumber} ({OrderId}), session {SessionId}, " +
-            "provider {Provider}, event {ProviderEventId}, transaction {TransactionId}, {Amount} {Currency}.",
+            "provider {Provider}, mode {Mode}, event {ProviderEventId}, transaction {TransactionId}, " +
+            "commercial {CommercialAmount} + surcharge {SurchargeAmount} = charged {ChargedAmount} {Currency}.",
             order.OrderNumber, order.Id, session.Id, session.Provider,
-            result.ProviderEventId, transaction.Id, session.Amount, session.Currency);
+            session.ProviderMode?.ToString() ?? "legacy",
+            result.ProviderEventId, transaction.Id,
+            commercialAmount, session.SurchargeAmount, session.Amount, session.Currency);
 
-        var timelineDesc = string.IsNullOrEmpty(reference)
-            ? $"Online payment of {session.Amount:F2} {session.Currency} recorded via {session.Provider}."
-            : $"Online payment of {session.Amount:F2} {session.Currency} recorded via {session.Provider}. Ref: {reference}.";
+        var timelineDesc = BuildPaymentTimelineDescription(session, commercialAmount, reference);
 
         await AddTimelineEntryAsync(order.Id, OrderEventType.PaymentReceived, timelineDesc, order.Status);
 
-        // Receipt email — best-effort, must not block payment recording or the webhook response.
+        // Receipt email — best-effort, must not block payment recording or the webhook response. A
+        // surcharge-aware payment passes its snapshot so the receipt can distinguish the commercial amount
+        // from the total actually charged to the card.
         try
         {
-            await _emailService.SendPaymentReceiptAsync(order, transaction);
+            await _emailService.SendPaymentReceiptAsync(
+                order,
+                transaction,
+                session.SurchargeAmount > 0m
+                    ? new PaymentSurchargeReceiptDetail(
+                        session.BaseAmount, session.SurchargeAmount, session.Amount, session.Currency)
+                    : null);
         }
         catch (Exception ex)
         {
@@ -481,6 +520,30 @@ public class OnlinePaymentWebhookAppService : ApplicationService, IOnlinePayment
     }
 
     // ── Private helpers ───────────────────────────────────────────────────────
+
+    /// <summary>
+    /// Timeline wording. A legacy payment keeps its original single-amount sentence; a surcharged payment
+    /// additionally states the surcharge and the total charged, so the audit trail never implies the
+    /// commercial amount was what left the customer's card. Capped to the 512-char Description column.
+    /// </summary>
+    private static string BuildPaymentTimelineDescription(
+        OnlinePaymentSession session,
+        decimal              commercialAmount,
+        string?              reference)
+    {
+        var text = $"Online payment of {commercialAmount:F2} {session.Currency} recorded via {session.Provider}.";
+
+        if (session.SurchargeAmount > 0m)
+        {
+            text += $" Card processing surcharge {session.SurchargeAmount:F2} {session.Currency}; " +
+                    $"total charged {session.Amount:F2} {session.Currency}.";
+        }
+
+        if (!string.IsNullOrEmpty(reference))
+            text += $" Ref: {reference}.";
+
+        return text.Length > 512 ? text[..509] + "..." : text;
+    }
 
     /// <summary>
     /// Records a completed (charged) event that could not be tied to an actionable local session as

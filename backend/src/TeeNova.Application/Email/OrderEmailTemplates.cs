@@ -109,21 +109,31 @@ public static class OrderEmailTemplates
     /// Receipt email sent when a payment is recorded on an order.
     /// Scalar Order and PaymentTransaction fields only — does NOT access order.Items.
     /// Does NOT include transaction.Note (admin-only field).
+    ///
+    /// <paramref name="surcharge"/> (Phase 3) is supplied only for an online payment that carried a
+    /// card-processing surcharge. Because <c>PaymentTransaction.Amount</c> is the COMMERCIAL amount, a
+    /// surcharged receipt would otherwise understate what the customer's card was charged — so the receipt
+    /// then shows the order payment, the surcharge and the total charged as three separate amounts. When it
+    /// is null the output is byte-for-byte the pre-Phase-3 receipt.
     /// </summary>
     public static (string Subject, string HtmlBody, string TextBody)
-        BuildPaymentReceiptEmail(Order order, PaymentTransaction transaction, EmailSettingsSnapshot settings)
+        BuildPaymentReceiptEmail(
+            Order                          order,
+            PaymentTransaction             transaction,
+            EmailSettingsSnapshot          settings,
+            PaymentSurchargeReceiptDetail? surcharge = null)
     {
         var subject = $"Payment received — {order.OrderNumber}";
 
         var html = new StringBuilder();
         AppendHtmlHeader(html, "Payment Received");
-        AppendHtmlReceiptPaymentSection(html, order, transaction);
+        AppendHtmlReceiptPaymentSection(html, order, transaction, surcharge);
         AppendHtmlReceiptOrderSection(html, order);
         AppendHtmlReceiptStateMessage(html, order);
         AppendHtmlContactFooter(html, settings.ShopContactInfo);
         AppendHtmlClose(html);
 
-        var text = BuildReceiptText(order, transaction, settings);
+        var text = BuildReceiptText(order, transaction, settings, surcharge);
 
         return (subject, html.ToString(), text);
     }
@@ -624,11 +634,24 @@ public static class OrderEmailTemplates
     }
 
     private static void AppendHtmlReceiptPaymentSection(
-        StringBuilder sb, Order order, PaymentTransaction transaction)
+        StringBuilder sb, Order order, PaymentTransaction transaction,
+        PaymentSurchargeReceiptDetail? surcharge)
     {
         var rows = new StringBuilder();
         HtmlRow(rows, "Order Number",    order.OrderNumber);
-        HtmlRow(rows, "Payment Amount",  FormatCurrency(transaction.Amount));
+
+        if (surcharge is not null)
+        {
+            // Three distinct amounts: what was applied to the order, the card fee, and what was charged.
+            HtmlRow(rows, "Order Payment",            FormatCurrency(surcharge.BaseAmount));
+            HtmlRow(rows, "Card Processing Surcharge", FormatCurrency(surcharge.SurchargeAmount));
+            HtmlRow(rows, "Total Charged",            FormatCurrency(surcharge.ChargedAmount));
+        }
+        else
+        {
+            HtmlRow(rows, "Payment Amount", FormatCurrency(transaction.Amount));
+        }
+
         HtmlRow(rows, "Payment Method",  GetManualPaymentMethodLabel(transaction.Method));
         if (!string.IsNullOrWhiteSpace(transaction.Reference))
             HtmlRow(rows, "Payment Reference", transaction.Reference);
@@ -749,13 +772,25 @@ public static class OrderEmailTemplates
     }
 
     private static string BuildReceiptText(
-        Order order, PaymentTransaction transaction, EmailSettingsSnapshot settings)
+        Order order, PaymentTransaction transaction, EmailSettingsSnapshot settings,
+        PaymentSurchargeReceiptDetail? surcharge)
     {
         var sb = new StringBuilder();
         sb.AppendLine("Otahuhu Printing Shop — Payment Received");
         sb.AppendLine(new string('-', 40));
         sb.AppendLine($"Order Number      : {order.OrderNumber}");
-        sb.AppendLine($"Payment Amount    : {FormatCurrency(transaction.Amount)}");
+
+        if (surcharge is not null)
+        {
+            sb.AppendLine($"Order Payment     : {FormatCurrency(surcharge.BaseAmount)}");
+            sb.AppendLine($"Card Surcharge    : {FormatCurrency(surcharge.SurchargeAmount)}");
+            sb.AppendLine($"Total Charged     : {FormatCurrency(surcharge.ChargedAmount)}");
+        }
+        else
+        {
+            sb.AppendLine($"Payment Amount    : {FormatCurrency(transaction.Amount)}");
+        }
+
         sb.AppendLine($"Payment Method    : {GetManualPaymentMethodLabel(transaction.Method)}");
         if (!string.IsNullOrWhiteSpace(transaction.Reference))
             sb.AppendLine($"Payment Reference : {transaction.Reference}");

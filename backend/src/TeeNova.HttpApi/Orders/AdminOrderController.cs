@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Threading.Tasks;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
@@ -25,6 +26,11 @@ public class AdminOrderController : TeeNovaControllerBase
     {
         _orderAppService = orderAppService;
     }
+
+    /// <summary>Admin-only, safe payment-attempt and reconciliation detail. Never exposed on the public order GET.</summary>
+    [HttpGet("{id:guid}/online-payment-sessions")]
+    public async Task<List<AdminOnlinePaymentSessionDto>> GetOnlinePaymentSessionsAsync(Guid id)
+        => await _orderAppService.GetAdminOnlinePaymentSessionsAsync(id);
 
     /// <summary>Preview a content change: reprices the whole order and returns payment impact. No persistence.</summary>
     [HttpPost("{id:guid}/content/quote")]

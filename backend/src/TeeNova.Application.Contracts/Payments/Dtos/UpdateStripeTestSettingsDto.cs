@@ -30,4 +30,11 @@ public class UpdateStripeTestSettingsDto
 
     /// <summary>Browser cancel return base URL — must resolve to /checkout/cancel with no query/fragment.</summary>
     public string? CancelReturnBaseUrl  { get; set; }
+
+    // All omitted preserves the existing surcharge configuration. Supplying any field requires all five.
+    public bool?    SurchargeEnabled                 { get; set; }
+    public int?     SurchargePercentageBasisPoints   { get; set; }
+    public decimal? SurchargeFixedAmount             { get; set; }
+    public string?  SurchargeDisclosureText          { get; set; }
+    public string?  SurchargeCalculationVersion      { get; set; }
 }

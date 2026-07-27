@@ -28,6 +28,15 @@ import { PaymentSettingsNavigation } from '../components/PaymentSettingsNavigati
 import { PaymentEnvironmentBadge } from '../components/PaymentEnvironmentBadge'
 import { SecretConfiguredStatus } from '../components/SecretConfiguredStatus'
 import { ActiveRuntimeModeBanner } from '../components/ActiveRuntimeModeBanner'
+import { StripeSurchargeSettingsSection } from '../components/StripeSurchargeSettingsSection'
+import {
+  buildSurchargePayload,
+  surchargeFormFromSetting,
+  validateSurchargeForm,
+  type StripeSurchargeFormErrors,
+  type StripeSurchargeFormValue,
+} from '../components/stripe-surcharge-form'
+import { paymentSettingsSaveError, surchargeReadinessMessage } from '../components/payment-readiness'
 
 const paymentSettingsApi = makePaymentSettingsApi(adminApiClient)
 
@@ -58,6 +67,8 @@ export default function LiveModeSettingsClient({ role }: { role?: string }) {
   const [publishableKey, setPublishableKey] = useState('')
   const [successUrl, setSuccessUrl] = useState('')
   const [cancelUrl, setCancelUrl] = useState('')
+  const [surcharge, setSurcharge] = useState<StripeSurchargeFormValue | null>(null)
+  const [surchargeErrors, setSurchargeErrors] = useState<StripeSurchargeFormErrors>({})
 
   // Deliberate-intent confirmation gate.
   const [phrase, setPhrase] = useState('')
@@ -77,6 +88,8 @@ export default function LiveModeSettingsClient({ role }: { role?: string }) {
     setPublishableKey(data.live.publishableKey ?? '')
     setSuccessUrl(data.live.successReturnBaseUrl ?? '')
     setCancelUrl(data.live.cancelReturnBaseUrl ?? '')
+    setSurcharge(surchargeFormFromSetting(data.live))
+    setSurchargeErrors({})
     setSecretKey('')
     setWebhookSecret('')
   }
@@ -101,10 +114,14 @@ export default function LiveModeSettingsClient({ role }: { role?: string }) {
   const phraseOk = phrase.trim() === requiredPhrase
 
   async function handleSave() {
-    if (!canWrite || !phraseOk) return
+    if (!canWrite || !phraseOk || !surcharge) return
+    const errors = validateSurchargeForm(surcharge)
+    setSurchargeErrors(errors)
+    const surchargePayload = buildSurchargePayload(surcharge)
+    if (!surchargePayload) return
     setSaving(true)
     try {
-      await paymentSettingsApi.updateStripeLive({
+      const updated = await paymentSettingsApi.updateStripeLive({
         confirmationPhrase: phrase.trim(),
         isEnabled,
         currency: 'NZD',
@@ -113,7 +130,10 @@ export default function LiveModeSettingsClient({ role }: { role?: string }) {
         webhookSecret: webhookSecret.trim() || undefined,
         successReturnBaseUrl: successUrl.trim() || null,
         cancelReturnBaseUrl: cancelUrl.trim() || null,
+        ...surchargePayload,
       })
+      setSurcharge(surchargeFormFromSetting(updated))
+      setSurchargeErrors({})
       setSecretKey('')
       setWebhookSecret('')
       setPhrase('')
@@ -125,7 +145,7 @@ export default function LiveModeSettingsClient({ role }: { role?: string }) {
       setSecretKey('')
       setWebhookSecret('')
       setPhrase('')
-      showToast(err instanceof Error ? err.message : 'Failed to save live settings.', 'error')
+      showToast(paymentSettingsSaveError(err, 'Failed to save live settings.'), 'error')
     } finally {
       setSaving(false)
     }
@@ -166,6 +186,9 @@ export default function LiveModeSettingsClient({ role }: { role?: string }) {
       </div>
     </>
   )
+  const surchargeReadiness = live
+    ? surchargeReadinessMessage(live.readinessCode, live.surchargeEnabled)
+    : null
 
   if (loading) {
     return (
@@ -234,6 +257,10 @@ export default function LiveModeSettingsClient({ role }: { role?: string }) {
                 </span>
               </div>
               <div className="flex items-center justify-between">
+                <span className="text-sm text-black/70">Card surcharge</span>
+                <span className="text-sm text-black/60">{live.surchargeEnabled ? 'Enabled' : 'Disabled'}</span>
+              </div>
+              <div className="flex items-center justify-between">
                 <span className="text-sm text-black/70">Live secret key</span>
                 <SecretConfiguredStatus configured={live.secretKeyConfigured} last4={live.secretKeyLast4} />
               </div>
@@ -242,6 +269,16 @@ export default function LiveModeSettingsClient({ role }: { role?: string }) {
                 <SecretConfiguredStatus configured={live.webhookSecretConfigured} last4={live.webhookSecretLast4} />
               </div>
             </div>
+            {surcharge && (
+              <div className="mt-4">
+                <StripeSurchargeSettingsSection
+                  mode="Live"
+                  value={surcharge}
+                  onChange={() => {}}
+                  disabled
+                />
+              </div>
+            )}
           </div>
         ) : (
           // ── Unlocked state ──────────────────────────────────────────────────────
@@ -286,6 +323,15 @@ export default function LiveModeSettingsClient({ role }: { role?: string }) {
                     {live.isEnabled ? 'Enabled' : live.isConfigured ? 'Configured · disabled' : 'Not configured'}
                   </span>
                 </div>
+                <div className="flex items-center justify-between">
+                  <span className="text-sm text-black/70">Card surcharge</span>
+                  <span className="text-sm text-black/60">{live.surchargeEnabled ? 'Enabled' : 'Disabled'}</span>
+                </div>
+                {surchargeReadiness && (
+                  <div role="alert" className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
+                    {surchargeReadiness}
+                  </div>
+                )}
                 <div className="flex items-center justify-between">
                   <span className="text-sm text-black/70">Ready for checkout</span>
                   <span className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-medium ${live.canCreateCheckoutSession ? 'bg-green-50 text-green-700' : 'bg-amber-50 text-amber-700'}`}>
@@ -353,6 +399,15 @@ export default function LiveModeSettingsClient({ role }: { role?: string }) {
                     <span className="text-sm text-black/80">Enable Stripe live payments (requires both live secrets configured)</span>
                   </label>
 
+                  {surcharge && (
+                    <StripeSurchargeSettingsSection
+                      mode="Live"
+                      value={surcharge}
+                      onChange={(next) => { setSurcharge(next); setSurchargeErrors({}) }}
+                      errors={surchargeErrors}
+                    />
+                  )}
+
                   <div>
                     <label className={labelCls}>Type <span className="font-mono text-red-600">{requiredPhrase}</span> to confirm</label>
                     <input type="text" className={inputCls} value={phrase}
@@ -387,7 +442,7 @@ export default function LiveModeSettingsClient({ role }: { role?: string }) {
       </div>
 
       {toast && (
-        <div className={`fixed bottom-6 right-6 z-50 rounded-lg px-4 py-3 text-sm text-white shadow-lg ${toastTone === 'success' ? 'bg-black' : 'bg-red-600'}`}>
+        <div role={toastTone === 'error' ? 'alert' : 'status'} className={`fixed bottom-6 right-6 z-50 rounded-lg px-4 py-3 text-sm text-white shadow-lg ${toastTone === 'success' ? 'bg-black' : 'bg-red-600'}`}>
           {toast}
         </div>
       )}

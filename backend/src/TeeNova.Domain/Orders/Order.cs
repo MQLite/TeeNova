@@ -74,6 +74,34 @@ public class Order : FullAuditedAggregateRoot<Guid>
         RecalculateTotal();
     }
 
+    /// <summary>
+    /// Creates a TRANSIENT order used solely to derive the payment requirement of a draft that has not been
+    /// created yet (Phase 3 online payment quoting). It is never inserted, never returned to a caller and
+    /// carries no items or customer data — its only purpose is to run the real
+    /// <see cref="InitializePaymentRequirement"/> rules against a server-priced total, so the quote endpoint
+    /// cannot drift from what the order will actually require the moment it is placed.
+    /// </summary>
+    public static Order CreateDraftForPaymentQuote(decimal totalAmount, DeliveryMethod? deliveryMethod)
+    {
+        if (totalAmount <= 0m)
+            throw new ArgumentOutOfRangeException(
+                nameof(totalAmount), totalAmount, "Draft total must be greater than zero.");
+
+        var order = new Order(
+            Guid.NewGuid(),
+            string.Empty,
+            string.Empty,
+            new ShippingAddress(string.Empty, string.Empty, string.Empty, null, string.Empty, "NZ"))
+        {
+            DeliveryMethod = deliveryMethod,
+        };
+
+        order.TotalAmount = totalAmount;
+        order.InitializePaymentRequirement();
+
+        return order;
+    }
+
     public void UpdateStatus(OrderStatus newStatus)
     {
         if (Status == newStatus)

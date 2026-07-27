@@ -35,6 +35,13 @@ public class PaymentProviderSettingDto
     public PaymentProviderValidationStatus LastValidationStatus      { get; set; }
     public string?                         LastValidationMessageCode { get; set; }
 
+    // Safe, non-secret Stripe surcharge configuration for this provider mode.
+    public bool                            SurchargeEnabled                 { get; set; }
+    public int                             SurchargePercentageBasisPoints   { get; set; } = StripeSurchargeDefaults.PercentageBasisPoints;
+    public decimal                         SurchargeFixedAmount             { get; set; } = StripeSurchargeDefaults.FixedAmount;
+    public string                          SurchargeDisclosureText          { get; set; } = StripeSurchargeDefaults.DisclosureText;
+    public string                          SurchargeCalculationVersion      { get; set; } = StripeSurchargeDefaults.CalculationVersion;
+
     // ── Readiness signals (Jira 9903) — all safe/non-secret ──────────────────────────────────────────
 
     /// <summary>True when a persisted Stripe/Test settings row exists (vs. the default empty view).</summary>

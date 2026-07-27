@@ -24,6 +24,9 @@
   <ItemGroup>
     <ProjectReference Include="..\..\src\TeeNova.Application\TeeNova.Application.csproj" />
     <ProjectReference Include="..\..\src\TeeNova.HttpApi\TeeNova.HttpApi.csproj" />
+    <!-- Referenced so the surcharge column mapping can be asserted against the real entity type
+         configuration, without ever touching a database. -->
+    <ProjectReference Include="..\..\src\TeeNova.EntityFrameworkCore\TeeNova.EntityFrameworkCore.csproj" />
   </ItemGroup>
 
 </Project>

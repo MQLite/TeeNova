@@ -1,6 +1,8 @@
 using System;
+using System.Collections.Generic;
 using System.Threading.Tasks;
 using TeeNova.Orders.Dtos;
+using TeeNova.Payments.Dtos;
 using Volo.Abp.Application.Dtos;
 using Volo.Abp.Application.Services;
 
@@ -10,6 +12,7 @@ public interface IOrderAppService : IApplicationService
 {
     Task<OrderDto> CreateAsync(CreateOrderDto input);
     Task<OrderDto> GetAsync(Guid id);
+    Task<List<AdminOnlinePaymentSessionDto>> GetAdminOnlinePaymentSessionsAsync(Guid id);
     Task<PagedResultDto<OrderDto>> GetListAsync(GetOrdersInput input);
     Task DeleteAsync(Guid id);
     Task<OrderDto> UpdateStatusAsync(Guid id, UpdateOrderStatusDto input);
@@ -25,6 +28,11 @@ public interface IOrderAppService : IApplicationService
     Task<OrderDto> CompleteAsync(Guid id);
     Task<OrderDto> RecordPaymentAsync(Guid id, RecordPaymentDto input);
     Task<OnlinePaymentSessionDto> CreateOnlinePaymentSessionAsync(Guid id, CreateOnlinePaymentSessionDto input);
+
+    // Online payment quoting (Phase 3): read-only surcharge disclosure before any payment session exists.
+    // Neither call creates an order, a payment session or a payment record, and neither contacts a provider.
+    Task<OnlinePaymentQuoteDto> GetOnlinePaymentQuoteAsync(Guid id, CreateOnlinePaymentQuoteDto input);
+    Task<OnlinePaymentQuoteDto> GetDraftOnlinePaymentQuoteAsync(CreateDraftOnlinePaymentQuoteDto input);
     Task<OrderDto> AdjustPriceAsync(Guid id, AdjustOrderPriceDto input);
 
     // Admin order-content edit (Jira 9405): preview (no persistence) + save (reprice + persist).

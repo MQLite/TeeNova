@@ -1,12 +1,22 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { useCartStore } from '@/features/cart/cart-store'
 import { useCartPricing } from '@/features/cart/useCartPricing'
+import { buildOrderItemPayloads, draftQuoteSignature } from '@/features/checkout/order-item-payload'
+import {
+  chargedAmountOf,
+  isStripePaymentBlocked,
+  usableQuoteFingerprint,
+} from '@/features/checkout/online-payment-quote-state'
+import { useOnlinePaymentQuote } from '@/features/checkout/useOnlinePaymentQuote'
 import { ordersApi } from '@/api/orders'
+import { formatPaymentAmount } from '@/lib/money'
+import { classifySessionError, requiresFreshQuote } from '@/lib/payment-errors'
 import { Button } from '@/components/ui/Button'
+import { OnlinePaymentQuoteSummary } from '@/components/checkout/OnlinePaymentQuoteSummary'
 import { PaymentRequirementSummary } from '@/components/checkout/PaymentRequirementSummary'
 import type { CartItem, DeliveryMethod, PaymentProvider, ShippingAddress } from '@/types'
 
@@ -42,6 +52,9 @@ export default function CheckoutPage() {
   const [submitted, setSubmitted] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [sessionError, setSessionError] = useState<string | null>(null)
+  // True when the session failed because the card total needs re-confirming (quote required/stale),
+  // rather than a generic payment failure — the recovery wording and link differ.
+  const [sessionErrorNeedsReview, setSessionErrorNeedsReview] = useState(false)
   const [createdOrderId, setCreatedOrderId] = useState<string | null>(null)
   const [deliveryMethod, setDeliveryMethod] = useState<DeliveryMethod>('Pickup')
   const [paymentMethod, setPaymentMethod] = useState<'manual' | 'online'>('manual')
@@ -72,6 +85,32 @@ export default function CheckoutPage() {
   )
   const hasQuoteOnlyItems = quoteOnlyItems.length > 0
 
+  // ── Server-authoritative Stripe payment quote (surcharge, Phase 4) ────────────
+  // Requested only for an online Stripe payment on a payable cart. Every amount and the disclosure come
+  // from the backend; the browser keeps nothing but the fingerprint of the quote it actually displayed.
+  const stripeSelected = paymentMethod === 'online' && onlineProvider === 'Stripe'
+  const quoteEnabled = stripeSelected && items.length > 0 && !hasQuoteOnlyItems && !submitted
+
+  const quoteSignature = useMemo(
+    () => draftQuoteSignature(items, deliveryMethod, onlineProvider),
+    [items, deliveryMethod, onlineProvider],
+  )
+
+  const { state: quoteState } = useOnlinePaymentQuote({
+    enabled: quoteEnabled,
+    signature: quoteSignature,
+    fetchQuote: () =>
+      ordersApi.getDraftOnlinePaymentQuote({
+        provider: onlineProvider,
+        deliveryMethod,
+        items: buildOrderItemPayloads(items),
+      }),
+  })
+
+  // Stripe cannot be paid while its quote is missing, loading or failed.
+  const stripeBlocked = stripeSelected && isStripePaymentBlocked(quoteState)
+  const stripeChargedAmount = chargedAmountOf(quoteState)
+
   useEffect(() => {
     if (items.length === 0 && !submitted) {
       router.replace('/cart')
@@ -101,9 +140,23 @@ export default function CheckoutPage() {
       return
     }
 
+    // Stripe requires a currently displayed, successfully loaded quote before anything is created.
+    if (stripeBlocked) {
+      setError(
+        quoteState.errorMessage ??
+          'We’re still calculating the secure card payment total. Please wait a moment and try again.',
+      )
+      return
+    }
+
+    // Snapshot the fingerprint of the quote on screen right now. Null when the surcharge is disabled,
+    // which keeps the pre-surcharge flow working unchanged.
+    const paymentQuoteFingerprint = usableQuoteFingerprint(quoteState)
+
     setSubmitPhase('creating-order')
     setError(null)
     setSessionError(null)
+    setSessionErrorNeedsReview(false)
 
     try {
       const order = await ordersApi.create({
@@ -120,40 +173,9 @@ export default function CheckoutPage() {
         },
         // Badge and FixedSize Banner send item-level design + no variant + no prints; garment unchanged
         // (Jira 9504/9517). FixedSize Banner additionally carries its bannerDetail (sizePresetId + config).
-        // No path sends price fields — the backend is the sole pricing authority.
-        items: items.map((item) => {
-          if (item.kind === 'Banner' && item.pricingModel === 'FixedSize') {
-            return {
-              productId: item.productId,
-              quantity: item.quantity,
-              uploadedAssetId: item.uploadedAssetId,
-              uploadedAssetUrl: item.uploadedAssetUrl,
-              designNote: item.designNote,
-              bannerDetail: item.bannerDetail,
-            }
-          }
-          if (item.kind === 'Badge') {
-            return {
-              productId: item.productId,
-              quantity: item.quantity,
-              uploadedAssetId: item.uploadedAssetId,
-              uploadedAssetUrl: item.uploadedAssetUrl,
-              designNote: item.designNote,
-            }
-          }
-          return {
-            productId: item.productId,
-            productVariantId: item.productVariantId,
-            quantity: item.quantity,
-            prints: (item.prints ?? []).map((print) => ({
-              printAreaId: print.printAreaId,
-              printSizeId: print.printSizeId,
-              uploadedAssetId: print.uploadedAssetId,
-              uploadedAssetUrl: print.uploadedAssetUrl,
-              designNote: print.designNote,
-            })),
-          }
-        }),
+        // No path sends price fields — the backend is the sole pricing authority. The exact same builder
+        // feeds the draft payment quote, so the quote and the order are priced from identical input.
+        items: buildOrderItemPayloads(items),
         deliveryMethod,
       })
 
@@ -169,16 +191,24 @@ export default function CheckoutPage() {
       // Online payment: create a hosted checkout session then redirect.
       setSubmitPhase('creating-session')
       try {
-        const session = await ordersApi.createOnlinePaymentSession(order.id, { provider: onlineProvider })
+        const session = await ordersApi.createOnlinePaymentSession(order.id, {
+          provider: onlineProvider,
+          // The ONLY payment field the browser contributes. No amount, rate, fee, mode or version.
+          ...(paymentQuoteFingerprint ? { paymentQuoteFingerprint } : {}),
+        })
         setSubmitPhase('redirecting')
         window.location.href = session.providerCheckoutUrl
         // Navigation initiated: do not reset submitPhase.
       } catch (sessionErr) {
-        setSessionError(
-          sessionErr instanceof Error
-            ? sessionErr.message
-            : 'The online payment session could not be created. Your order has been placed; you can arrange payment manually with the shop.',
+        // The order already exists, so the surcharge cases cannot be retried by re-submitting this form.
+        // Never redirect at an undisclosed amount: surface the reason and hand the customer to the order
+        // payment page, which fetches a fresh quote and requires another deliberate click.
+        const classified = classifySessionError(
+          sessionErr,
+          'The online payment session could not be created. Your order has been placed; you can arrange payment manually with the shop.',
         )
+        setSessionError(classified.message)
+        setSessionErrorNeedsReview(requiresFreshQuote(classified.kind))
         setCreatedOrderId(order.id)
         setSubmitPhase('idle')
       }
@@ -192,6 +222,13 @@ export default function CheckoutPage() {
     if (submitPhase === 'creating-order')   return 'Creating order...'
     if (submitPhase === 'creating-session') return 'Creating payment session...'
     if (submitPhase === 'redirecting')      return 'Redirecting to payment...'
+
+    // With a ready surcharged quote the button states the exact total Stripe will charge, taken straight
+    // from the backend's chargedAmount (never base + surcharge computed here).
+    if (stripeSelected && stripeChargedAmount != null && quoteState.quote?.surchargeEnabled) {
+      return `Place order and pay ${formatPaymentAmount(stripeChargedAmount, quoteState.quote.currency)}`
+    }
+
     return paymentMethod === 'online' ? 'Place Order & Continue to Payment' : 'Place Order'
   }
 
@@ -432,6 +469,11 @@ export default function CheckoutPage() {
                     deliveryMethod={deliveryMethod}
                     totalAmount={subtotal}
                   />
+
+                  {/* Card-payment breakdown + the exact server disclosure, shown directly beneath the
+                      payment options and above the submit button. Renders nothing unless Stripe is
+                      selected and the backend actually returned an enabled surcharge. */}
+                  {stripeSelected && <OnlinePaymentQuoteSummary state={quoteState} />}
                 </div>
               </div>
 
@@ -455,9 +497,23 @@ export default function CheckoutPage() {
 
               {/* Session creation error */}
               {sessionError && (
-                <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800 space-y-2">
+                <div
+                  role="alert"
+                  className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800 space-y-2"
+                >
                   <p>{sessionError}</p>
-                  {createdOrderId && (
+                  {createdOrderId && sessionErrorNeedsReview && (
+                    <>
+                      <p>
+                        Your order has been placed and nothing has been charged. Open your order to see the
+                        current card payment total and continue when you’re ready.
+                      </p>
+                      <Link href={`/orders/${createdOrderId}`} className="inline-block underline">
+                        Review the updated amount and pay
+                      </Link>
+                    </>
+                  )}
+                  {createdOrderId && !sessionErrorNeedsReview && (
                     <Link
                       href={`/checkout/success?orderId=${createdOrderId}`}
                       className="inline-block underline"
@@ -571,7 +627,15 @@ export default function CheckoutPage() {
                     className="w-full"
                     size="lg"
                     loading={isSubmitting}
-                    disabled={isSubmitting || pricingLoading || !pricingComplete || hasQuoteOnlyItems || (submitted && !!sessionError)}
+                    disabled={
+                      isSubmitting ||
+                      pricingLoading ||
+                      !pricingComplete ||
+                      hasQuoteOnlyItems ||
+                      // Stripe selected but its server quote is missing, loading or failed.
+                      stripeBlocked ||
+                      (submitted && !!sessionError)
+                    }
                   >
                     {getSubmitLabel()}
                   </Button>

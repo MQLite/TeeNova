@@ -23,6 +23,11 @@ namespace TeeNova.Payments;
 /// </summary>
 public class PaymentProviderSetting : FullAuditedAggregateRoot<Guid>
 {
+    public const int     DefaultSurchargePercentageBasisPoints = StripeSurchargeDefaults.PercentageBasisPoints;
+    public const decimal DefaultSurchargeFixedAmount           = StripeSurchargeDefaults.FixedAmount;
+    public const int     MaxSurchargeDisclosureLength          = StripeSurchargeDefaults.MaxDisclosureTextLength;
+    public const string  DefaultSurchargeDisclosureText        = StripeSurchargeDefaults.DisclosureText;
+
     public PaymentProvider                  Provider                  { get; private set; }
     public PaymentProviderMode              Mode                      { get; private set; }
     public bool                             IsEnabled                 { get; private set; }
@@ -45,6 +50,12 @@ public class PaymentProviderSetting : FullAuditedAggregateRoot<Guid>
     public PaymentProviderValidationStatus  LastValidationStatus      { get; private set; }
     public string?                          LastValidationMessageCode { get; private set; }
 
+    public bool                             SurchargeEnabled                 { get; private set; }
+    public int                              SurchargePercentageBasisPoints   { get; private set; }
+    public decimal                          SurchargeFixedAmount             { get; private set; }
+    public string                           SurchargeDisclosureText          { get; private set; } = DefaultSurchargeDisclosureText;
+    public string                           SurchargeCalculationVersion      { get; private set; } = StripeSurchargeCalculator.CurrentCalculationVersion;
+
     protected PaymentProviderSetting() { }
 
     public PaymentProviderSetting(Guid id, PaymentProvider provider, PaymentProviderMode mode) : base(id)
@@ -60,6 +71,11 @@ public class PaymentProviderSetting : FullAuditedAggregateRoot<Guid>
         IsEnabled            = false;
         Currency             = "NZD";
         LastValidationStatus = PaymentProviderValidationStatus.NotValidated;
+        SurchargeEnabled               = false;
+        SurchargePercentageBasisPoints = DefaultSurchargePercentageBasisPoints;
+        SurchargeFixedAmount           = DefaultSurchargeFixedAmount;
+        SurchargeDisclosureText        = DefaultSurchargeDisclosureText;
+        SurchargeCalculationVersion    = StripeSurchargeCalculator.CurrentCalculationVersion;
     }
 
     public bool HasSecretKey     => !string.IsNullOrWhiteSpace(SecretKeyCipherText);
@@ -78,6 +94,82 @@ public class PaymentProviderSetting : FullAuditedAggregateRoot<Guid>
         PublishableKey       = Normalize(publishableKey);
         SuccessReturnBaseUrl = Normalize(successReturnBaseUrl);
         CancelReturnBaseUrl  = Normalize(cancelReturnBaseUrl);
+    }
+
+    /// <summary>Atomically applies structurally valid Stripe surcharge settings for this provider mode.</summary>
+    public void ConfigureSurcharge(
+        bool    enabled,
+        int     percentageBasisPoints,
+        decimal fixedAmount,
+        string  disclosureText,
+        string  calculationVersion)
+    {
+        if (percentageBasisPoints < 0 || percentageBasisPoints >= 10_000)
+            throw new ArgumentOutOfRangeException(
+                nameof(percentageBasisPoints),
+                percentageBasisPoints,
+                "Percentage basis points must be between 0 and 9,999.");
+
+        if (fixedAmount < 0 || fixedAmount != decimal.Round(fixedAmount, 2, MidpointRounding.ToEven))
+            throw new ArgumentOutOfRangeException(
+                nameof(fixedAmount), fixedAmount, "Fixed amount must be non-negative and exactly cent-aligned.");
+
+        if (string.IsNullOrWhiteSpace(disclosureText))
+            throw new ArgumentException("Disclosure text is required.", nameof(disclosureText));
+
+        var normalizedDisclosure = disclosureText.Trim();
+        if (normalizedDisclosure.Length > MaxSurchargeDisclosureLength)
+            throw new ArgumentException(
+                $"Disclosure text must not exceed {MaxSurchargeDisclosureLength} characters.",
+                nameof(disclosureText));
+
+        if (!string.Equals(
+                calculationVersion?.Trim(),
+                StripeSurchargeCalculator.CurrentCalculationVersion,
+                StringComparison.Ordinal))
+        {
+            throw new ArgumentException("Unsupported surcharge calculation version.", nameof(calculationVersion));
+        }
+
+        SurchargeEnabled               = enabled;
+        SurchargePercentageBasisPoints = percentageBasisPoints;
+        SurchargeFixedAmount           = fixedAmount;
+        SurchargeDisclosureText        = normalizedDisclosure;
+        SurchargeCalculationVersion    = StripeSurchargeCalculator.CurrentCalculationVersion;
+    }
+
+    /// <summary>
+    /// Returns a safe machine-readable validation code for an enabled persisted surcharge, or null when
+    /// disabled/valid. This also defends readiness/runtime resolution against data that bypassed domain writes.
+    /// </summary>
+    public string? GetSurchargeValidationCode()
+    {
+        if (!SurchargeEnabled)
+            return null;
+
+        if (SurchargePercentageBasisPoints < 0 || SurchargePercentageBasisPoints >= 10_000)
+            return "SurchargeRateInvalid";
+
+        if (SurchargeFixedAmount < 0 ||
+            SurchargeFixedAmount != decimal.Round(SurchargeFixedAmount, 2, MidpointRounding.ToEven))
+            return "SurchargeFixedAmountInvalid";
+
+        if (string.IsNullOrWhiteSpace(SurchargeDisclosureText))
+            return "SurchargeDisclosureMissing";
+
+        if (SurchargeDisclosureText.Trim().Length > MaxSurchargeDisclosureLength)
+            return "SurchargeDisclosureInvalid";
+
+        if (!string.Equals(
+                SurchargeCalculationVersion,
+                StripeSurchargeCalculator.CurrentCalculationVersion,
+                StringComparison.Ordinal))
+            return "SurchargeCalculationVersionUnsupported";
+
+        if (!string.Equals(Currency, "NZD", StringComparison.Ordinal))
+            return "SurchargeCurrencyInvalid";
+
+        return null;
     }
 
     /// <summary>Stores an already-encrypted secret key plus its non-secret last-4 fragment (rotation-safe).</summary>

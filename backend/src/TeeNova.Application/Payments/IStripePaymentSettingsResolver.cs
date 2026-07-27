@@ -16,11 +16,36 @@ namespace TeeNova.Payments;
 public interface IStripePaymentSettingsResolver
 {
     /// <summary>
+    /// Resolves one internally consistent snapshot (credentials + surcharge settings) from a single
+    /// <c>(Provider=Stripe, Mode=active)</c> row, with no Test↔Live fallback. Throws fail-closed when the
+    /// credentials or an ENABLED surcharge configuration are invalid.
+    ///
+    /// Added in Phase 2A and not yet consumed by checkout — <see cref="ResolveSecretKeyForCheckoutAsync"/>
+    /// remains the path the Stripe provider uses, so no existing payment behaviour changes in this phase.
+    /// </summary>
+    Task<ResolvedStripePaymentSettings> ResolveForCheckoutAsync(
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
     /// Resolves the decrypted Stripe secret key for creating/expiring a checkout session. Throws an ABP
     /// <see cref="Volo.Abp.BusinessException"/> (fail-closed) when no enabled, valid, decryptable Test-mode
     /// configuration exists.
     /// </summary>
     Task<string> ResolveSecretKeyForCheckoutAsync(CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Best-effort resolution of the secret key for one EXACT provider mode, used only to expire a stale
+    /// provider session that was created under that mode (Phase 3). Returns <c>null</c> instead of throwing
+    /// when the row is absent or its key is undecryptable/malformed, because expiration is advisory.
+    ///
+    /// Deliberately independent of the active-mode switch and of <c>IsEnabled</c>: a session created under a
+    /// mode that has since been switched away or disabled still needs expiring, and doing so can only CLOSE a
+    /// payment window — it grants no ability to create a charge. There is no cross-mode fallback: a mode with
+    /// no usable key resolves to null.
+    /// </summary>
+    Task<string?> TryResolveSecretKeyForModeAsync(
+        PaymentProviderMode mode,
+        CancellationToken   cancellationToken = default);
 
     /// <summary>
     /// Resolves the decrypted Stripe webhook signing secret for signature verification, or <c>null</c> when

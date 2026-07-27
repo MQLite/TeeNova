@@ -141,7 +141,10 @@ public class OrderEmailNotificationService : IOrderEmailNotificationService
         await SendWithLoggingAsync(order.Id, eventType, recipient, subject, htmlBody, textBody, settings);
     }
 
-    public async Task SendPaymentReceiptAsync(Order order, PaymentTransaction transaction)
+    public async Task SendPaymentReceiptAsync(
+        Order                          order,
+        PaymentTransaction             transaction,
+        PaymentSurchargeReceiptDetail? surcharge = null)
     {
         var settings  = await _settingsProvider.GetEffectiveSettingsAsync();
         var recipient = order.CustomerEmail;
@@ -163,7 +166,8 @@ public class OrderEmailNotificationService : IOrderEmailNotificationService
             return;
         }
 
-        var (subject, htmlBody, textBody) = OrderEmailTemplates.BuildPaymentReceiptEmail(order, transaction, settings);
+        var (subject, htmlBody, textBody) =
+            OrderEmailTemplates.BuildPaymentReceiptEmail(order, transaction, settings, surcharge);
 
         await SendWithLoggingAsync(
             order.Id, eventType, recipient, subject, htmlBody, textBody, settings, transaction.Id);

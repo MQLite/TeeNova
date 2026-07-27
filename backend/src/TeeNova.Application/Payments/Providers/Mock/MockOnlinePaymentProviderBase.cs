@@ -71,10 +71,12 @@ public abstract class MockOnlinePaymentProviderBase : IOnlinePaymentProvider
     }
 
     public Task ExpireSessionAsync(
-        string            providerSessionId,
-        CancellationToken cancellationToken = default)
+        string               providerSessionId,
+        PaymentProviderMode? providerMode      = null,
+        CancellationToken    cancellationToken = default)
     {
-        // Mock providers hold no external session state; local cancellation is authoritative.
+        // Mock providers hold no external session state and no per-mode credentials, so the stored
+        // provider mode is irrelevant here. Local cancellation is authoritative.
         // No-op so the superseded/stale-session flow (Jira 9804) behaves consistently in Development.
         return Task.CompletedTask;
     }

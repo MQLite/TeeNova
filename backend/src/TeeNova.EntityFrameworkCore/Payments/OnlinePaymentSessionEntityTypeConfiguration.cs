@@ -60,6 +60,39 @@ public class OnlinePaymentSessionEntityTypeConfiguration
         builder.Property(e => e.PaymentTransactionId)
             .IsRequired(false);
 
+        // ── Immutable pricing snapshot (Phase 2B) ────────────────────────────
+        // BaseAmount and SurchargeAmount deliberately match the existing Amount precision so no historical
+        // value is ever converted or re-rounded. BaseAmount carries no store default: the migration backfills
+        // it from Amount rather than letting existing rows fall to zero.
+        builder.Property(e => e.BaseAmount)
+            .IsRequired()
+            .HasColumnType("decimal(18,4)");
+
+        builder.Property(e => e.SurchargeAmount)
+            .IsRequired()
+            .HasColumnType("decimal(18,4)")
+            .HasDefaultValue(0m);
+
+        builder.Property(e => e.SurchargePercentageBasisPoints)
+            .IsRequired()
+            .HasDefaultValue(0);
+
+        builder.Property(e => e.SurchargeFixedAmount)
+            .IsRequired()
+            .HasColumnType("decimal(18,2)")
+            .HasDefaultValue(0m);
+
+        builder.Property(e => e.SurchargeCalculationVersion)
+            .IsRequired()
+            .HasMaxLength(OnlinePaymentSession.MaxCalculationVersionLength)
+            .HasDefaultValue(OnlinePaymentSession.LegacyCalculationVersion);
+
+        // Nullable: the Test/Live mode of a historical session cannot be proven from stored data.
+        builder.Property(e => e.ProviderMode)
+            .IsRequired(false)
+            .HasConversion<string>()
+            .HasMaxLength(32);
+
         builder.HasIndex(e => e.OrderId)
             .HasDatabaseName("IX_OnlinePaymentSessions_OrderId");
 

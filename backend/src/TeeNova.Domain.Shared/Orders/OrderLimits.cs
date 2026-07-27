@@ -13,4 +13,12 @@ public static class OrderLimits
     /// while blocking nuisance/overflow-scale quantities.
     /// </summary>
     public const int MaxOrderItemQuantity = 1000;
+
+    /// <summary>
+    /// Hard ceiling on the number of item lines accepted by the anonymous draft payment-quote endpoint
+    /// (Phase 3). The quote endpoint prices a whole draft without persisting anything, so it needs its own
+    /// work bound in addition to the shared per-IP rate limit and request-size cap. Comfortably above any
+    /// realistic cart while blocking a pricing-amplification payload.
+    /// </summary>
+    public const int MaxDraftQuoteItems = 50;
 }

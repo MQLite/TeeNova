@@ -5,6 +5,8 @@ import { Card, CardHeader, CardBody } from '@/components/ui/Card'
 import { Button } from '@/components/ui/Button'
 import { formatNzDateTime } from '@/lib/datetime'
 import type { ManualPaymentMethod, Order, PaymentStatus } from '@/types'
+import type { AdminOnlinePaymentSession } from '@/types'
+import { AdminOnlinePaymentSessionCard } from './AdminOnlinePaymentSessionCard'
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -66,11 +68,12 @@ function AmountRow({
 
 interface Props {
   order: Order
+  onlinePaymentSessions: AdminOnlinePaymentSession[]
   onRecordPayment: () => void
   onAdjustPrice: () => void
 }
 
-export function PaymentSection({ order, onRecordPayment, onAdjustPrice }: Props) {
+export function PaymentSection({ order, onlinePaymentSessions, onRecordPayment, onAdjustPrice }: Props) {
   const {
     paymentStatus,
     paymentRequirementType,
@@ -160,9 +163,9 @@ export function PaymentSection({ order, onRecordPayment, onAdjustPrice }: Props)
           {isDeposit && requiredDepositAmount != null && (
             <AmountRow label="Required Deposit" value={formatMoney(requiredDepositAmount)} />
           )}
-          <AmountRow label="Paid Amount" value={formatMoney(paidAmount)} />
+          <AmountRow label="Commercial Paid Amount" value={formatMoney(paidAmount)} />
           <div className="border-t border-black/[0.06] pt-2">
-            <AmountRow label="Balance Due" value={formatMoney(balanceAmount)} highlight />
+            <AmountRow label="Commercial Balance Due" value={formatMoney(balanceAmount)} highlight />
           </div>
         </div>
 
@@ -278,6 +281,7 @@ export function PaymentSection({ order, onRecordPayment, onAdjustPrice }: Props)
                       {METHOD_LABELS[txn.method]}
                     </span>
                   </div>
+                  <p className="text-[11px] text-black/45">Commercial payment transaction</p>
                   <p className="font-mono text-[10px] text-black/35 tracking-[0.02em]">
                     {formatDate(txn.creationTime)}
                   </p>
@@ -292,6 +296,19 @@ export function PaymentSection({ order, onRecordPayment, onAdjustPrice }: Props)
                     </p>
                   )}
                 </div>
+              ))}
+            </div>
+          )}
+        </div>
+
+        <div className="border-t border-black/[0.06] pt-4">
+          <p className="mb-2 font-mono text-[10px] uppercase tracking-[0.54px] text-black/40">Online Payment Attempts</p>
+          {onlinePaymentSessions.length === 0 ? (
+            <p className="text-xs text-black/40">No online payment attempts have been created for this order.</p>
+          ) : (
+            <div className="space-y-3">
+              {onlinePaymentSessions.map((attempt, index) => (
+                <AdminOnlinePaymentSessionCard key={attempt.id} attempt={attempt} latest={index === 0} />
               ))}
             </div>
           )}

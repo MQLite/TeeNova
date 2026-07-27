@@ -28,7 +28,7 @@ import { OrderContentEditModal } from '@/components/admin/OrderContentEditModal'
 import { DownloadDesignButton } from '@/components/orders/DownloadDesignButton'
 import { DownloadProductionPdfButton } from '@/components/admin/DownloadProductionPdfButton'
 import { BannerDetailSummary } from '@/components/products/BannerDetailSummary'
-import type { AdjustOrderPriceInput, Order, OrderItem, OrderPrintGroup, OrderPrintGroupRow, OrderStatus, RecordPaymentInput } from '@/types'
+import type { AdminOnlinePaymentSession, AdjustOrderPriceInput, Order, OrderItem, OrderPrintGroup, OrderPrintGroupRow, OrderStatus, RecordPaymentInput } from '@/types'
 import clsx from 'clsx'
 
 // 鈹€鈹€ Constants 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
@@ -232,6 +232,7 @@ export default function AdminOrderDetailPage() {
   const { id } = useParams<{ id: string }>()
   const router = useRouter()
   const [order, setOrder] = useState<Order | null>(null)
+  const [onlinePaymentSessions, setOnlinePaymentSessions] = useState<AdminOnlinePaymentSession[]>([])
   const [loading, setLoading] = useState(true)
   const [updating, setUpdating] = useState(false)
   const [deleting, setDeleting] = useState(false)
@@ -243,8 +244,14 @@ export default function AdminOrderDetailPage() {
   const [toastTone, setToastTone] = useState<'success' | 'error'>('success')
 
   useEffect(() => {
-    ordersApi.getById(id)
-      .then(setOrder)
+    Promise.all([
+      ordersApi.getById(id),
+      ordersApi.getAdminOnlinePaymentSessions(id),
+    ])
+      .then(([orderData, sessions]) => {
+        setOrder(orderData)
+        setOnlinePaymentSessions(sessions)
+      })
       .catch((err) => { if (err instanceof ApiError && err.status === 401) redirectToLogin('session-expired') })
       .finally(() => setLoading(false))
   }, [id])
@@ -725,6 +732,7 @@ export default function AdminOrderDetailPage() {
           {/* Payment */}
           <PaymentSection
             order={order}
+            onlinePaymentSessions={onlinePaymentSessions}
             onRecordPayment={() => setRecordPaymentOpen(true)}
             onAdjustPrice={() => setAdjustPriceOpen(true)}
           />

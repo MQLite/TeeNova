@@ -80,7 +80,13 @@ public class PaymentProviderSettingsAppService : ApplicationService, IPaymentPro
         Check.NotNull(input, nameof(input));
         return SaveAsync(PaymentProviderMode.Test, new SaveInput(
             input.IsEnabled, input.Currency, input.PublishableKey, input.SecretKey,
-            input.WebhookSecret, input.SuccessReturnBaseUrl, input.CancelReturnBaseUrl));
+            input.WebhookSecret, input.SuccessReturnBaseUrl, input.CancelReturnBaseUrl,
+            new StripeSurchargeSettingsUpdate(
+                input.SurchargeEnabled,
+                input.SurchargePercentageBasisPoints,
+                input.SurchargeFixedAmount,
+                input.SurchargeDisclosureText,
+                input.SurchargeCalculationVersion)));
     }
 
     public Task<PaymentProviderSettingDto> UpdateStripeLiveAsync(UpdateStripeLiveSettingsDto input)
@@ -100,7 +106,13 @@ public class PaymentProviderSettingsAppService : ApplicationService, IPaymentPro
 
         return SaveAsync(PaymentProviderMode.Live, new SaveInput(
             input.IsEnabled, input.Currency, input.PublishableKey, input.SecretKey,
-            input.WebhookSecret, input.SuccessReturnBaseUrl, input.CancelReturnBaseUrl));
+            input.WebhookSecret, input.SuccessReturnBaseUrl, input.CancelReturnBaseUrl,
+            new StripeSurchargeSettingsUpdate(
+                input.SurchargeEnabled,
+                input.SurchargePercentageBasisPoints,
+                input.SurchargeFixedAmount,
+                input.SurchargeDisclosureText,
+                input.SurchargeCalculationVersion)));
     }
 
     public Task<PaymentProviderSettingDto> DisableStripeTestAsync() => DisableAsync(PaymentProviderMode.Test);
@@ -127,6 +139,13 @@ public class PaymentProviderSettingsAppService : ApplicationService, IPaymentPro
             SecretKeyConfigured            = setting?.HasSecretKey     ?? false,
             WebhookSecretConfigured        = setting?.HasWebhookSecret ?? false,
             ReturnUrlsValid                = readiness.ReturnUrlsValid,
+            SurchargeEnabled               = setting?.SurchargeEnabled ?? false,
+            SurchargePercentageBasisPoints = setting?.SurchargePercentageBasisPoints ?? StripeSurchargeDefaults.PercentageBasisPoints,
+            SurchargeFixedAmount           = setting?.SurchargeFixedAmount ?? StripeSurchargeDefaults.FixedAmount,
+            SurchargeDisclosureText        = setting?.SurchargeDisclosureText ?? StripeSurchargeDefaults.DisclosureText,
+            SurchargeCalculationVersion    = setting?.SurchargeCalculationVersion ?? StripeSurchargeDefaults.CalculationVersion,
+            SurchargeConfigurationValid    = readiness.SurchargeValidationCode is null,
+            SurchargeValidationCode        = readiness.SurchargeValidationCode,
             CanCreateCheckoutSession       = readiness.CanCreate,
             EncryptionPassphraseConfigured = EncryptionPassphraseConfigured,
             LiveModeBlocked                = !LiveConfigurationUnlocked,
@@ -143,7 +162,8 @@ public class PaymentProviderSettingsAppService : ApplicationService, IPaymentPro
         string? SecretKey,
         string? WebhookSecret,
         string? SuccessReturnBaseUrl,
-        string? CancelReturnBaseUrl);
+        string? CancelReturnBaseUrl,
+        StripeSurchargeSettingsUpdate Surcharge);
 
     private async Task<PaymentProviderSettingDto> SaveAsync(PaymentProviderMode mode, SaveInput input)
     {
@@ -186,6 +206,21 @@ public class PaymentProviderSettingsAppService : ApplicationService, IPaymentPro
         var setting = await FindAsync(mode);
         var isNew   = setting is null;
         setting ??= new PaymentProviderSetting(GuidGenerator.Create(), PaymentProvider.Stripe, mode);
+
+        var oldSurchargeEnabled    = setting.SurchargeEnabled;
+        var oldSurchargeRate       = setting.SurchargePercentageBasisPoints;
+        var oldSurchargeFixed      = setting.SurchargeFixedAmount;
+        var oldSurchargeVersion    = setting.SurchargeCalculationVersion;
+        var oldSurchargeDisclosure = setting.SurchargeDisclosureText;
+
+        StripeSurchargeSettingsUpdatePolicy.Apply(setting, input.Surcharge);
+
+        var surchargeChanged =
+            oldSurchargeEnabled != setting.SurchargeEnabled ||
+            oldSurchargeRate != setting.SurchargePercentageBasisPoints ||
+            oldSurchargeFixed != setting.SurchargeFixedAmount ||
+            !string.Equals(oldSurchargeVersion, setting.SurchargeCalculationVersion, StringComparison.Ordinal) ||
+            !string.Equals(oldSurchargeDisclosure, setting.SurchargeDisclosureText, StringComparison.Ordinal);
 
         setting.ConfigureStripe(
             currency,
@@ -244,6 +279,27 @@ public class PaymentProviderSettingsAppService : ApplicationService, IPaymentPro
             setting.HasWebhookSecret ? $"configured(••••{setting.WebhookSecretLast4})" : "missing",
             setting.Currency);
 
+        if (surchargeChanged)
+        {
+            _logger.LogInformation(
+                "[PaymentSettings] Stripe surcharge settings changed by {ActorId} for {Provider}/{Mode}. " +
+                "Enabled {OldEnabled}->{NewEnabled}; RateBps {OldRate}->{NewRate}; " +
+                "FixedAmount {OldFixed}->{NewFixed}; CalculationVersion {OldVersion}->{NewVersion}; " +
+                "DisclosureChanged {DisclosureChanged}.",
+                CurrentUser.Id?.ToString() ?? "unavailable",
+                setting.Provider,
+                mode,
+                oldSurchargeEnabled,
+                setting.SurchargeEnabled,
+                oldSurchargeRate,
+                setting.SurchargePercentageBasisPoints,
+                oldSurchargeFixed,
+                setting.SurchargeFixedAmount,
+                oldSurchargeVersion,
+                setting.SurchargeCalculationVersion,
+                !string.Equals(oldSurchargeDisclosure, setting.SurchargeDisclosureText, StringComparison.Ordinal));
+        }
+
         return BuildDto(setting, mode);
     }
 
@@ -296,28 +352,16 @@ public class PaymentProviderSettingsAppService : ApplicationService, IPaymentPro
     private bool EncryptionPassphraseConfigured
         => !string.IsNullOrWhiteSpace(_configuration["Encryption:PassPhrase"]);
 
-    private readonly record struct Readiness(
-        string                          Code,
-        List<string>                    Missing,
-        bool                            CanCreate,
-        bool                            ReturnUrlsValid,
-        PaymentProviderValidationStatus Status);
-
     /// <summary>
     /// Static (offline) readiness evaluation — never calls Stripe, never touches secrets beyond the
     /// configured/last-4 flags already on the entity. Produces safe machine codes only.
     /// </summary>
-    private Readiness ComputeReadiness(PaymentProviderSetting? setting)
+    private StripePaymentReadiness ComputeReadiness(PaymentProviderSetting? setting)
     {
-        var missing         = new List<string>();
         var encryptionReady = EncryptionPassphraseConfigured;
 
         if (setting is null)
-        {
-            missing.Add("NotConfigured");
-            if (!encryptionReady) missing.Add("EncryptionPassphraseNotConfigured");
-            return new Readiness("NotConfigured", missing, false, false, PaymentProviderValidationStatus.Invalid);
-        }
+            return StripePaymentReadinessEvaluator.Evaluate(null, returnUrlsValid: false, encryptionReady);
 
         // Return URLs are OPTIONAL on the persisted row — when blank, checkout falls back to the
         // 9811-startup-validated appsettings return URLs. Blank is acceptable; a present-but-malformed URL
@@ -326,25 +370,7 @@ public class PaymentProviderSettingsAppService : ApplicationService, IPaymentPro
             IsBlankOrValidReturnUrl(setting.SuccessReturnBaseUrl, "/checkout/success") &&
             IsBlankOrValidReturnUrl(setting.CancelReturnBaseUrl,  "/checkout/cancel");
 
-        if (!setting.HasSecretKey)     missing.Add("MissingSecretKey");
-        if (!setting.HasWebhookSecret) missing.Add("MissingWebhookSecret");
-        if (!returnUrlsValid)          missing.Add("InvalidReturnUrl");
-        if (!setting.IsEnabled)        missing.Add("NotEnabled");
-        // Advisory (not a hard blocker locally — the dev-default key still decrypts): surfaced as a warning.
-        if (!encryptionReady)          missing.Add("EncryptionPassphraseNotConfigured");
-
-        var configValid = setting.HasSecretKey && setting.HasWebhookSecret && returnUrlsValid;
-        var canCreate   = configValid && setting.IsEnabled;
-
-        string code;
-        PaymentProviderValidationStatus status;
-        if (!setting.HasSecretKey)          { code = "MissingSecretKey";      status = PaymentProviderValidationStatus.Invalid; }
-        else if (!setting.HasWebhookSecret) { code = "MissingWebhookSecret";  status = PaymentProviderValidationStatus.Invalid; }
-        else if (!returnUrlsValid)          { code = "InvalidReturnUrl";      status = PaymentProviderValidationStatus.Invalid; }
-        else if (!setting.IsEnabled)        { code = "ConfiguredButDisabled"; status = PaymentProviderValidationStatus.Valid;   }
-        else                                { code = "ReadyForManualSmoke";   status = PaymentProviderValidationStatus.Valid;   }
-
-        return new Readiness(code, missing, canCreate, returnUrlsValid, status);
+        return StripePaymentReadinessEvaluator.Evaluate(setting, returnUrlsValid, encryptionReady);
     }
 
     /// <summary>Absolute webhook URL when a valid backend self URL is configured; otherwise null (safe — no secrets).</summary>
@@ -438,6 +464,11 @@ public class PaymentProviderSettingsAppService : ApplicationService, IPaymentPro
             LastValidatedAt           = s?.LastValidatedAt,
             LastValidationStatus      = s?.LastValidationStatus ?? PaymentProviderValidationStatus.NotValidated,
             LastValidationMessageCode = s?.LastValidationMessageCode,
+            SurchargeEnabled                 = s?.SurchargeEnabled ?? false,
+            SurchargePercentageBasisPoints   = s?.SurchargePercentageBasisPoints ?? StripeSurchargeDefaults.PercentageBasisPoints,
+            SurchargeFixedAmount             = s?.SurchargeFixedAmount ?? StripeSurchargeDefaults.FixedAmount,
+            SurchargeDisclosureText          = s?.SurchargeDisclosureText ?? StripeSurchargeDefaults.DisclosureText,
+            SurchargeCalculationVersion      = s?.SurchargeCalculationVersion ?? StripeSurchargeDefaults.CalculationVersion,
 
             // Readiness signals (all safe/non-secret).
             IsConfigured                   = s is not null,

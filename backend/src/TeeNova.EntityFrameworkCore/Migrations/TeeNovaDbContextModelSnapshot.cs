@@ -1328,6 +1328,9 @@ namespace TeeNova.Migrations
                     b.Property<decimal>("Amount")
                         .HasColumnType("decimal(18,4)");
 
+                    b.Property<decimal>("BaseAmount")
+                        .HasColumnType("decimal(18,4)");
+
                     b.Property<DateTime?>("CompletedAt")
                         .HasColumnType("datetime2");
 
@@ -1369,6 +1372,10 @@ namespace TeeNova.Migrations
                         .HasMaxLength(2048)
                         .HasColumnType("nvarchar(2048)");
 
+                    b.Property<string>("ProviderMode")
+                        .HasMaxLength(32)
+                        .HasColumnType("nvarchar(32)");
+
                     b.Property<string>("ProviderPaymentId")
                         .HasMaxLength(256)
                         .HasColumnType("nvarchar(256)");
@@ -1391,6 +1398,28 @@ namespace TeeNova.Migrations
                         .IsRequired()
                         .HasMaxLength(32)
                         .HasColumnType("nvarchar(32)");
+
+                    b.Property<decimal>("SurchargeAmount")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("decimal(18,4)")
+                        .HasDefaultValue(0m);
+
+                    b.Property<string>("SurchargeCalculationVersion")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)")
+                        .HasDefaultValue("legacy-no-surcharge");
+
+                    b.Property<decimal>("SurchargeFixedAmount")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("decimal(18,2)")
+                        .HasDefaultValue(0m);
+
+                    b.Property<int>("SurchargePercentageBasisPoints")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int")
+                        .HasDefaultValue(0);
 
                     b.HasKey("Id");
 
@@ -1509,6 +1538,35 @@ namespace TeeNova.Migrations
                     b.Property<string>("SuccessReturnBaseUrl")
                         .HasMaxLength(512)
                         .HasColumnType("nvarchar(512)");
+
+                    b.Property<string>("SurchargeCalculationVersion")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)")
+                        .HasDefaultValue("stripe-gross-up-v1");
+
+                    b.Property<string>("SurchargeDisclosureText")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasMaxLength(500)
+                        .HasColumnType("nvarchar(500)")
+                        .HasDefaultValue("A card processing surcharge applies to online card payments. The fee is shown before you continue to Stripe.");
+
+                    b.Property<bool>("SurchargeEnabled")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bit")
+                        .HasDefaultValue(false);
+
+                    b.Property<decimal>("SurchargeFixedAmount")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("decimal(18,2)")
+                        .HasDefaultValue(0.30m);
+
+                    b.Property<int>("SurchargePercentageBasisPoints")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int")
+                        .HasDefaultValue(265);
 
                     b.Property<string>("WebhookSecretCipherText")
                         .HasMaxLength(2048)

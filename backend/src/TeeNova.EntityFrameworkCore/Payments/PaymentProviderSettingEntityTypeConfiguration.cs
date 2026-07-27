@@ -55,6 +55,29 @@ public class PaymentProviderSettingEntityTypeConfiguration
         builder.Property(e => e.LastValidationMessageCode)
             .HasMaxLength(128);
 
+        builder.Property(e => e.SurchargeEnabled)
+            .IsRequired()
+            .HasDefaultValue(false);
+
+        builder.Property(e => e.SurchargePercentageBasisPoints)
+            .IsRequired()
+            .HasDefaultValue(PaymentProviderSetting.DefaultSurchargePercentageBasisPoints);
+
+        builder.Property(e => e.SurchargeFixedAmount)
+            .IsRequired()
+            .HasColumnType("decimal(18,2)")
+            .HasDefaultValue(PaymentProviderSetting.DefaultSurchargeFixedAmount);
+
+        builder.Property(e => e.SurchargeDisclosureText)
+            .IsRequired()
+            .HasMaxLength(PaymentProviderSetting.MaxSurchargeDisclosureLength)
+            .HasDefaultValue(PaymentProviderSetting.DefaultSurchargeDisclosureText);
+
+        builder.Property(e => e.SurchargeCalculationVersion)
+            .IsRequired()
+            .HasMaxLength(64)
+            .HasDefaultValue(StripeSurchargeCalculator.CurrentCalculationVersion);
+
         // At most one persisted configuration per (provider, mode) — the runtime resolver expects a single
         // active Stripe/Test row.
         builder.HasIndex(e => new { e.Provider, e.Mode })

@@ -20,6 +20,14 @@ public class StripeTestSettingsValidationResultDto
     public bool                            WebhookSecretConfigured { get; set; }
     public bool                            ReturnUrlsValid         { get; set; }
 
+    public bool                            SurchargeEnabled                 { get; set; }
+    public int                             SurchargePercentageBasisPoints   { get; set; } = StripeSurchargeDefaults.PercentageBasisPoints;
+    public decimal                         SurchargeFixedAmount             { get; set; } = StripeSurchargeDefaults.FixedAmount;
+    public string                          SurchargeDisclosureText          { get; set; } = StripeSurchargeDefaults.DisclosureText;
+    public string                          SurchargeCalculationVersion      { get; set; } = StripeSurchargeDefaults.CalculationVersion;
+    public bool                            SurchargeConfigurationValid      { get; set; } = true;
+    public string?                         SurchargeValidationCode          { get; set; }
+
     // ── Readiness signals (Jira 9903) ────────────────────────────────────────────────────────────────
     public bool                            CanCreateCheckoutSession       { get; set; }
     public bool                            EncryptionPassphraseConfigured { get; set; }

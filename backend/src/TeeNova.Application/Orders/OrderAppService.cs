@@ -5,15 +5,18 @@ using System.Linq;
 using System.Security.Claims;
 using System.Threading.Tasks;
 using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using TeeNova.Customization;
+using TeeNova.Auth;
 using TeeNova.Email;
 using TeeNova.Files;
 using TeeNova.Inventory;
 using TeeNova.Orders.Dtos;
 using TeeNova.Payments;
+using TeeNova.Payments.Dtos;
 using TeeNova.Pricing;
 using TeeNova.PrintConfig;
 using Volo.Abp.Application.Dtos;
@@ -38,6 +41,7 @@ public class OrderAppService : ApplicationService, IOrderAppService
     private readonly IInventorySettingsAppService            _inventorySettings;
     private readonly IInventoryDeductionService              _inventoryDeductionService;
     private readonly OrderContentPricingService              _orderContentPricingService;
+    private readonly IStripePaymentQuoteService              _stripePaymentQuoteService;
 
     public OrderAppService(
         IRepository<Order, Guid>                 orderRepository,
@@ -53,7 +57,8 @@ public class OrderAppService : ApplicationService, IOrderAppService
         IHttpContextAccessor                     httpContextAccessor,
         IInventorySettingsAppService             inventorySettings,
         IInventoryDeductionService               inventoryDeductionService,
-        OrderContentPricingService               orderContentPricingService)
+        OrderContentPricingService               orderContentPricingService,
+        IStripePaymentQuoteService               stripePaymentQuoteService)
     {
         _orderRepository                = orderRepository;
         _timelineRepository             = timelineRepository;
@@ -69,6 +74,7 @@ public class OrderAppService : ApplicationService, IOrderAppService
         _inventorySettings              = inventorySettings;
         _inventoryDeductionService      = inventoryDeductionService;
         _orderContentPricingService     = orderContentPricingService;
+        _stripePaymentQuoteService      = stripePaymentQuoteService;
     }
 
     public async Task<OrderDto> CreateAsync(CreateOrderDto input)
@@ -201,6 +207,38 @@ public class OrderAppService : ApplicationService, IOrderAppService
             RedactForAnonymous(dto);
 
         return dto;
+    }
+
+    [Authorize(Roles = TeeNovaRoles.Admin)]
+    public async Task<List<AdminOnlinePaymentSessionDto>> GetAdminOnlinePaymentSessionsAsync(Guid id)
+    {
+        if (!await _orderRepository.AnyAsync(o => o.Id == id))
+            throw new Volo.Abp.Domain.Entities.EntityNotFoundException(typeof(Order), id);
+
+        var sessionQuery = await _onlinePaymentSessionRepository.GetQueryableAsync();
+        var sessions = await sessionQuery
+            .Where(s => s.OrderId == id)
+            .OrderByDescending(s => s.CreationTime)
+            .ToListAsync();
+
+        if (sessions.Count == 0)
+            return new List<AdminOnlinePaymentSessionDto>();
+
+        var transactionQuery = await _paymentTransactionRepository.GetQueryableAsync();
+        var transactions = await transactionQuery
+            .Where(t => t.OrderId == id)
+            .ToListAsync();
+
+        var sessionIds = sessions.Select(s => s.Id).ToList();
+        var providerSessionIds = sessions.Select(s => s.ProviderSessionId).ToList();
+        var webhookQuery = await _paymentWebhookEventRepository.GetQueryableAsync();
+        var webhookEvents = await webhookQuery
+            .Where(e => e.OrderId == id
+                || (e.OnlinePaymentSessionId.HasValue && sessionIds.Contains(e.OnlinePaymentSessionId.Value))
+                || (e.ProviderSessionId != null && providerSessionIds.Contains(e.ProviderSessionId)))
+            .ToListAsync();
+
+        return AdminOnlinePaymentSessionProjection.Build(sessions, transactions, webhookEvents);
     }
 
     /// <summary>
@@ -731,24 +769,7 @@ public class OrderAppService : ApplicationService, IOrderAppService
 
         var opts = _onlinePaymentOptions.Value;
 
-        if (!opts.Enabled)
-            throw new Volo.Abp.BusinessException("TeeNova:Payment:OnlinePaymentsDisabled");
-
-        // Determine provider: prefer explicit input, fall back to default.
-        var selectedProvider = (input.Provider.HasValue && input.Provider.Value != PaymentProvider.None)
-            ? input.Provider.Value
-            : opts.DefaultProvider;
-
-        if (selectedProvider == PaymentProvider.None)
-            throw new Volo.Abp.BusinessException("TeeNova:Payment:PaymentProviderNotSelected");
-
-        // If config entry explicitly disables the provider, reject early.
-        if (opts.Providers.TryGetValue(selectedProvider.ToString(), out var providerOpts)
-            && !providerOpts.Enabled)
-        {
-            throw new Volo.Abp.BusinessException("TeeNova:Payment:PaymentProviderDisabled")
-                .WithData("Provider", selectedProvider);
-        }
+        var selectedProvider = ResolveSelectedProvider(opts, input.Provider);
 
         if (string.IsNullOrWhiteSpace(opts.SuccessReturnBaseUrl)
             || string.IsNullOrWhiteSpace(opts.CancelReturnBaseUrl))
@@ -773,14 +794,32 @@ public class OrderAppService : ApplicationService, IOrderAppService
         var successUrl = $"{opts.SuccessReturnBaseUrl.TrimEnd('/')}?orderId={order.Id}&orderNumber={Uri.EscapeDataString(order.OrderNumber)}&provider={Uri.EscapeDataString(selectedProvider.ToString())}";
         var cancelUrl  = $"{opts.CancelReturnBaseUrl.TrimEnd('/')}?orderId={order.Id}&orderNumber={Uri.EscapeDataString(order.OrderNumber)}&provider={Uri.EscapeDataString(selectedProvider.ToString())}";
 
+        // ── Server-authoritative Stripe pricing snapshot (Phase 3) ────────────────────────────────
+        // The browser supplies no monetary value: the surcharge is recalculated here from the trusted
+        // commercial base above and the persisted Test/Live surcharge configuration. When the surcharge is
+        // enabled, a current quote fingerprint is mandatory — and both the missing-quote and stale-quote
+        // failures are raised BEFORE any provider session is created, any local row is written, and any
+        // valid pending session is superseded.
+        var quote = selectedProvider == PaymentProvider.Stripe
+            ? await ResolveStripeQuoteAsync(amount, purpose, currency)
+            : null;
+
+        if (quote is not null)
+            StripePaymentQuoteGate.Ensure(quote, input.PaymentQuoteFingerprint);
+
+        // Amount handed to the provider. Identical to the commercial amount unless a surcharge applies.
+        var chargedAmount = quote?.ChargedAmount ?? amount;
+
         // ── Idempotency & stale-session handling (Jira 9804) ──────────────────────────────────────
         // Examine every currently-Pending session for this order:
-        //   • Reuse the first that EXACTLY matches provider+purpose+amount+currency — a customer
-        //     double-click / retry / second tab returns the same checkout link with no duplicate
-        //     provider session and no duplicate local row.
+        //   • Reuse the first whose COMPLETE pricing snapshot matches — provider, purpose, currency, base,
+        //     surcharge, charged total, rate, fixed fee, calculation version and Test/Live mode (Phase 3).
+        //     A customer double-click / retry / second tab returns the same checkout link with no duplicate
+        //     provider session, no duplicate local row and — critically — no second surcharge.
         //   • Treat every other Pending session as stale (its amount was superseded by an admin price
-        //     change or a partial payment, or the customer switched provider/purpose): cancel it
-        //     locally and best-effort expire it provider-side so a lingering checkout tab can't
+        //     change or a partial payment, the surcharge configuration or active mode changed, or the
+        //     customer switched provider/purpose): cancel it locally and best-effort expire it
+        //     provider-side — using the mode it was created under — so a lingering checkout tab can't
         //     complete a charge the local system would then reject.
         var pendingQuery = await _onlinePaymentSessionRepository.GetQueryableAsync();
         var pendingSessions = await pendingQuery
@@ -791,10 +830,8 @@ public class OrderAppService : ApplicationService, IOrderAppService
         foreach (var existing in pendingSessions)
         {
             var matches = reusable == null
-                && existing.Provider == selectedProvider
-                && existing.Purpose  == purpose
-                && existing.Amount   == amount
-                && string.Equals(existing.Currency, currency, StringComparison.OrdinalIgnoreCase);
+                && PendingOnlinePaymentSessionMatcher.Matches(
+                    existing, selectedProvider, purpose, currency, amount, quote);
 
             if (matches)
             {
@@ -811,32 +848,53 @@ public class OrderAppService : ApplicationService, IOrderAppService
         {
             Logger.LogInformation(
                 "[OnlinePayment] Reusing existing Pending session {SessionId} for order {OrderNumber} " +
-                "({Amount} {Currency}, {Purpose}) — no new provider session created.",
-                reusable.Id, order.OrderNumber, amount, currency, purpose);
+                "(base {BaseAmount} + surcharge {SurchargeAmount} = {ChargedAmount} {Currency}, {Purpose}) — " +
+                "no new provider session created.",
+                reusable.Id, order.OrderNumber, reusable.BaseAmount, reusable.SurchargeAmount,
+                reusable.Amount, currency, purpose);
 
             return ObjectMapper.Map<OnlinePaymentSession, OnlinePaymentSessionDto>(reusable);
         }
 
+        // The local session id is generated BEFORE the provider call so it can be attached as provider
+        // metadata and the persisted row can carry the very same id.
+        var paymentSessionId = GuidGenerator.Create();
+
         var request = new CreateOnlinePaymentProviderSessionRequest
         {
-            OrderId       = order.Id,
-            OrderNumber   = order.OrderNumber,
-            Provider      = selectedProvider,
-            Purpose       = purpose,
-            Amount        = amount,
-            Currency      = currency,
-            CustomerEmail = order.CustomerEmail,
-            SuccessUrl    = successUrl,
-            CancelUrl     = cancelUrl,
-            Metadata      = new Dictionary<string, string>
+            OrderId          = order.Id,
+            OrderNumber      = order.OrderNumber,
+            Provider         = selectedProvider,
+            Purpose          = purpose,
+            Amount           = chargedAmount,
+            Currency         = currency,
+            CustomerEmail    = order.CustomerEmail,
+            SuccessUrl       = successUrl,
+            CancelUrl        = cancelUrl,
+            PaymentSessionId = paymentSessionId,
+            Metadata         = new Dictionary<string, string>
             {
                 ["orderId"]     = order.Id.ToString(),
                 ["orderNumber"] = order.OrderNumber,
                 ["purpose"]     = purpose.ToString(),
                 ["provider"]    = selectedProvider.ToString(),
-                ["amount"]      = amount.ToString(CultureInfo.InvariantCulture),
+                ["amount"]      = chargedAmount.ToString(CultureInfo.InvariantCulture),
             },
         };
+
+        if (quote is not null)
+        {
+            request.BaseAmount                     = quote.BaseAmount;
+            request.SurchargeAmount                = quote.SurchargeAmount;
+            request.SurchargeEnabled               = quote.SurchargeEnabled;
+            request.SurchargePercentageBasisPoints = quote.SurchargeEnabled ? quote.SurchargePercentageBasisPoints : 0;
+            request.SurchargeFixedAmount           = quote.SurchargeEnabled ? quote.SurchargeFixedAmount : 0m;
+            request.SurchargeCalculationVersion    = quote.SurchargeEnabled
+                ? quote.SurchargeCalculationVersion
+                : StripeSurchargeDefaults.LegacyCalculationVersion;
+            request.ProviderMode                   = quote.SurchargeEnabled ? quote.ProviderMode : null;
+            request.PaymentQuoteFingerprint        = quote.QuoteFingerprint;
+        }
 
         IOnlinePaymentProvider provider;
         try
@@ -882,20 +940,112 @@ public class OrderAppService : ApplicationService, IOrderAppService
             return ObjectMapper.Map<OnlinePaymentSession, OnlinePaymentSessionDto>(alreadyPersisted);
         }
 
-        var session = OnlinePaymentSession.Create(
-            GuidGenerator.Create(),
+        // The authoritative local snapshot is the one calculated BEFORE the provider call — the provider
+        // response contributes only its session id, checkout URL and raw status, never an amount.
+        var session = OnlinePaymentSessionFactory.Create(
+            paymentSessionId,
             order.Id,
             order.OrderNumber,
             selectedProvider,
             providerResult.ProviderSessionId,
             providerResult.ProviderCheckoutUrl,
-            amount,
             currency,
-            purpose);
+            purpose,
+            amount,
+            quote);
 
         await _onlinePaymentSessionRepository.InsertAsync(session, autoSave: true);
 
         return ObjectMapper.Map<OnlinePaymentSession, OnlinePaymentSessionDto>(session);
+    }
+
+    /// <summary>
+    /// Payment quote for an EXISTING order (Phase 3). Applies the same access, order-state and
+    /// payment-eligibility rules as online session creation, then returns the safe quote projection.
+    /// Creates no order, no payment session and no payment record, and makes no provider/Stripe API call.
+    /// </summary>
+    public async Task<OnlinePaymentQuoteDto> GetOnlinePaymentQuoteAsync(
+        Guid id, CreateOnlinePaymentQuoteDto input)
+    {
+        var order = await _orderRepository.GetAsync(id);
+
+        EnsureOrderPayableOnline(order);
+
+        var opts             = _onlinePaymentOptions.Value;
+        var selectedProvider = ResolveSelectedProvider(opts, input.Provider);
+
+        // Throws OnlinePaymentNoAmountDue / OnlinePaymentInvalidPurpose exactly as session creation does,
+        // so a terminal, fully-paid or mis-purposed request is refused here too.
+        var (purpose, amount) = CalculatePaymentPurposeAndAmount(order, input.Purpose);
+
+        EnsureAmountIsCentAligned(order.Id, amount);
+
+        var currency = string.IsNullOrWhiteSpace(opts.Currency) ? "NZD" : opts.Currency.ToUpperInvariant();
+
+        return await BuildPaymentQuoteAsync(selectedProvider, purpose, amount, currency);
+    }
+
+    /// <summary>
+    /// Payment quote for a draft order that does not exist yet (Phase 3), so the storefront can disclose a
+    /// card-processing surcharge before checkout. The draft is priced through the SAME authoritative pricing
+    /// service used by <see cref="CreateAsync"/>, and the payment purpose/amount are derived from the SAME
+    /// domain payment-requirement rules that will apply the moment the order is created — no duplicated
+    /// commercial formula. Nothing is persisted and no provider API is contacted.
+    /// </summary>
+    public async Task<OnlinePaymentQuoteDto> GetDraftOnlinePaymentQuoteAsync(
+        CreateDraftOnlinePaymentQuoteDto input)
+    {
+        if (input?.Items == null || input.Items.Count == 0)
+            throw new Volo.Abp.BusinessException("TeeNova:Order:OrderMustHaveItems");
+
+        // Work bound for an anonymous endpoint, on top of the per-IP rate limit and request-size cap.
+        if (input.Items.Count > OrderLimits.MaxDraftQuoteItems)
+            throw new Volo.Abp.BusinessException("TeeNova:Order:TooManyDraftQuoteItems")
+                .WithData("ItemCount", input.Items.Count)
+                .WithData("MaxItems", OrderLimits.MaxDraftQuoteItems);
+
+        foreach (var item in input.Items)
+        {
+            // The shared pricing service re-enforces the ceiling; reject the obviously invalid case first.
+            if (item.Quantity <= 0)
+                throw new Volo.Abp.BusinessException("TeeNova:Order:ItemQuantityMustBePositive")
+                    .WithData("Quantity", item.Quantity);
+        }
+
+        var opts             = _onlinePaymentOptions.Value;
+        var selectedProvider = ResolveSelectedProvider(opts, input.Provider);
+
+        var draft = input.Items
+            .Select(i => new OrderDraftItem(
+                Id: null,
+                i.ProductId,
+                i.ProductVariantId,
+                i.Quantity,
+                (i.Prints ?? new List<CreateOrderItemPrintDto>())
+                    .Select(p => new OrderDraftPrint(
+                        Id: null,
+                        p.PrintAreaId, p.PrintSizeId,
+                        p.UploadedAssetId, p.UploadedAssetUrl, p.DesignNote, PrintNotes: null))
+                    .ToList(),
+                UploadedAssetId: i.UploadedAssetId,
+                UploadedAssetUrl: i.UploadedAssetUrl,
+                DesignNote: i.DesignNote,
+                ConfigurationJson: i.ConfigurationJson,
+                BannerDetail: i.BannerDetail))
+            .ToList();
+
+        var priced = await _orderContentPricingService.PriceAsync(draft);
+
+        // Enquiry-first products are not payable online, exactly as in CreateAsync.
+        EnsureNoCustomQuoteOnlyItems(priced, "TeeNova:Order:CustomQuoteOnlyRequiresEnquiry");
+
+        var (purpose, amount) = CalculateDraftPaymentPurposeAndAmount(priced.TotalAmount, input.DeliveryMethod);
+
+        EnsureAmountIsCentAligned(Guid.Empty, amount);
+
+        var currency = string.IsNullOrWhiteSpace(opts.Currency) ? "NZD" : opts.Currency.ToUpperInvariant();
+
+        return await BuildPaymentQuoteAsync(selectedProvider, purpose, amount, currency);
     }
 
     // Private helpers
@@ -968,7 +1118,116 @@ public class OrderAppService : ApplicationService, IOrderAppService
         }
     }
 
-    private static (PaymentPurpose purpose, decimal amount) CalculatePaymentPurposeAndAmount(
+    // ── Online payment quote helpers (Phase 3) ──────────────────────────────────
+
+    /// <summary>
+    /// Shared provider selection for session creation and both quote endpoints: explicit choice wins, then
+    /// the configured default; an online-payments-disabled host, an unselected provider and a
+    /// config-disabled provider all fail with their existing business codes.
+    /// </summary>
+    private static PaymentProvider ResolveSelectedProvider(
+        OnlinePaymentOptions opts, PaymentProvider? requested)
+    {
+        if (!opts.Enabled)
+            throw new Volo.Abp.BusinessException("TeeNova:Payment:OnlinePaymentsDisabled");
+
+        var selectedProvider = (requested.HasValue && requested.Value != PaymentProvider.None)
+            ? requested.Value
+            : opts.DefaultProvider;
+
+        if (selectedProvider == PaymentProvider.None)
+            throw new Volo.Abp.BusinessException("TeeNova:Payment:PaymentProviderNotSelected");
+
+        if (opts.Providers.TryGetValue(selectedProvider.ToString(), out var providerOpts)
+            && !providerOpts.Enabled)
+        {
+            throw new Volo.Abp.BusinessException("TeeNova:Payment:PaymentProviderDisabled")
+                .WithData("Provider", selectedProvider);
+        }
+
+        return selectedProvider;
+    }
+
+    /// <summary>Order-state gate shared by online session creation and the existing-order quote.</summary>
+    private static void EnsureOrderPayableOnline(Order order)
+    {
+        if (order.Status == OrderStatus.Cancelled)
+            throw new Volo.Abp.BusinessException("TeeNova:Payment:OnlinePaymentInvalidOrderState")
+                .WithData("OrderId", order.Id)
+                .WithData("Reason", "Order is cancelled");
+
+        if (order.Status == OrderStatus.Completed)
+            throw new Volo.Abp.BusinessException("TeeNova:Payment:OnlinePaymentInvalidOrderState")
+                .WithData("OrderId", order.Id)
+                .WithData("Reason", "Order is completed");
+    }
+
+    /// <summary>
+    /// Precision fail-safe (Jira 9803, re-applied to quoting): money columns are decimal(18,4), so an admin
+    /// adjustment can leave a sub-cent balance. Providers charge whole cents, so quote and charge alike must
+    /// refuse a non-cent amount rather than round it silently.
+    /// </summary>
+    private static void EnsureAmountIsCentAligned(Guid orderId, decimal amount)
+    {
+        if (amount != decimal.Round(amount, 2, MidpointRounding.AwayFromZero))
+            throw new Volo.Abp.BusinessException("TeeNova:Payment:OnlinePaymentAmountPrecisionInvalid")
+                .WithData("OrderId", orderId)
+                .WithData("Amount", amount);
+    }
+
+    /// <summary>
+    /// Resolves the authoritative Stripe quote for a trusted commercial base, and refuses to continue when
+    /// the persisted Stripe currency differs from the configured checkout currency — quoting in one currency
+    /// and charging in another must never happen silently.
+    /// </summary>
+    private async Task<StripePaymentQuoteSnapshot> ResolveStripeQuoteAsync(
+        decimal trustedBaseAmount, PaymentPurpose purpose, string checkoutCurrency)
+    {
+        var quote = await _stripePaymentQuoteService.ResolveQuoteAsync(trustedBaseAmount, purpose);
+
+        if (!string.Equals(quote.Currency, checkoutCurrency, StringComparison.OrdinalIgnoreCase))
+            throw new Volo.Abp.BusinessException("TeeNova:Payment:StripeCurrencyUnsupported")
+                .WithData("Context", "CheckoutCurrencyMismatch")
+                .WithData("Currency", quote.Currency)
+                .WithData("SupportedCurrency", checkoutCurrency);
+
+        return quote;
+    }
+
+    /// <summary>
+    /// Builds the safe public quote. Stripe returns the mode-specific surcharge quote; every other provider
+    /// returns an unsurcharged quote with no fingerprint (Phase 3 adds provider fees for Stripe only).
+    /// </summary>
+    private async Task<OnlinePaymentQuoteDto> BuildPaymentQuoteAsync(
+        PaymentProvider provider, PaymentPurpose purpose, decimal amount, string currency)
+    {
+        if (provider != PaymentProvider.Stripe)
+            return StripePaymentQuoteService.BuildUnsurchargedQuote(provider, currency, purpose, amount);
+
+        var quote = await ResolveStripeQuoteAsync(amount, purpose, currency);
+        return _stripePaymentQuoteService.ToDto(quote);
+    }
+
+    /// <summary>
+    /// Derives the payment purpose and amount that will apply the INSTANT a draft becomes a real order, by
+    /// running the same domain rules order creation runs: a transient (never persisted, never inserted)
+    /// <see cref="Order"/> is initialised with the priced total and the selected delivery method, then fed to
+    /// the same <see cref="CalculatePaymentPurposeAndAmount"/> used by the live payment path. Nothing here
+    /// re-implements the deposit or balance formula.
+    /// </summary>
+    internal static (PaymentPurpose purpose, decimal amount) CalculateDraftPaymentPurposeAndAmount(
+        decimal totalAmount, DeliveryMethod? deliveryMethod)
+    {
+        if (totalAmount <= 0m)
+            throw new Volo.Abp.BusinessException("TeeNova:Payment:OnlinePaymentNoAmountDue")
+                .WithData("Amount", totalAmount);
+
+        var draftOrder = Order.CreateDraftForPaymentQuote(totalAmount, deliveryMethod);
+
+        return CalculatePaymentPurposeAndAmount(draftOrder, requestedPurpose: null);
+    }
+
+    internal static (PaymentPurpose purpose, decimal amount) CalculatePaymentPurposeAndAmount(
         Order order, PaymentPurpose? requestedPurpose)
     {
         if (order.BalanceAmount <= 0)
@@ -1037,7 +1296,12 @@ public class OrderAppService : ApplicationService, IOrderAppService
         try
         {
             var provider = _onlinePaymentProviderResolver.Resolve(session.Provider);
-            await provider.ExpireSessionAsync(session.ProviderSessionId);
+
+            // Mode-pinned expiration (Phase 3): a surcharge-aware session stores the Test/Live mode it was
+            // created under, and its remote session must be expired with THAT mode's credentials — never
+            // whichever mode happens to be active now. A legacy session (null) keeps the old behaviour;
+            // its historical mode is unknown and is never guessed.
+            await provider.ExpireSessionAsync(session.ProviderSessionId, session.ProviderMode);
         }
         catch (Exception ex)
         {

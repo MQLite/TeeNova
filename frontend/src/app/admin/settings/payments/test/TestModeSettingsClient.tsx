@@ -26,6 +26,15 @@ import { PaymentSettingsNavigation } from '../components/PaymentSettingsNavigati
 import { PaymentEnvironmentBadge } from '../components/PaymentEnvironmentBadge'
 import { SecretConfiguredStatus } from '../components/SecretConfiguredStatus'
 import { ActiveRuntimeModeBanner } from '../components/ActiveRuntimeModeBanner'
+import { StripeSurchargeSettingsSection } from '../components/StripeSurchargeSettingsSection'
+import {
+  buildSurchargePayload,
+  surchargeFormFromSetting,
+  validateSurchargeForm,
+  type StripeSurchargeFormErrors,
+  type StripeSurchargeFormValue,
+} from '../components/stripe-surcharge-form'
+import { paymentSettingsSaveError, readinessMessage, surchargeReadinessMessage } from '../components/payment-readiness'
 
 const paymentSettingsApi = makePaymentSettingsApi(adminApiClient)
 
@@ -77,6 +86,8 @@ export default function TestModeSettingsClient({ role }: { role?: string }) {
   const [publishableKey, setPublishableKey] = useState('')
   const [successUrl, setSuccessUrl] = useState('')
   const [cancelUrl, setCancelUrl] = useState('')
+  const [surcharge, setSurcharge] = useState<StripeSurchargeFormValue | null>(null)
+  const [surchargeErrors, setSurchargeErrors] = useState<StripeSurchargeFormErrors>({})
 
   const canWrite = role === 'Admin'
 
@@ -94,6 +105,8 @@ export default function TestModeSettingsClient({ role }: { role?: string }) {
     setPublishableKey(s.publishableKey ?? '')
     setSuccessUrl(s.successReturnBaseUrl ?? '')
     setCancelUrl(s.cancelReturnBaseUrl ?? '')
+    setSurcharge(surchargeFormFromSetting(s))
+    setSurchargeErrors({})
     setSecretKey('')
     setWebhookSecret('')
   }
@@ -117,7 +130,11 @@ export default function TestModeSettingsClient({ role }: { role?: string }) {
   }, [])
 
   async function handleSave() {
-    if (!canWrite) return
+    if (!canWrite || !surcharge) return
+    const errors = validateSurchargeForm(surcharge)
+    setSurchargeErrors(errors)
+    const surchargePayload = buildSurchargePayload(surcharge)
+    if (!surchargePayload) return
     setSaving(true)
     try {
       const updated = await paymentSettingsApi.updateStripeTest({
@@ -129,6 +146,7 @@ export default function TestModeSettingsClient({ role }: { role?: string }) {
         webhookSecret: webhookSecret.trim() || undefined,
         successReturnBaseUrl: successUrl.trim() || null,
         cancelReturnBaseUrl:  cancelUrl.trim()  || null,
+        ...surchargePayload,
       })
       hydrate(updated)
       setValidation(null)
@@ -140,7 +158,7 @@ export default function TestModeSettingsClient({ role }: { role?: string }) {
       // Never surface the submitted secret — clear the write-only inputs on error too.
       setSecretKey('')
       setWebhookSecret('')
-      showToast(err instanceof Error ? err.message : 'Failed to save settings.', 'error')
+      showToast(paymentSettingsSaveError(err, 'Failed to save settings.'), 'error')
     } finally {
       setSaving(false)
     }
@@ -215,6 +233,9 @@ export default function TestModeSettingsClient({ role }: { role?: string }) {
   const webhookDisplay = s?.webhookEndpointUrl || s?.webhookEndpointPath || '/api/payment-webhooks/stripe'
   const encryptionWarn = s ? !s.encryptionPassphraseConfigured : false
   const isActive = overview ? !overview.activeModeIsLive : false
+  const surchargeReadiness = s
+    ? surchargeReadinessMessage(s.readinessCode, s.surchargeEnabled)
+    : null
 
   return (
     <div className="admin-page admin-stack">
@@ -284,6 +305,15 @@ export default function TestModeSettingsClient({ role }: { role?: string }) {
                 {s?.isEnabled ? 'Enabled' : notConfigured ? 'Not configured' : 'Disabled'}
               </span>
             </div>
+            <div className="flex items-center justify-between gap-3">
+              <span className="text-sm text-black/70">Card surcharge</span>
+              <span className="text-sm text-black/60">{s?.surchargeEnabled ? 'Enabled' : 'Disabled'}</span>
+            </div>
+            {surchargeReadiness && (
+              <div role="alert" className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
+                {surchargeReadiness}
+              </div>
+            )}
             <div className="flex items-center justify-between">
               <span className="text-sm text-black/70">Ready for checkout</span>
               <span className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-medium ${s?.canCreateCheckoutSession ? 'bg-green-50 text-green-700' : 'bg-amber-50 text-amber-700'}`}>
@@ -311,12 +341,12 @@ export default function TestModeSettingsClient({ role }: { role?: string }) {
             </div>
             <div className="flex items-center justify-between">
               <span className="text-sm text-black/70">Readiness code</span>
-              <span className="font-mono text-xs text-black/60">{s?.readinessCode ?? 'NotConfigured'}</span>
+              <span className="text-right text-xs text-black/60">{readinessMessage(s?.readinessCode ?? 'NotConfigured')}</span>
             </div>
             {s && s.missingPrerequisites.length > 0 && (
               <div className="flex items-start justify-between gap-3">
                 <span className="text-sm text-black/70">Missing prerequisites</span>
-                <span className="text-right font-mono text-xs text-amber-700">{s.missingPrerequisites.join(', ')}</span>
+                <span className="text-right text-xs text-amber-700">{s.missingPrerequisites.map(readinessMessage).join(' ')}</span>
               </div>
             )}
             <div className="mt-1 border-t border-black/[0.06] pt-3">
@@ -445,6 +475,16 @@ export default function TestModeSettingsClient({ role }: { role?: string }) {
           </div>
         </div>
 
+        {surcharge && (
+          <StripeSurchargeSettingsSection
+            mode="Test"
+            value={surcharge}
+            onChange={(next) => { setSurcharge(next); setSurchargeErrors({}) }}
+            disabled={!canWrite}
+            errors={surchargeErrors}
+          />
+        )}
+
         {/* ── Activation ──────────────────────────────────────────────────── */}
         <div>
           <p className={sectionCls}>Activation</p>
@@ -490,7 +530,7 @@ export default function TestModeSettingsClient({ role }: { role?: string }) {
               <li>Return URLs valid: {validation.returnUrlsValid ? 'yes' : 'no'}</li>
               <li>Encryption passphrase configured: {validation.encryptionPassphraseConfigured ? 'yes' : 'no'}</li>
               {validation.missingPrerequisites.length > 0 && (
-                <li>Missing: {validation.missingPrerequisites.join(', ')}</li>
+                <li>Missing: {validation.missingPrerequisites.map(readinessMessage).join(' ')}</li>
               )}
             </ul>
             <p className="mt-2 text-[11px] text-black/45">Static readiness only — no live Stripe API call and no runtime checkout test was performed.</p>
@@ -530,7 +570,7 @@ export default function TestModeSettingsClient({ role }: { role?: string }) {
       </div>
 
       {toast && (
-        <div className={`fixed bottom-6 right-6 z-50 rounded-lg px-4 py-3 text-sm text-white shadow-lg ${toastTone === 'success' ? 'bg-black' : 'bg-red-600'}`}>
+        <div role={toastTone === 'error' ? 'alert' : 'status'} className={`fixed bottom-6 right-6 z-50 rounded-lg px-4 py-3 text-sm text-white shadow-lg ${toastTone === 'success' ? 'bg-black' : 'bg-red-600'}`}>
           {toast}
         </div>
       )}

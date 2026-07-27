@@ -1,14 +1,18 @@
 import { apiClient, type ApiClient } from '@/lib/api-client'
 import type {
+  AdminOnlinePaymentSession,
   AdjustOrderPriceInput,
   BannerDetailInput,
+  CreateOnlinePaymentQuoteInput,
   CreateOnlinePaymentSessionInput,
   DeliveryMethod,
+  OnlinePaymentQuote,
   OnlinePaymentSession,
   Order,
   OrderContentQuoteResult,
   OrderStatus,
   PagedResult,
+  PaymentProvider,
   RecordPaymentInput,
   ShippingAddress,
   UpdateOrderContent,
@@ -51,6 +55,17 @@ export interface CreateOrderPayload {
   deliveryMethod?: DeliveryMethod
 }
 
+/**
+ * Draft payment-quote request: the same price-free item payload used to create the order, plus the
+ * delivery method and provider. Deliberately carries no price, subtotal, surcharge or total — the backend
+ * prices the draft itself and is the sole monetary authority.
+ */
+export interface DraftOnlinePaymentQuotePayload {
+  provider?: PaymentProvider
+  deliveryMethod?: DeliveryMethod
+  items: CreateOrderItemPayload[]
+}
+
 export function makeOrdersApi(client: ApiClient) {
   return {
     create(payload: CreateOrderPayload): Promise<Order> {
@@ -59,6 +74,10 @@ export function makeOrdersApi(client: ApiClient) {
 
     getById(id: string): Promise<Order> {
       return client.get(`/api/orders/${id}`)
+    },
+
+    getAdminOnlinePaymentSessions(id: string): Promise<AdminOnlinePaymentSession[]> {
+      return client.get(`/api/admin/orders/${id}/online-payment-sessions`)
     },
 
     getList(params?: { skipCount?: number; maxResultCount?: number }): Promise<PagedResult<Order>> {
@@ -125,6 +144,25 @@ export function makeOrdersApi(client: ApiClient) {
       input: CreateOnlinePaymentSessionInput,
     ): Promise<OnlinePaymentSession> {
       return client.post(`/api/orders/${orderId}/online-payment-session`, input)
+    },
+
+    /**
+     * Read-only payment quote for a cart that has not been placed yet, so the surcharge can be disclosed
+     * before the customer commits. Creates no order, no payment session and no payment record.
+     */
+    getDraftOnlinePaymentQuote(payload: DraftOnlinePaymentQuotePayload): Promise<OnlinePaymentQuote> {
+      return client.post('/api/orders/online-payment-quote', payload)
+    },
+
+    /**
+     * Read-only payment quote for an existing order. The returned purpose/baseAmount reflect what is
+     * actually payable now (e.g. an outstanding pickup deposit, not the whole balance).
+     */
+    getExistingOrderOnlinePaymentQuote(
+      orderId: string,
+      input: CreateOnlinePaymentQuoteInput,
+    ): Promise<OnlinePaymentQuote> {
+      return client.post(`/api/orders/${orderId}/online-payment-quote`, input)
     },
 
     updatePrintDesign(
