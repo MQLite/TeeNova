@@ -1,6 +1,7 @@
 'use client'
 
 import { CartChildRow } from '@/components/cart/CartChildRow'
+import { CartGarmentSubgroup } from '@/components/cart/CartGarmentSubgroup'
 import type { CartProductGroup } from '@/features/cart/cart-grouping'
 import type { CartLinePricing } from '@/features/cart/useCartPricing'
 
@@ -72,15 +73,25 @@ export function CartProductGroupCard({ group, onIncrease, onDecrease, onRemove }
       </div>
 
       <div className="divide-y divide-black/[0.06]">
-        {group.rows.map((row) => (
-          <CartChildRow
-            key={row.cartItemKey}
-            row={row}
-            onIncrease={onIncrease}
-            onDecrease={onDecrease}
-            onRemove={onRemove}
-          />
-        ))}
+        {group.kind === 'Garment'
+          ? group.visualSubgroups.map((subgroup) => (
+              <CartGarmentSubgroup
+                key={subgroup.subgroupKey}
+                subgroup={subgroup}
+                onIncrease={onIncrease}
+                onDecrease={onDecrease}
+                onRemove={onRemove}
+              />
+            ))
+          : group.rows.map((row) => (
+              <CartChildRow
+                key={row.cartItemKey}
+                row={row}
+                onIncrease={onIncrease}
+                onDecrease={onDecrease}
+                onRemove={onRemove}
+              />
+            ))}
       </div>
     </div>
   )

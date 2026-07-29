@@ -1,9 +1,15 @@
 'use client'
 
-import { useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { pricingApi } from '@/api/pricing'
 import { catalogApi } from '@/api/catalog'
-import type { CartItem, PriceCalculationResponse } from '@/types'
+import { ApiError } from '@/lib/api-client'
+import {
+  deduplicatePricingRequests,
+  executeBatchWithRetry,
+  indexBatchResults,
+} from '@/features/cart/cart-pricing-orchestrator'
+import type { CartItem, PriceCalculationRequest, PriceCalculationResponse } from '@/types'
 
 /** Resolved print price for one selected print placement on a cart line. */
 export interface CartLinePrintPricing {
@@ -55,6 +61,41 @@ export interface CartPricingResult {
   subtotal: number
   /** Overall recalculation error (e.g. all lines failed / network). Null when at least partial data is fine. */
   error: string | null
+  /** Cart-level transient/server classification. Invalid configurations remain in errorsByKey. */
+  errorKind: 'rate-limit' | 'generic' | null
+  /** True after automatic 429 retries are exhausted or a general request failed. */
+  canRetry: boolean
+  /** Starts a fresh, serialized pricing generation. */
+  retry: () => void
+}
+
+const INVALID_CONFIGURATION_MESSAGE =
+  'This print option may no longer be available for the selected size. Please remove this item and add it again.'
+const RATE_LIMIT_MESSAGE = "We're refreshing prices for this cart. Please wait a moment."
+const GENERIC_PRICING_MESSAGE = "We couldn't refresh prices right now. Please try again."
+
+function toCartLinePricing(r: PriceCalculationResponse): CartLinePricing {
+  return {
+    garmentUnitPrice: r.garmentUnitPrice,
+    printUnitPrice: r.printUnitPrice,
+    unitPrice: r.unitPrice,
+    lineTotal: r.lineTotal,
+    pricingMode: r.pricingMode,
+    prints: r.printAddOns.map((p) => ({
+      printAreaId: p.printAreaId,
+      printAreaName: p.printAreaName,
+      printSizeId: p.printSizeId,
+      printSizeName: p.printSizeName,
+      resolvedUnitPrintPrice: p.resolvedUnitPrintPrice,
+      appliedTierMinQuantity: p.appliedTierMinQuantity,
+      nextTierMinQuantity: p.nextTierMinQuantity,
+      nextTierUnitPrintPrice: p.nextTierUnitPrintPrice,
+    })),
+    appliedTierMinQuantity: r.appliedTierMinQuantity,
+    nextTierMinQuantity: r.nextTierMinQuantity,
+    nextTierUnitPrintPrice: r.nextTierUnitPrice,
+    currency: r.currency,
+  }
 }
 
 /**
@@ -143,6 +184,13 @@ export function useCartPricing(items: CartItem[]): CartPricingResult {
   const [errorsByKey, setErrorsByKey] = useState<Record<string, string | undefined>>({})
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [errorKind, setErrorKind] = useState<'rate-limit' | 'generic' | null>(null)
+  const [canRetry, setCanRetry] = useState(false)
+  const [retryToken, setRetryToken] = useState(0)
+  const generationRef = useRef(0)
+  const queueRef = useRef<Promise<void>>(Promise.resolve())
+  const successfulQuoteCache = useRef(new Map<string, CartLinePricing>())
+  const retry = useCallback(() => setRetryToken((token) => token + 1), [])
 
   // Quote signature includes the resolved group tierQuantity so a quantity change anywhere in a group
   // re-quotes every line in that group.
@@ -163,28 +211,35 @@ export function useCartPricing(items: CartItem[]): CartPricingResult {
   )
 
   useEffect(() => {
+    const generation = ++generationRef.current
     if (items.length === 0) {
       setPricingByKey({})
       setErrorsByKey({})
       setLoading(false)
       setError(null)
+      setErrorKind(null)
+      setCanRetry(false)
       return
     }
 
-    let cancelled = false
     setLoading(true)
     setError(null)
+    setErrorKind(null)
+    setCanRetry(false)
+    // Old quotes must never make a new generation look complete. The subtotal retains the explicitly
+    // gated persisted fallback until the authoritative batch completes.
+    setPricingByKey({})
+    setErrorsByKey({})
 
     // Debounce so rapid +/- clicks batch into a single round of quotes.
     const timeout = window.setTimeout(() => {
-      // Snapshot the lines for this run so indexes line up with results.
-      const lines = items.map((item) => {
+      const lines: Array<{ cartItemKey: string; request: PriceCalculationRequest }> = items.map((item) => {
         const groupKey = groupKeyByItemKey[item.cartItemKey]
         // FixedSize Banner lines quote from the selected size option: no variant, no prints, but a
         // bannerDetail carrying the sizePresetId (Jira 9517). The backend reads only that id for price.
         const isFixedSizeBanner = item.kind === 'Banner' && item.pricingModel === 'FixedSize'
         return {
-          key: item.cartItemKey,
+          cartItemKey: item.cartItemKey,
           request: {
             productId: item.productId,
             variantId: item.productVariantId,
@@ -200,73 +255,87 @@ export function useCartPricing(items: CartItem[]): CartPricingResult {
         }
       })
 
-      Promise.allSettled(lines.map((l) => pricingApi.calculatePricing(l.request)))
-        .then((results) => {
-          if (cancelled) return
+      // Every generation is chained behind the previous one. Obsolete HTTP work can finish, but a
+      // newer generation never overlaps it and stale results can never write state.
+      const task = queueRef.current
+        .catch(() => undefined)
+        .then(async () => {
+          if (generation !== generationRef.current) return
 
+          const unique = deduplicatePricingRequests(lines)
+          const misses = unique.filter((entry) => !successfulQuoteCache.current.has(entry.fingerprint))
           const nextPricing: Record<string, CartLinePricing | undefined> = {}
           const nextErrors: Record<string, string | undefined> = {}
 
-          results.forEach((result, index) => {
-            const line = lines[index]
-            if (!line) return
-            if (result.status === 'fulfilled') {
-              const r = result.value
-              nextPricing[line.key] = {
-                garmentUnitPrice: r.garmentUnitPrice,
-                printUnitPrice: r.printUnitPrice,
-                unitPrice: r.unitPrice,
-                lineTotal: r.lineTotal,
-                pricingMode: r.pricingMode,
-                prints: r.printAddOns.map((p) => ({
-                  printAreaId: p.printAreaId,
-                  printAreaName: p.printAreaName,
-                  printSizeId: p.printSizeId,
-                  printSizeName: p.printSizeName,
-                  resolvedUnitPrintPrice: p.resolvedUnitPrintPrice,
-                  appliedTierMinQuantity: p.appliedTierMinQuantity,
-                  nextTierMinQuantity: p.nextTierMinQuantity,
-                  nextTierUnitPrintPrice: p.nextTierUnitPrintPrice,
-                })),
-                appliedTierMinQuantity: r.appliedTierMinQuantity,
-                nextTierMinQuantity: r.nextTierMinQuantity,
-                nextTierUnitPrintPrice: r.nextTierUnitPrice,
-                currency: r.currency,
-              }
-            } else {
-              nextErrors[line.key] =
-                result.reason instanceof Error
-                  ? result.reason.message
-                  : 'Could not refresh pricing for this item.'
-            }
-          })
+          let indexed:
+            | ReturnType<typeof indexBatchResults>
+            | undefined
+          if (misses.length > 0) {
+            const requestItems = misses.map(({ correlationKey, request }) => ({
+              correlationKey,
+              request,
+            }))
+            const { response } = await executeBatchWithRetry(
+              requestItems,
+              (batchItems) => pricingApi.calculateBatch(batchItems),
+              {
+                onRateLimit: () => {
+                  if (generation === generationRef.current) {
+                    setError(RATE_LIMIT_MESSAGE)
+                    setErrorKind('rate-limit')
+                  }
+                },
+              },
+            )
+            indexed = indexBatchResults(misses, response)
+          }
 
+          for (const entry of unique) {
+            let quote = successfulQuoteCache.current.get(entry.fingerprint)
+            let invalid = false
+            if (!quote) {
+              const result = indexed?.get(entry.correlationKey)
+              if (result?.quote) {
+                quote = toCartLinePricing(result.quote)
+                successfulQuoteCache.current.set(entry.fingerprint, quote)
+              } else {
+                invalid = true
+              }
+            }
+
+            for (const cartItemKey of entry.cartItemKeys) {
+              if (quote) nextPricing[cartItemKey] = quote
+              else if (invalid) nextErrors[cartItemKey] = INVALID_CONFIGURATION_MESSAGE
+            }
+          }
+
+          if (generation !== generationRef.current) return
           setPricingByKey(nextPricing)
           setErrorsByKey(nextErrors)
-          setError(
-            Object.keys(nextErrors).length === lines.length
-              ? 'Pricing could not be refreshed. Please try again.'
-              : null,
-          )
+          setError(null)
+          setErrorKind(null)
+          setCanRetry(false)
         })
-        .catch(() => {
-          if (cancelled) return
-          setPricingByKey({})
-          setErrorsByKey({})
-          setError('Pricing could not be refreshed. Please try again.')
+        .catch((reason: unknown) => {
+          if (generation !== generationRef.current) return
+          const rateLimited = reason instanceof ApiError && reason.status === 429
+          setError(rateLimited ? RATE_LIMIT_MESSAGE : GENERIC_PRICING_MESSAGE)
+          setErrorKind(rateLimited ? 'rate-limit' : 'generic')
+          setCanRetry(true)
         })
         .finally(() => {
-          if (!cancelled) setLoading(false)
+          if (generation === generationRef.current) setLoading(false)
         })
+
+      queueRef.current = task
     }, 300)
 
     return () => {
-      cancelled = true
       window.clearTimeout(timeout)
     }
     // quoteSignature captures the meaningful contents of items + group totals.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [quoteSignature])
+  }, [quoteSignature, retryToken])
 
   const isComplete =
     items.length > 0 &&
@@ -278,7 +347,19 @@ export function useCartPricing(items: CartItem[]): CartPricingResult {
     return sum + (fresh ? fresh.lineTotal : item.unitPrice * item.quantity)
   }, 0)
 
-  return { pricingByKey, errorsByKey, groupKeyByItemKey, groupTotals, loading, isComplete, subtotal, error }
+  return {
+    pricingByKey,
+    errorsByKey,
+    groupKeyByItemKey,
+    groupTotals,
+    loading,
+    isComplete,
+    subtotal,
+    error,
+    errorKind,
+    canRetry,
+    retry,
+  }
 }
 
 /**

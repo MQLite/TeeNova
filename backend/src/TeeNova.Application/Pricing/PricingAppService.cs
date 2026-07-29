@@ -84,6 +84,36 @@ public class PricingAppService : ApplicationService, IPricingAppService
         };
     }
 
+    public async Task<BatchPriceCalculationResponseDto> CalculateBatchAsync(
+        BatchPriceCalculationRequestDto input)
+    {
+        var response = new BatchPriceCalculationResponseDto();
+
+        // Deliberately sequential: the public HTTP request is already bounded to 50 entries and the
+        // repository-backed authoritative quote path remains the single source of pricing truth.
+        foreach (var item in input.Items)
+        {
+            try
+            {
+                response.Results.Add(new BatchPriceCalculationResultDto
+                {
+                    CorrelationKey = item.CorrelationKey,
+                    Quote = await CalculateAsync(item.Request),
+                });
+            }
+            catch (BusinessException exception)
+            {
+                response.Results.Add(new BatchPriceCalculationResultDto
+                {
+                    CorrelationKey = item.CorrelationKey,
+                    ErrorCode = exception.Code ?? "TeeNova:Pricing:InvalidConfiguration",
+                });
+            }
+        }
+
+        return response;
+    }
+
     /// <summary>
     /// Banner FixedSize quote (Jira 9516): resolves the selected <see cref="Catalog.ProductFixedSizePriceOption"/>
     /// unit price (no variant, no prints). The client sends only the selected option id via

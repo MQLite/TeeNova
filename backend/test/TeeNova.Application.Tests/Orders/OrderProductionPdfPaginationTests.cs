@@ -124,6 +124,15 @@ public sealed class OrderProductionPdfPaginationTests
         yield return new object[] { "10106-pathological-long-note", PathologicalLongNoteOrder() };
     }
 
+    public static IEnumerable<object[]> Jira10107SmokeCases()
+    {
+        yield return new object[] { "10107-one-product-multiple-variations", MultipleVariationOrder() };
+        yield return new object[] { "10107-same-variant-different-prints", SameVariantDifferentPrintsOrder() };
+        yield return new object[] { "10107-same-name-different-product-ids", SameNameDifferentProductIdsOrder() };
+        yield return new object[] { "10107-exact-duplicate-source-items", ExactDuplicateSourceItemsOrder() };
+        yield return new object[] { "10107-historical-snapshot", HistoricalSnapshotOrder() };
+    }
+
     [Theory]
     [MemberData(nameof(SmokeCases))]
     public async Task Every_representative_order_generates_a_valid_document(string name, OrderDto order)
@@ -136,6 +145,16 @@ public sealed class OrderProductionPdfPaginationTests
     [Theory]
     [MemberData(nameof(Jira10106SmokeCases))]
     public async Task Every_jira_10106_statistics_smoke_fixture_generates_without_layout_failure(
+        string name, OrderDto order)
+    {
+        var result = await GenerateAsync(order, name);
+
+        AssertIsARealPdf(result);
+    }
+
+    [Theory]
+    [MemberData(nameof(Jira10107SmokeCases))]
+    public async Task Every_jira_10107_final_gate_fixture_generates_without_layout_failure(
         string name, OrderDto order)
     {
         var result = await GenerateAsync(order, name);
@@ -305,6 +324,80 @@ public sealed class OrderProductionPdfPaginationTests
         OrderProjectionFixtures.Garment(OrderProjectionFixtures.Id(50), "Black / M", quantity: 999_999),
         OrderProjectionFixtures.Badge(OrderProjectionFixtures.Id(51), quantity: 250_000,
             appliedQuantityTierMinQuantity: 100_000));
+
+    private static OrderDto MultipleVariationOrder() => OrderProjectionFixtures.Order(
+        OrderProjectionFixtures.Garment(OrderProjectionFixtures.Id(130), "Black / S", quantity: 1,
+            variantId: OrderProjectionFixtures.Id(530)),
+        OrderProjectionFixtures.Garment(OrderProjectionFixtures.Id(131), "Black / XL", quantity: 2,
+            variantId: OrderProjectionFixtures.Id(531)),
+        OrderProjectionFixtures.Garment(OrderProjectionFixtures.Id(132), "White / M", quantity: 3,
+            variantId: OrderProjectionFixtures.Id(532)));
+
+    private static OrderDto SameVariantDifferentPrintsOrder() => OrderProjectionFixtures.Order(
+        OrderProjectionFixtures.Garment(OrderProjectionFixtures.Id(133), "Black / M", quantity: 2,
+            variantId: OrderProjectionFixtures.Id(533),
+            prints: new[]
+            {
+                OrderProjectionFixtures.Print(OrderProjectionFixtures.Id(1170),
+                    OrderProjectionFixtures.FrontAreaId, "Front", "FRONT",
+                    OrderProjectionFixtures.A3SizeId, "A3", "A3"),
+            }),
+        OrderProjectionFixtures.Garment(OrderProjectionFixtures.Id(134), "Black / M", quantity: 3,
+            variantId: OrderProjectionFixtures.Id(533),
+            prints: new[]
+            {
+                OrderProjectionFixtures.Print(OrderProjectionFixtures.Id(1171),
+                    OrderProjectionFixtures.FrontAreaId, "Front", "FRONT",
+                    OrderProjectionFixtures.A3SizeId, "A3", "A3"),
+                OrderProjectionFixtures.Print(OrderProjectionFixtures.Id(1172),
+                    OrderProjectionFixtures.BackAreaId, "Back", "BACK",
+                    OrderProjectionFixtures.A4SizeId, "A4", "A4", sortOrder: 1),
+            }));
+
+    private static OrderDto SameNameDifferentProductIdsOrder() => OrderProjectionFixtures.Order(
+        OrderProjectionFixtures.Garment(OrderProjectionFixtures.Id(135), "Black / M", quantity: 2,
+            productId: OrderProjectionFixtures.TeeProductId, productName: "Shared display name",
+            variantId: OrderProjectionFixtures.Id(534)),
+        OrderProjectionFixtures.Garment(OrderProjectionFixtures.Id(136), "White / L", quantity: 4,
+            productId: OrderProjectionFixtures.TeeTwinProductId, productName: "Shared display name",
+            variantId: OrderProjectionFixtures.Id(535)));
+
+    private static OrderDto ExactDuplicateSourceItemsOrder()
+    {
+        OrderItemDto Duplicate(Guid itemId, Guid printId, int quantity) =>
+            OrderProjectionFixtures.Garment(itemId, "Black / M", quantity: quantity,
+                variantId: OrderProjectionFixtures.Id(536),
+                prints: new[]
+                {
+                    OrderProjectionFixtures.Print(printId,
+                        OrderProjectionFixtures.FrontAreaId, "Front", "FRONT",
+                        OrderProjectionFixtures.A3SizeId, "A3", "A3",
+                        uploadedAssetId: OrderProjectionFixtures.Id(904),
+                        uploadedAssetUrl: "/historical/designs/exact-duplicate.png",
+                        designNote: "Exact duplicate artwork"),
+                });
+
+        return OrderProjectionFixtures.Order(
+            Duplicate(OrderProjectionFixtures.Id(137), OrderProjectionFixtures.Id(1173), 2),
+            Duplicate(OrderProjectionFixtures.Id(138), OrderProjectionFixtures.Id(1174), 5));
+    }
+
+    private static OrderDto HistoricalSnapshotOrder() => OrderProjectionFixtures.Order(
+        OrderProjectionFixtures.Garment(OrderProjectionFixtures.Id(139),
+            "Retired Indigo / 3 XL", quantity: 6, unitPrice: 47.35m,
+            productId: OrderProjectionFixtures.Id(9901),
+            productName: "Discontinued 2024 Club Tee",
+            variantId: OrderProjectionFixtures.Id(9902),
+            prints: new[]
+            {
+                OrderProjectionFixtures.Print(OrderProjectionFixtures.Id(1175),
+                    OrderProjectionFixtures.Id(9903), "Historic left chest", "HIST-CHEST",
+                    OrderProjectionFixtures.Id(9904), "Retired 110 x 85 mm", "HIST-110X85",
+                    uploadedAssetId: null,
+                    uploadedAssetUrl: "/historical/url-only/retired-club-mark.png",
+                    designNote: "Use archived white-keyline version",
+                    appliedPrintTierMinQuantity: 5),
+            }));
 
     private static OrderDto WorkedExampleOrder() => OrderProjectionFixtures.Order(
         OrderProjectionFixtures.Garment(OrderProjectionFixtures.Id(110), "Black / M", quantity: 3, prints: new[]

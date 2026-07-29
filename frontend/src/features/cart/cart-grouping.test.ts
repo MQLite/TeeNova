@@ -183,6 +183,79 @@ describe('buildCartProductGroups — grouping', () => {
   })
 })
 
+describe('garment visual subgrouping', () => {
+  const sharedPrints = [
+    print('Front', 'A3', {
+      uploadedAssetId: 'asset-front',
+      uploadedAssetUrl: '/uploads/front.png',
+      designNote: 'Front design',
+    }),
+    print('Back', 'A3', {
+      uploadedAssetId: 'asset-back',
+      uploadedAssetUrl: '/uploads/back.png',
+      designNote: 'Back design',
+    }),
+  ]
+
+  it('combines different sizes with the same exact colour and design while preserving source keys', () => {
+    const [group] = buildCartProductGroups([
+      garment({ cartItemKey: 'xl', size: 'XL', productVariantId: 'variant-xl', prints: sharedPrints }),
+      garment({ cartItemKey: 'l', size: 'L', productVariantId: 'variant-l', prints: [...sharedPrints].reverse() }),
+      garment({ cartItemKey: '2xl', size: '2XL', productVariantId: 'variant-2xl', prints: sharedPrints }),
+    ])
+
+    expect(group.visualSubgroups).toHaveLength(1)
+    expect(group.visualSubgroups[0].rows.map((row) => row.size)).toEqual(['L', 'XL', '2XL'])
+    expect(group.visualSubgroups[0].rows.map((row) => row.cartItemKey)).toEqual(['l', 'xl', '2xl'])
+    expect(group.visualSubgroups[0].rows.map((row) => row.item.cartItemKey)).toEqual(['l', 'xl', '2xl'])
+  })
+
+  it('separates colour, print area, print size, asset id, historical URL, and design note differences', () => {
+    const base = garment({ cartItemKey: 'base', prints: sharedPrints })
+    const cases: CartItem[] = [
+      base,
+      garment({ cartItemKey: 'colour', color: 'White', prints: sharedPrints }),
+      garment({
+        cartItemKey: 'area',
+        prints: [{ ...sharedPrints[0], printAreaId: 'area-Sleeve', printAreaName: 'Sleeve' }],
+      }),
+      garment({
+        cartItemKey: 'size',
+        prints: [{ ...sharedPrints[0], printSizeId: 'size-A4', printSizeName: 'A4' }],
+      }),
+      garment({ cartItemKey: 'asset', prints: [print('Front', 'A3', { ...sharedPrints[0], uploadedAssetId: 'other' })] }),
+      garment({ cartItemKey: 'url', prints: [print('Front', 'A3', { ...sharedPrints[0], uploadedAssetUrl: '/old.png' })] }),
+      garment({ cartItemKey: 'note', prints: [print('Front', 'A3', { ...sharedPrints[0], designNote: 'Other note' })] }),
+    ]
+
+    expect(buildCartProductGroups(cases)[0].visualSubgroups).toHaveLength(cases.length)
+  })
+
+  it('does not use visible artwork filenames as identity', () => {
+    const [group] = buildCartProductGroups([
+      garment({
+        cartItemKey: 'one',
+        size: 'L',
+        prints: [print('Front', 'A3', { uploadedAssetId: 'asset-one', uploadedAssetUrl: '/a/logo.png' })],
+      }),
+      garment({
+        cartItemKey: 'two',
+        size: 'XL',
+        prints: [print('Front', 'A3', { uploadedAssetId: 'asset-two', uploadedAssetUrl: '/b/logo.png' })],
+      }),
+    ])
+    expect(group.visualSubgroups).toHaveLength(2)
+  })
+
+  it('leaves Badge and Banner presentation outside garment subgroups', () => {
+    const groups = buildCartProductGroups([
+      badge({ cartItemKey: 'badge' }),
+      banner({ cartItemKey: 'banner' }),
+    ])
+    expect(groups.every((group) => group.visualSubgroups.length === 0)).toBe(true)
+  })
+})
+
 // ── Missing data and legacy lines ────────────────────────────────────────────
 
 describe('buildCartProductGroups — fallbacks', () => {

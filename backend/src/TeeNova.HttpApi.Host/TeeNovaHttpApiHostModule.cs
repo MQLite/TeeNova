@@ -285,7 +285,12 @@ public class TeeNovaHttpApiHostModule : AbpModule
             options.OnRejected = async (ctx, ct) =>
             {
                 ctx.HttpContext.Response.StatusCode = StatusCodes.Status429TooManyRequests;
-                ctx.HttpContext.Response.Headers["Retry-After"] = windowSeconds.ToString();
+                var retryAfter = ctx.Lease.TryGetMetadata(
+                    MetadataName.RetryAfter,
+                    out var leaseRetryAfter)
+                    ? Math.Max(1, (int)Math.Ceiling(leaseRetryAfter.TotalSeconds))
+                    : windowSeconds;
+                ctx.HttpContext.Response.Headers["Retry-After"] = retryAfter.ToString();
                 await ctx.HttpContext.Response.WriteAsJsonAsync(
                     new { message = "Too many requests. Please wait a moment and try again." },
                     ct);

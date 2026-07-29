@@ -29,4 +29,15 @@ public class PricingController : TeeNovaControllerBase
     [RequestSizeLimit(64 * 1024)]
     public async Task<PriceCalculationResponseDto> CalculateAsync([FromBody] PriceCalculationRequestDto input)
         => await _pricingAppService.CalculateAsync(input);
+
+    /// <summary>
+    /// Calculates up to 50 independent cart quotes in one protected, read-only HTTP request.
+    /// The existing single-quote route remains available to all current consumers.
+    /// </summary>
+    [HttpPost("calculate-batch")]
+    [EnableRateLimiting("PublicPricingPolicy")]
+    [RequestSizeLimit(512 * 1024)]
+    public async Task<BatchPriceCalculationResponseDto> CalculateBatchAsync(
+        [FromBody] BatchPriceCalculationRequestDto input)
+        => await _pricingAppService.CalculateBatchAsync(input);
 }

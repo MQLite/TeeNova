@@ -463,6 +463,25 @@ export interface PriceCalculationResponse {
   includedStandardPrintAmount: number
 }
 
+export interface BatchPriceCalculationItem {
+  correlationKey: string
+  request: PriceCalculationRequest
+}
+
+export interface BatchPriceCalculationRequest {
+  items: BatchPriceCalculationItem[]
+}
+
+export interface BatchPriceCalculationResult {
+  correlationKey: string
+  quote?: PriceCalculationResponse | null
+  errorCode?: string | null
+}
+
+export interface BatchPriceCalculationResponse {
+  results: BatchPriceCalculationResult[]
+}
+
 // Files
 
 export interface UploadedAsset {

@@ -172,9 +172,6 @@ export function CartChildRow({ row, onIncrease, onDecrease, onRemove }: Props) {
           style={{ letterSpacing: '-0.14px' }}
         >
           <p>{pricingError}</p>
-          <p className="mt-1 text-red-600">
-            This print option may no longer be available for the selected size. Please remove this item and add it again.
-          </p>
         </div>
       )}
 

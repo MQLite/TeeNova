@@ -87,6 +87,17 @@ export interface CartProductGroup<TPricing extends CartRowPricingLike = CartRowP
   /** Sum of this group's row quantities — always reconciles with the source lines. */
   totalQuantity: number
   rows: CartProductRow<TPricing>[]
+  /** Garment-only presentation subgroups. Source rows remain one-to-one and also remain in rows. */
+  visualSubgroups: CartGarmentVisualSubgroup<TPricing>[]
+}
+
+export interface CartGarmentVisualSubgroup<TPricing extends CartRowPricingLike = CartRowPricingLike> {
+  /** Exact colour + sorted placement/design identity signature; never a mutation identity. */
+  subgroupKey: string
+  colour: string | null
+  /** Sorted shared production detail from the first source row; input print objects are untouched. */
+  prints: NonNullable<CartItem['prints']>
+  rows: CartProductRow<TPricing>[]
 }
 
 // ── Field resolution ─────────────────────────────────────────────────────────
@@ -235,6 +246,59 @@ function compareOrdinal(a: string, b: string): number {
   return 0
 }
 
+function sortedPrints(item: CartItem): NonNullable<CartItem['prints']> {
+  return [...(item.prints ?? [])].sort(
+    (a, b) =>
+      compareOrdinal(a.printAreaId, b.printAreaId) ||
+      compareOrdinal(a.printSizeId, b.printSizeId) ||
+      compareOrdinal(a.uploadedAssetId ?? '', b.uploadedAssetId ?? '') ||
+      compareOrdinal(a.uploadedAssetUrl ?? '', b.uploadedAssetUrl ?? '') ||
+      compareOrdinal(a.designNote ?? '', b.designNote ?? ''),
+  )
+}
+
+/**
+ * Visual-only garment identity. Display names and filenames are deliberately excluded; exact
+ * identifiers, historical URLs, and notes are retained for every sorted placement.
+ */
+export function garmentVisualSubgroupKey(item: CartItem, colour: string | null): string {
+  return JSON.stringify({
+    colour,
+    prints: sortedPrints(item).map((print) => ({
+      printAreaId: print.printAreaId,
+      printSizeId: print.printSizeId,
+      uploadedAssetId: print.uploadedAssetId ?? null,
+      uploadedAssetUrl: print.uploadedAssetUrl ?? null,
+      designNote: print.designNote ?? null,
+    })),
+  })
+}
+
+function buildGarmentVisualSubgroups<TPricing extends CartRowPricingLike>(
+  rows: CartProductRow<TPricing>[],
+): CartGarmentVisualSubgroup<TPricing>[] {
+  const byKey = new Map<string, CartGarmentVisualSubgroup<TPricing>>()
+  for (const row of rows) {
+    const subgroupKey = garmentVisualSubgroupKey(row.item, row.colour)
+    const existing = byKey.get(subgroupKey)
+    if (existing) {
+      existing.rows.push(row)
+    } else {
+      byKey.set(subgroupKey, {
+        subgroupKey,
+        colour: row.colour,
+        prints: sortedPrints(row.item),
+        rows: [row],
+      })
+    }
+  }
+  return Array.from(byKey.values()).sort(
+    (a, b) =>
+      compareNullableLabels(a.colour, b.colour) ||
+      compareOrdinal(a.subgroupKey, b.subgroupKey),
+  )
+}
+
 // ── Projection ───────────────────────────────────────────────────────────────
 
 /**
@@ -264,6 +328,7 @@ export function buildCartProductGroups<TPricing extends CartRowPricingLike = Car
         pricingModel,
         totalQuantity: 0,
         rows: [],
+        visualSubgroups: [],
       }
       groupsByKey.set(groupKey, group)
     }
@@ -300,6 +365,8 @@ export function buildCartProductGroups<TPricing extends CartRowPricingLike = Car
         compareNullableLabels(a.detailLabel, b.detailLabel) ||
         compareOrdinal(a.cartItemKey, b.cartItemKey),
     )
+    group.visualSubgroups =
+      group.kind === 'Garment' ? buildGarmentVisualSubgroups(group.rows) : []
   }
 
   groups.sort(

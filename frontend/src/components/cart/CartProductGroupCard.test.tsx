@@ -84,14 +84,12 @@ describe('CartProductGroupCard', () => {
     expect(row('front-and-back')).toBeInTheDocument()
   })
 
-  it('surfaces the distinguishing print detail on rows with the same colour and size', () => {
+  it('surfaces each distinguishing print detail once in its visual subgroup header', () => {
     renderGroup(sameVariantDifferentPrints)
 
-    expect(within(row('front-only')).getByText('Front - A3')).toBeInTheDocument()
-    expect(within(row('front-and-back')).getByText('Back - A4')).toBeInTheDocument()
-    // Both rows still show the same colour/size values.
-    expect(within(row('front-only')).getByText('Black')).toBeInTheDocument()
-    expect(within(row('front-and-back')).getByText('Black')).toBeInTheDocument()
+    expect(screen.getAllByText('Front · A3')).toHaveLength(2)
+    expect(screen.getByText('Back · A4')).toBeInTheDocument()
+    expect(screen.getAllByText('Black')).toHaveLength(2)
   })
 
   it('increases exactly one source row', async () => {
@@ -132,7 +130,7 @@ describe('CartProductGroupCard', () => {
       'front-only': linePricing({ unitPrice: 27.5, lineTotal: 55 }),
     })
 
-    expect(within(row('front-only')).getByText('$55.00')).toBeInTheDocument()
+    expect(within(row('front-only')).getByText('$55.00 total')).toBeInTheDocument()
     expect(within(row('front-only')).getByText('$27.50 each')).toBeInTheDocument()
   })
 
@@ -153,8 +151,8 @@ describe('CartProductGroupCard', () => {
       { ...sameVariantDifferentPrints[0], color: undefined, size: undefined, variantLabel: undefined },
     ])
 
-    const fields = within(row('front-only')).getAllByText('—')
-    expect(fields).toHaveLength(2) // Colour and Size
+    expect(screen.getByRole('heading', { level: 4, name: '—' })).toBeInTheDocument()
+    expect(within(row('front-only')).getByText('Size —')).toBeInTheDocument()
   })
 
   it('omits apparel fields for a Badge line', () => {

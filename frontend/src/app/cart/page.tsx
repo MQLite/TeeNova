@@ -9,8 +9,19 @@ import { CartProductGroupCard } from '@/components/cart/CartProductGroupCard'
 
 export default function CartPage() {
   const { items, removeItem, updateQuantity } = useCartStore()
-  const { pricingByKey, errorsByKey, groupTotals, groupKeyByItemKey, subtotal: recalcSubtotal, error: pricingError } =
-    useCartPricing(items)
+  const {
+    pricingByKey,
+    errorsByKey,
+    groupTotals,
+    groupKeyByItemKey,
+    subtotal: recalcSubtotal,
+    error: pricingError,
+    errorKind,
+    loading: pricingLoading,
+    isComplete: pricingComplete,
+    canRetry,
+    retry,
+  } = useCartPricing(items)
 
   // Presentation-only projection (Jira 10102): grouped by product identity, one child row per source
   // cart line. Derived at render time from the live items + the current quotes — nothing extra is
@@ -93,9 +104,21 @@ export default function CartPage() {
             ))}
 
             {pricingError && (
-              <p className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
-                {pricingError}
-              </p>
+              <div
+                role="alert"
+                className={`rounded-lg border px-4 py-3 text-sm ${
+                  errorKind === 'rate-limit'
+                    ? 'border-amber-200 bg-amber-50 text-amber-800'
+                    : 'border-red-200 bg-red-50 text-red-700'
+                }`}
+              >
+                <p>{pricingError}</p>
+                {canRetry && (
+                  <button type="button" onClick={retry} className="mt-2 underline">
+                    Retry pricing
+                  </button>
+                )}
+              </div>
             )}
 
             <div className="flex items-center justify-between pt-2">
@@ -141,9 +164,19 @@ export default function CartPage() {
               </div>
 
               <div className="px-6 pb-6">
-                <Link href="/checkout" className="btn-black w-full justify-center">
-                  Proceed to Checkout
-                </Link>
+                {pricingComplete ? (
+                  <Link href="/checkout" className="btn-black w-full justify-center">
+                    Proceed to Checkout
+                  </Link>
+                ) : (
+                  <button
+                    type="button"
+                    disabled
+                    className="btn-black w-full cursor-not-allowed justify-center opacity-50"
+                  >
+                    {pricingLoading ? 'Refreshing prices…' : 'Pricing unavailable'}
+                  </button>
+                )}
                 <div className="mt-4 flex items-center justify-center gap-2 font-mono text-[11px] uppercase tracking-[0.54px] text-black/45">
                   <span>Secure checkout</span>
                   <span>-</span>

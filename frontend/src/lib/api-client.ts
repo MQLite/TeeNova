@@ -12,6 +12,8 @@ export class ApiError extends Error {
     public readonly status: number,
     message: string,
     public readonly details?: unknown,
+    /** Parsed Retry-After delay in milliseconds when supplied by the server. */
+    public readonly retryAfterMs?: number,
   ) {
     super(message)
     this.name = 'ApiError'
@@ -28,8 +30,20 @@ async function handleResponse<T>(res: Response): Promise<T> {
     }
     const message =
       (details as { error?: { message?: string } })?.error?.message ??
+      (details as { message?: string })?.message ??
       `HTTP ${res.status}`
-    throw new ApiError(res.status, message, details)
+    const retryAfter = res.headers.get('Retry-After')
+    let retryAfterMs: number | undefined
+    if (retryAfter) {
+      const seconds = Number(retryAfter)
+      if (Number.isFinite(seconds)) {
+        retryAfterMs = Math.max(0, seconds * 1000)
+      } else {
+        const date = Date.parse(retryAfter)
+        if (Number.isFinite(date)) retryAfterMs = Math.max(0, date - Date.now())
+      }
+    }
+    throw new ApiError(res.status, message, details, retryAfterMs)
   }
 
   // Handle 204 No Content
@@ -59,11 +73,12 @@ export function makeApiClient(
       return handleResponse<T>(res)
     },
 
-    async post<T>(path: string, body?: unknown): Promise<T> {
+    async post<T>(path: string, body?: unknown, options?: { signal?: AbortSignal }): Promise<T> {
       const res = await fetch(`${baseUrl}${path}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', ...defaultHeaders },
         body: body !== undefined ? JSON.stringify(body) : undefined,
+        signal: options?.signal,
       })
       return handleResponse<T>(res)
     },

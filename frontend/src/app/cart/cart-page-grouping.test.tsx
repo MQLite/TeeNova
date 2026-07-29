@@ -4,7 +4,12 @@ import userEvent from '@testing-library/user-event'
 import CartPage from './page'
 import { useCartStore } from '@/features/cart/cart-store'
 import { buildOrderItemPayloads } from '@/features/checkout/order-item-payload'
-import type { CartItem, PriceCalculationRequest, PriceCalculationResponse } from '@/types'
+import type {
+  BatchPriceCalculationItem,
+  BatchPriceCalculationResponse,
+  CartItem,
+  PriceCalculationResponse,
+} from '@/types'
 
 /**
  * Page-level proof for Jira 10102: the REAL cart store and the REAL useCartPricing hook drive the
@@ -12,11 +17,13 @@ import type { CartItem, PriceCalculationRequest, PriceCalculationResponse } from
  * mutation identity, the repriced subtotal and the untouched checkout payload.
  */
 
-const calculatePricing = vi.fn<(request: PriceCalculationRequest) => Promise<PriceCalculationResponse>>()
+const calculateBatch = vi.fn<
+  (items: BatchPriceCalculationItem[]) => Promise<BatchPriceCalculationResponse>
+>()
 
 vi.mock('@/api/pricing', () => ({
   pricingApi: {
-    calculatePricing: (request: PriceCalculationRequest) => calculatePricing(request),
+    calculateBatch: (items: BatchPriceCalculationItem[]) => calculateBatch(items),
   },
 }))
 
@@ -97,12 +104,20 @@ const freshUnitPrice: Record<string, number> = {
 
 beforeEach(() => {
   useCartStore.setState({ items: structuredClone(cart) })
-  calculatePricing.mockImplementation((request) => {
-    const item = useCartStore
-      .getState()
-      .items.find((i) => i.productId === request.productId && i.prints?.length === request.prints?.length)
-    const key = item?.cartItemKey ?? 'front-only'
-    return Promise.resolve(quote(freshUnitPrice[key], request.quantity))
+  calculateBatch.mockImplementation((items) => {
+    return Promise.resolve({
+      results: items.map(({ correlationKey, request }) => {
+        const item = useCartStore
+          .getState()
+          .items.find(
+            (candidate) =>
+              candidate.productId === request.productId &&
+              candidate.prints?.length === request.prints?.length,
+          )
+        const key = item?.cartItemKey ?? 'front-only'
+        return { correlationKey, quote: quote(freshUnitPrice[key], request.quantity) }
+      }),
+    })
   })
 })
 
@@ -165,9 +180,9 @@ describe('cart page — product-grouped presentation', () => {
     expect(screen.queryByText('$204.00')).not.toBeInTheDocument()
     // Line totals, scoped to their own row (the same figure can also appear in that row's breakdown).
     const lineTotals: Array<[string, string]> = [
-      ['cart-row-front-only', '$55.00'],
-      ['cart-row-front-and-back', '$105.00'],
-      ['cart-row-twin', '$26.00'],
+      ['cart-row-front-only', '$55.00 total'],
+      ['cart-row-front-and-back', '$105.00 total'],
+      ['cart-row-twin', '$26.00 total'],
     ]
     for (const [testId, amount] of lineTotals) {
       expect(within(screen.getByTestId(testId)).getAllByText(amount).length).toBeGreaterThan(0)
