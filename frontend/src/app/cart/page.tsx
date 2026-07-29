@@ -1,24 +1,46 @@
 'use client'
 
+import { useMemo } from 'react'
 import Link from 'next/link'
 import { useCartStore } from '@/features/cart/cart-store'
-import { tierHint, useCartPricing } from '@/features/cart/useCartPricing'
-import { BannerDetailSummary } from '@/components/products/BannerDetailSummary'
-import type { CartItem } from '@/types'
-
-function getPrintSummary(item: CartItem) {
-  return item.prints ?? []
-}
-
-function getUploadedDesignUrl(item: CartItem) {
-  // Badge carries its design at item level; garments carry it per-print.
-  return item.uploadedAssetUrl ?? item.prints?.find((print) => print.uploadedAssetUrl)?.uploadedAssetUrl
-}
+import { useCartPricing } from '@/features/cart/useCartPricing'
+import { buildCartProductGroups } from '@/features/cart/cart-grouping'
+import { CartProductGroupCard } from '@/components/cart/CartProductGroupCard'
 
 export default function CartPage() {
   const { items, removeItem, updateQuantity } = useCartStore()
   const { pricingByKey, errorsByKey, groupTotals, groupKeyByItemKey, subtotal: recalcSubtotal, error: pricingError } =
     useCartPricing(items)
+
+  // Presentation-only projection (Jira 10102): grouped by product identity, one child row per source
+  // cart line. Derived at render time from the live items + the current quotes — nothing extra is
+  // persisted, the `items` array is never reordered, and the checkout payload is untouched.
+  const tierQuantityByKey = useMemo(() => {
+    const byKey: Record<string, number | undefined> = {}
+    for (const item of items) {
+      byKey[item.cartItemKey] = groupTotals[groupKeyByItemKey[item.cartItemKey]]
+    }
+    return byKey
+  }, [items, groupTotals, groupKeyByItemKey])
+
+  const productGroups = useMemo(
+    () => buildCartProductGroups(items, { pricingByKey, errorsByKey, tierQuantityByKey }),
+    [items, pricingByKey, errorsByKey, tierQuantityByKey],
+  )
+
+  // Every mutation resolves its target by cartItemKey only — never by colour, size, row index or
+  // product id — so a grouped row can never affect a neighbouring line.
+  function handleIncrease(cartItemKey: string) {
+    const item = items.find((i) => i.cartItemKey === cartItemKey)
+    if (!item) return
+    updateQuantity(cartItemKey, item.quantity + 1)
+  }
+
+  function handleDecrease(cartItemKey: string) {
+    const item = items.find((i) => i.cartItemKey === cartItemKey)
+    if (!item) return
+    updateQuantity(cartItemKey, item.quantity - 1)
+  }
 
   if (items.length === 0) {
     return (
@@ -60,206 +82,15 @@ export default function CartPage() {
       <div className="mx-auto max-w-6xl px-4 py-8 sm:px-6 lg:px-8">
         <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
           <div className="space-y-4 lg:col-span-2">
-            {items.map((item, idx) => {
-              const linePricing = pricingByKey[item.cartItemKey]
-              const lineError = errorsByKey[item.cartItemKey]
-              const unitPrice = linePricing?.unitPrice ?? item.unitPrice
-              const lineTotal = linePricing?.lineTotal ?? item.unitPrice * item.quantity
-              const groupKey = groupKeyByItemKey[item.cartItemKey]
-              const groupQuantity = (groupKey ? groupTotals[groupKey] : undefined) ?? item.quantity
-              const hint = tierHint(linePricing, groupQuantity)
-              const isFixedSizeBanner = item.kind === 'Banner' && item.pricingModel === 'FixedSize'
-              const isBadge = item.kind === 'Badge'
-              // Badge and FixedSize Banner both price as a single unit × quantity with item-level design.
-              const isSimpleUnit = isBadge || isFixedSizeBanner
-              return (
-              <div key={item.cartItemKey} className="card overflow-hidden">
-                <div className="flex gap-4 p-5">
-                  <div className="flex h-20 w-20 flex-shrink-0 items-center justify-center overflow-hidden rounded-lg bg-black/[0.03]">
-                    {getUploadedDesignUrl(item) ? (
-                      // eslint-disable-next-line @next/next/no-img-element
-                      <img
-                        src={getUploadedDesignUrl(item) ?? ''}
-                        alt="design"
-                        className="h-full w-full object-contain p-1"
-                      />
-                    ) : (
-                      <svg viewBox="0 0 200 220" className="h-10 w-10 text-black/[0.08]" fill="currentColor">
-                        <path d="M 59 36 L 30 48 L 14 85 L 41 94 L 44 85 L 44 185 L 156 185 L 156 85 L 159 94 L 186 85 L 170 48 L 141 36 C 134 54 118 61 100 61 C 82 61 66 54 59 36 Z" />
-                      </svg>
-                    )}
-                  </div>
-
-                  <div className="min-w-0 flex-1">
-                    <div className="flex items-start justify-between gap-2">
-                      <div>
-                        <h3 className="text-base text-black" style={{ fontWeight: 480, letterSpacing: '-0.14px' }}>
-                          {item.productName}
-                        </h3>
-                        {isFixedSizeBanner ? (
-                          <>
-                            <p className="mt-0.5 font-mono text-[10px] uppercase tracking-[0.54px] text-black/45">
-                              Banner · Fixed size · {item.quantity} pcs
-                            </p>
-                            {item.bannerDetail && (
-                              <BannerDetailSummary detail={item.bannerDetail} className="mt-2" />
-                            )}
-                            {(getUploadedDesignUrl(item) || item.designNote) && (
-                              <div className="mt-2 flex flex-wrap gap-1">
-                                <span className="inline-flex flex-col rounded-lg border border-black/[0.08] px-2 py-1 text-[10px] text-black/55">
-                                  {getUploadedDesignUrl(item) && <span className="text-green-600">Design uploaded</span>}
-                                  {item.designNote && <span className="normal-case tracking-normal text-black/45">{item.designNote}</span>}
-                                </span>
-                              </div>
-                            )}
-                          </>
-                        ) : isBadge ? (
-                          <>
-                            <p className="mt-0.5 font-mono text-[10px] uppercase tracking-[0.54px] text-black/45">
-                              Badge · {item.quantity} pcs
-                            </p>
-                            {(getUploadedDesignUrl(item) || item.designNote) && (
-                              <div className="mt-2 flex flex-wrap gap-1">
-                                <span className="inline-flex flex-col rounded-lg border border-black/[0.08] px-2 py-1 text-[10px] text-black/55">
-                                  {getUploadedDesignUrl(item) && <span className="text-green-600">Design uploaded</span>}
-                                  {item.designNote && <span className="normal-case tracking-normal text-black/45">{item.designNote}</span>}
-                                </span>
-                              </div>
-                            )}
-                          </>
-                        ) : (
-                          <>
-                            {item.variantLabel && (
-                              <p className="mt-0.5 text-sm text-black/55" style={{ letterSpacing: '-0.14px' }}>
-                                {item.variantLabel}
-                              </p>
-                            )}
-                            {getPrintSummary(item).length > 0 ? (
-                              <div className="mt-2 flex flex-wrap gap-1">
-                                {getPrintSummary(item).map((print) => (
-                                  <span key={`${print.printAreaId}:${print.printSizeId}`}
-                                    className="inline-flex flex-col rounded-lg border border-black/[0.08] px-2 py-1 text-[10px] text-black/55">
-                                    {print.printAreaName} - {print.printSizeName}
-                                    {print.uploadedAssetUrl && <span className="text-green-600">Design uploaded</span>}
-                                    {print.designNote && <span className="normal-case tracking-normal text-black/45">{print.designNote}</span>}
-                                  </span>
-                                ))}
-                              </div>
-                            ) : null}
-                          </>
-                        )}
-                      </div>
-                      <button
-                        onClick={() => removeItem(item.cartItemKey)}
-                        className="flex-shrink-0 rounded-full p-1.5 text-black/25 transition-colors hover:bg-red-50 hover:text-red-500"
-                        title="Remove"
-                      >
-                        <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                          <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
-                        </svg>
-                      </button>
-                    </div>
-
-                    <div className="mt-3 flex items-center justify-between">
-                      <div className="flex items-center gap-0 rounded-full border border-black/[0.10]">
-                        <button
-                          className="px-3 py-1.5 text-base text-black/50 transition-colors hover:text-black"
-                          onClick={() => updateQuantity(item.cartItemKey, item.quantity - 1)}
-                        >-</button>
-                        <span className="min-w-[2rem] text-center text-sm text-black" style={{ fontWeight: 480 }}>
-                          {item.quantity}
-                        </span>
-                        <button
-                          className="px-3 py-1.5 text-base text-black/50 transition-colors hover:text-black"
-                          onClick={() => updateQuantity(item.cartItemKey, item.quantity + 1)}
-                        >+</button>
-                      </div>
-                      <span className="text-base text-black" style={{ fontWeight: 540, letterSpacing: '-0.26px' }}>
-                        ${lineTotal.toFixed(2)}
-                      </span>
-                    </div>
-
-                    {/* Badge / FixedSize Banner price breakdown: a single backend unit price (Jira 9504/9517). */}
-                    {isSimpleUnit && linePricing && !lineError && (
-                      <div className="mt-3 space-y-1 rounded-lg bg-black/[0.02] px-3 py-2 text-xs text-black/60">
-                        <div className="flex items-center justify-between" style={{ letterSpacing: '-0.14px' }}>
-                          <span>Unit price</span>
-                          <span className="text-black/75">${linePricing.unitPrice.toFixed(2)}</span>
-                        </div>
-                        {isBadge && linePricing.appliedTierMinQuantity != null && (
-                          <div className="flex items-center justify-between" style={{ letterSpacing: '-0.14px' }}>
-                            <span>Quantity tier</span>
-                            <span className="text-black/75">{linePricing.appliedTierMinQuantity}+</span>
-                          </div>
-                        )}
-                      </div>
-                    )}
-
-                    {/* Print-only price breakdown: fixed garment + summed print prices (Jira 9207) */}
-                    {!isSimpleUnit && linePricing && !lineError && (
-                      <div className="mt-3 space-y-1 rounded-lg bg-black/[0.02] px-3 py-2 text-xs text-black/60">
-                        <div className="flex items-center justify-between" style={{ letterSpacing: '-0.14px' }}>
-                          <span>Garment</span>
-                          <span className="text-black/75">${linePricing.garmentUnitPrice.toFixed(2)}</span>
-                        </div>
-                        {linePricing.prints.map((print) => (
-                          <div
-                            key={`${print.printAreaId}:${print.printSizeId}`}
-                            className="flex items-center justify-between"
-                            style={{ letterSpacing: '-0.14px' }}
-                          >
-                            <span>{print.printAreaName} - {print.printSizeName} <span className="text-black/40">print</span></span>
-                            <span className="text-black/75">${print.resolvedUnitPrintPrice.toFixed(2)}</span>
-                          </div>
-                        ))}
-                        <div className="flex items-center justify-between border-t border-black/[0.06] pt-1" style={{ letterSpacing: '-0.14px' }}>
-                          <span className="text-black/75" style={{ fontWeight: 480 }}>Unit total</span>
-                          <span className="text-black" style={{ fontWeight: 540 }}>${unitPrice.toFixed(2)}</span>
-                        </div>
-                      </div>
-                    )}
-
-                    {/* Print volume tier note (garment only) */}
-                    {!isSimpleUnit && linePricing && !lineError && linePricing.pricingMode === 'Tiered' && (
-                      <div className="mt-2 flex flex-wrap items-center gap-1.5">
-                        {linePricing.appliedTierMinQuantity != null && (
-                          <span className="rounded-full bg-black/[0.05] px-2 py-0.5 text-[10px] uppercase tracking-[0.54px] text-black/55">
-                            Print volume price: {linePricing.appliedTierMinQuantity <= 1 ? '1 pc' : `${linePricing.appliedTierMinQuantity}+`}
-                          </span>
-                        )}
-                        <span className="rounded-full bg-black/[0.05] px-2 py-0.5 text-[10px] uppercase tracking-[0.54px] text-black/55">
-                          Group quantity: {groupQuantity}
-                        </span>
-                        {hint && (
-                          <span className="text-[11px] text-black/45" style={{ letterSpacing: '-0.14px' }}>
-                            {hint}
-                          </span>
-                        )}
-                      </div>
-                    )}
-
-                    {lineError && (
-                      <div className="mt-2 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700" style={{ letterSpacing: '-0.14px' }}>
-                        <p>{lineError}</p>
-                        <p className="mt-1 text-red-600">
-                          This print option may no longer be available for the selected size. Please remove this item and add it again.
-                        </p>
-                      </div>
-                    )}
-                  </div>
-                </div>
-
-                <div className="flex items-center justify-between border-t border-black/[0.06] bg-black/[0.02] px-5 py-2">
-                  <span className="font-mono text-[10px] uppercase tracking-[0.54px] text-black/45">
-                    Item {idx + 1} of {items.length}
-                  </span>
-                  <span className="font-mono text-[10px] uppercase tracking-[0.54px] text-black/50">
-                    ${unitPrice.toFixed(2)} each
-                  </span>
-                </div>
-              </div>
-              )
-            })}
+            {productGroups.map((group) => (
+              <CartProductGroupCard
+                key={group.groupKey}
+                group={group}
+                onIncrease={handleIncrease}
+                onDecrease={handleDecrease}
+                onRemove={removeItem}
+              />
+            ))}
 
             {pricingError && (
               <p className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">

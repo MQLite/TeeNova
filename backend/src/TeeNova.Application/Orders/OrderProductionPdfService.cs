@@ -174,118 +174,22 @@ public class OrderProductionPdfService : IOrderProductionPdfService, ITransientD
 
     private void ComposeItems(IContainer container, OrderDto order)
     {
-        Section(container, $"Items ({order.Items.Count})", inner =>
+        // Jira 10104 — the flat one-row-per-order-item table is replaced by one block per ACTUAL product.
+        // The product-first projection (Jira 10103) is built here from the snapshot already in hand: no
+        // second order query, no catalogue query, no pricing, no persistence.
+        var items = OrderProductionPdfModelBuilder.Build(order);
+
+        Section(container, ItemsSectionTitle(items), inner =>
         {
             inner.Column(col =>
             {
-                col.Item().Table(table =>
-                {
-                    table.ColumnsDefinition(columns =>
-                    {
-                        columns.RelativeColumn(3);    // product
-                        columns.RelativeColumn(2);    // variant
-                        columns.ConstantColumn(35);   // qty
-                        columns.RelativeColumn(1.6f);  // clothes finded (check)
-                        columns.RelativeColumn(1.4f);  // finished (check)
-                    });
+                col.Item().Element(c => ComposeProductBlocks(c, items));
 
-                    table.Header(header =>
-                    {
-                        HeaderCell(header.Cell(), "Product");
-                        HeaderCell(header.Cell(), "Variant");
-                        HeaderCell(header.Cell(), "Qty", right: true);
-                        HeaderCell(header.Cell(), "Clothes Finded", center: true);
-                        HeaderCell(header.Cell(), "Finished", center: true);
-                    });
-
-                    // Rows follow product name, then the natural garment size sequence (S, M, L, XL…)
-                    // rather than cart/insertion order, so a product's sizes read in order on the sheet.
-                    // Colour is the final tiebreak for deterministic output. Non-garment items (Badge,
-                    // Banner) have no size and sort among themselves by name.
-                    var itemsInDisplayOrder = order.Items
-                        .Select(i => new { Item = i, Parts = SplitVariantLabel(i.VariantLabel) })
-                        .OrderBy(x => x.Item.ProductName, StringComparer.OrdinalIgnoreCase)
-                        .ThenBy(x => SizeRank(x.Parts.Size))
-                        .ThenBy(x => x.Parts.Size, StringComparer.OrdinalIgnoreCase)
-                        .ThenBy(x => x.Parts.Color, StringComparer.OrdinalIgnoreCase)
-                        .Select(x => x.Item)
-                        .ToList();
-
-                    foreach (var item in itemsInDisplayOrder)
-                    {
-                        BodyCell(table.Cell()).Text(item.ProductName);
-                        BodyCell(table.Cell()).Text(item.VariantLabel ?? "-");
-                        BodyCell(table.Cell()).AlignRight().Text(item.Quantity.ToString(CultureInfo.InvariantCulture));
-                        CheckBoxCell(table.Cell());
-                        CheckBoxCell(table.Cell());
-                    }
-                });
-
-                // Print production list, grouped by the print instruction itself — design, position
-                // (print area) and print size. Every garment that takes that exact print is listed under it,
-                // with sizes combined per product + colour (e.g. "Daisy Yellow / S, M, L, XL"). The design is
-                // keyed by its core file name (DesignDisplayName strips the per-upload prefix) so the same
-                // artwork re-uploaded for each placement still collapses, while the heading shows the design
-                // description when one was given. Keeping the file name in the key stops two distinct
-                // artworks that happen to share a description from merging. Per-size quantities stay in the
-                // Items table above.
-                var printRows = order.Items
-                    .Where(i => i.Prints.Count > 0)
-                    .SelectMany(item =>
-                    {
-                        var (color, size) = SplitVariantLabel(item.VariantLabel);
-                        return item.Prints.Select(p => (
-                            item.ProductName,
-                            Color: color,
-                            Size: size,
-                            Design: DesignDisplayName(p.UploadedAssetUrl),
-                            DesignLabel: DesignLabel(p.UploadedAssetUrl, p.DesignNote),
-                            Area: p.PrintAreaName,
-                            PrintSize: p.PrintSizeName,
-                            Notes: new[]
-                            {
-                                string.IsNullOrWhiteSpace(p.Notes) ? null : $"Print note: {p.Notes}",
-                            }.Where(n => n is not null).Select(n => n!).ToList()));
-                    })
-                    .ToList();
-
-                if (printRows.Count > 0)
-                    col.Item().PaddingTop(8).Text("Print production").SemiBold().FontSize(10);
-
-                foreach (var group in printRows.GroupBy(r => (r.Design, r.DesignLabel, r.Area, r.PrintSize)))
-                {
-                    var first = group.First();
-
-                    col.Item().PaddingTop(4).PaddingLeft(8).BorderLeft(2).BorderColor(Colors.Grey.Lighten1)
-                        .PaddingLeft(6).Column(pc =>
-                        {
-                            pc.Item().Text(t =>
-                            {
-                                t.Span(first.DesignLabel).SemiBold().FontSize(9);
-                                t.Span("  ·  ").FontSize(9).FontColor(Colors.Grey.Medium);
-                                t.Span($"{first.Area} · {first.PrintSize}").FontSize(9);
-                            });
-
-                            // Each product + colour the print lands on, with its garment sizes combined.
-                            foreach (var garment in group.GroupBy(r => (r.ProductName, r.Color)))
-                            {
-                                var g = garment.First();
-                                var sizes = garment.Select(r => r.Size).Where(s => s.Length > 0).Distinct()
-                                    .OrderBy(SizeRank).ThenBy(s => s, StringComparer.OrdinalIgnoreCase).ToList();
-                                var variantText = sizes.Count > 0
-                                    ? $"{g.Color} / {string.Join(", ", sizes)}"
-                                    : g.Color;
-                                pc.Item().Text(t =>
-                                {
-                                    t.Span($"{g.ProductName} · ").FontSize(9).FontColor(Colors.Grey.Darken1);
-                                    t.Span(variantText).FontSize(9).SemiBold();
-                                });
-                            }
-
-                            foreach (var note in group.SelectMany(r => r.Notes).Distinct())
-                                pc.Item().Text(note).FontSize(8).FontColor(Colors.Grey.Darken1);
-                        });
-                }
+                // Jira 10106 — a dedicated pure projection supplies both the order-level size totals and
+                // exact design + area-id + size-id groups. Counts are sums of source item quantities, once
+                // per print membership; no row count, grouped product quantity or live catalogue value is
+                // consulted.
+                ComposePrintProduction(col, OrderPrintCopyStatisticsBuilder.Build(order));
 
                 // Non-garment / design-only items (Badge, Jira 9505). These carry no print placements, so
                 // they never appear in the print-production list above. Each is rendered with its product,
@@ -299,11 +203,359 @@ public class OrderProductionPdfService : IOrderProductionPdfService, ITransientD
         });
     }
 
+    // ── Product blocks (Jira 10104) ─────────────────────────────────────────────
+
+    /// <summary>
+    /// "Items (3 products · 14 units)". The product and unit counts come from the projection, so the
+    /// heading agrees with the blocks below it rather than counting raw order rows.
+    /// </summary>
+    private static string ItemsSectionTitle(ProductionPdfItemsModel items)
+        => $"Items ({items.ProductCount} {Plural(items.ProductCount, "product")} · " +
+           $"{items.TotalQuantity} {Plural(items.TotalQuantity, "unit")})";
+
+    private static string Plural(int count, string noun) => count == 1 ? noun : noun + "s";
+
+    private static void ComposeProductBlocks(IContainer container, ProductionPdfItemsModel items)
+    {
+        if (items.Sections.Count == 0)
+        {
+            container.Text("No items on this order.").FontSize(9).FontColor(Colors.Grey.Darken1);
+            return;
+        }
+
+        container.Column(col =>
+        {
+            col.Spacing(8);
+
+            foreach (var section in items.Sections)
+            {
+                // Pagination strategy. A Decoration renders its Before slot on EVERY page its content
+                // spans, so a long product's heading repeats above the continued rows and the child-table
+                // header repeats with it — continued rows stay unambiguously attached to their product.
+                //
+                // On top of that:
+                //  · a small block uses PreventPageBreak() — it moves to the next page rather than being
+                //    split. Unlike ShowEntire() it degrades gracefully instead of throwing a
+                //    DocumentLayoutException when content cannot fit, so an unusually long note can never
+                //    break the download;
+                //  · a larger block uses EnsureSpace(), which only guarantees the heading plus the table
+                //    header and first row start together, then pages normally. A big group is never forced
+                //    onto one impossible page.
+                var block = IsSmallBlock(section)
+                    ? col.Item().PreventPageBreak()
+                    : col.Item().EnsureSpace(ProductBlockMinStartHeight);
+
+                block.Decoration(decoration =>
+                {
+                    decoration.Before().Element(c => ComposeProductHeader(c, section));
+                    decoration.Content().Element(c => ComposeProductRows(c, section));
+                });
+            }
+        });
+    }
+
+    /// <summary>Points reserved for a product heading + child-table header + one child row.</summary>
+    private const float ProductBlockMinStartHeight = 78f;
+
+    /// <summary>Row count under which a product block is kept whole on one page.</summary>
+    private const int SmallBlockRowLimit = 6;
+
+    /// <summary>Estimated rendered line count under which a product block is kept whole on one page.</summary>
+    private const int SmallBlockLineLimit = 14;
+
+    /// <summary>
+    /// Whether the block is small enough to keep intact. Both a row cap and a content-length estimate are
+    /// applied, so a "few rows" block carrying very long notes is still allowed to page normally.
+    /// </summary>
+    private static bool IsSmallBlock(ProductionPdfProductSection section)
+        => section.Rows.Count <= SmallBlockRowLimit
+           && EstimatedLineCount(section) <= SmallBlockLineLimit;
+
+    /// <summary>
+    /// Conservative estimate of how many rendered text lines a product block occupies: every production
+    /// line, plus a wrap allowance for long text. Deliberately pessimistic — over-estimating only costs a
+    /// page break that would have been avoidable.
+    /// </summary>
+    private static int EstimatedLineCount(ProductionPdfProductSection section)
+    {
+        var lines = 0;
+        foreach (var row in section.Rows)
+        {
+            var rowLines = 0;
+            foreach (var line in row.ProductionLines)
+                rowLines += 1 + line.Length / DetailCharsPerLine;
+
+            // Colour and size wrap independently of the detail column.
+            rowLines = Math.Max(rowLines, 1 + Math.Max(row.Colour.Length, row.Size.Length) / VariantCharsPerLine);
+            lines += rowLines;
+        }
+
+        return lines;
+    }
+
+    private const int DetailCharsPerLine = 44;
+    private const int VariantCharsPerLine = 22;
+
+    /// <summary>
+    /// The product identity and total quantity, shown once per product (and repeated at the top of each
+    /// continued page). The kind is labelled only when it clarifies a non-garment item.
+    /// </summary>
+    private static void ComposeProductHeader(IContainer container, ProductionPdfProductSection section)
+    {
+        container.PaddingBottom(3).BorderTop(1).BorderColor(Colors.Grey.Medium).PaddingTop(4).Row(row =>
+        {
+            row.RelativeItem().Text(t =>
+            {
+                t.Span(section.ProductName).SemiBold().FontSize(10);
+                if (section.KindLabel is not null)
+                    t.Span($"   ·   {section.KindLabel}").FontSize(9).FontColor(Colors.Grey.Darken1);
+            });
+
+            row.ConstantItem(130).AlignRight().Text(t =>
+            {
+                t.Span("Total quantity  ").FontSize(9).FontColor(Colors.Grey.Darken1);
+                t.Span(section.TotalQuantity.ToString(CultureInfo.InvariantCulture)).SemiBold().FontSize(10);
+            });
+        });
+    }
+
+    /// <summary>
+    /// The product's child rows. Quantities come straight from the projection — nothing is recounted or
+    /// regrouped here.
+    ///
+    /// Jira 10105 removed the two visual checklist columns; the width they held is reclaimed by the
+    /// production-detail column, which takes the clear majority of it (see the width note below).
+    /// </summary>
+    private static void ComposeProductRows(IContainer container, ProductionPdfProductSection section)
+    {
+        var garment = section.Layout == ProductionPdfRowLayout.GarmentVariant;
+
+        var schema = ChildTableColumns(section.Layout);
+
+        container.Table(table =>
+        {
+            table.ColumnsDefinition(columns =>
+            {
+                foreach (var column in schema)
+                {
+                    if (column.ConstantWidth > 0f)
+                        columns.ConstantColumn(column.ConstantWidth);
+                    else
+                        columns.RelativeColumn(column.RelativeWidth);
+                }
+            });
+
+            // Repeated by QuestPDF at the top of every page this table spans.
+            table.Header(header =>
+            {
+                foreach (var column in schema)
+                    HeaderCell(header.Cell(), column.Header, right: column.AlignRight);
+            });
+
+            foreach (var row in section.Rows)
+            {
+                if (garment)
+                {
+                    BodyCell(table.Cell()).Text(row.Colour);
+                    BodyCell(table.Cell()).Text(row.Size);
+                }
+
+                BodyCell(table.Cell()).AlignRight().Text(row.Quantity.ToString(CultureInfo.InvariantCulture));
+                BodyCell(table.Cell()).Text(row.ProductionSummary);
+            }
+        });
+    }
+
+    /// <summary>
+    /// The child table's columns, in order — the single source of both the column definition and the
+    /// header row, so the two can never disagree and the schema is directly assertable.
+    ///
+    /// Every column carries data and a header: there is no spacer, no unlabelled narrow column and no
+    /// zero-width definition. Jira 10105 removed the "Clothes Finded" and "Finished" checklist columns
+    /// from both layouts and gave the released width to the production-detail column.
+    ///
+    /// Widths on the A4 content width of 527.2 pt (595.28 pt page − 2 × 1.2 cm margins):
+    /// <list type="bullet">
+    ///   <item>Garment before: colour 2.2 · size 42 · qty 35 · details 4.4 · checks 1.6 + 1.4
+    ///         ⇒ colour ≈ 103 pt, details ≈ 206 pt, checklist ≈ 141 pt.</item>
+    ///   <item>Garment after: colour 2.0 · size 46 · qty 35 · details 5.5
+    ///         ⇒ colour ≈ 119 pt, details ≈ 327 pt. Details takes ~121 pt of the ~141 pt released;
+    ///         colour keeps enough for "Forest Green" on one line and size gains 4 pt so "One Size"
+    ///         and "XXXXXL" stop wrapping.</item>
+    ///   <item>Compact before: qty 35 · details 6.6 · checks 1.6 + 1.4 ⇒ details ≈ 338 pt.</item>
+    ///   <item>Compact after: qty 35 · details (all remaining) ⇒ details ≈ 492 pt.</item>
+    /// </list>
+    /// </summary>
+    internal static IReadOnlyList<ProductionPdfChildColumn> ChildTableColumns(ProductionPdfRowLayout layout)
+        => layout == ProductionPdfRowLayout.GarmentVariant
+            ? new[]
+            {
+                ProductionPdfChildColumn.Flexible("Colour", 2.0f),
+                ProductionPdfChildColumn.Fixed("Size", 46f),
+                ProductionPdfChildColumn.Fixed("Qty", 35f, alignRight: true),
+                ProductionPdfChildColumn.Flexible("Production details", 5.5f),
+            }
+            : new[]
+            {
+                ProductionPdfChildColumn.Fixed("Qty", 35f, alignRight: true),
+                ProductionPdfChildColumn.Flexible("Design / production details", 1f),
+            };
+
+    /// <summary>
+    /// Jira 10106 print statistics: a compact order-level roll-up followed by exact, traceable detailed
+    /// groups. The projection has already counted quantities; composition only displays it.
+    /// </summary>
+    private static void ComposePrintProduction(ColumnDescriptor col, OrderPrintCopyStatistics statistics)
+    {
+        var summaryContainer = statistics.SizeTotals.Count <= 10
+            ? col.Item().PreventPageBreak()
+            : col.Item().EnsureSpace(85);
+
+        summaryContainer.PaddingTop(8).Column(summary =>
+        {
+            summary.Item().Text("Print production & copy counts").SemiBold().FontSize(10);
+
+            if (statistics.TotalPrintCopies == 0)
+            {
+                summary.Item().PaddingTop(3).Text("No print placements on this order.")
+                    .FontSize(9).FontColor(Colors.Grey.Darken1);
+                return;
+            }
+
+            summary.Item().PaddingTop(4).Text("Print-size totals").SemiBold().FontSize(9);
+            summary.Item().PaddingTop(2).Table(table =>
+            {
+                table.ColumnsDefinition(columns =>
+                {
+                    columns.RelativeColumn();
+                    columns.ConstantColumn(76);
+                });
+
+                table.Header(header =>
+                {
+                    HeaderCell(header.Cell(), "Print size");
+                    HeaderCell(header.Cell(), "Copies", right: true);
+                });
+
+                foreach (var total in statistics.SizeTotals)
+                {
+                    BodyCell(table.Cell()).Text(total.DisplayLabel);
+                    BodyCell(table.Cell()).AlignRight()
+                        .Text(total.CopyCount.ToString(CultureInfo.InvariantCulture));
+                }
+
+                BodyCell(table.Cell()).BorderTop(1).BorderColor(Colors.Grey.Medium)
+                    .Text("Total print copies").SemiBold();
+                BodyCell(table.Cell()).BorderTop(1).BorderColor(Colors.Grey.Medium).AlignRight()
+                    .Text(statistics.TotalPrintCopies.ToString(CultureInfo.InvariantCulture)).SemiBold();
+            });
+
+            if (statistics.SizeTotals.Any(total => total.IsStandardASize && total.CombinesMultipleSizeRecords))
+                summary.Item().PaddingTop(2)
+                    .Text("* Standard A-size labels differing only by case or spacing are combined.")
+                    .FontSize(7).FontColor(Colors.Grey.Darken1);
+
+            if (statistics.SizeTotals.Any(total => total.IsUnspecified && total.CombinesMultipleSizeRecords))
+                summary.Item().PaddingTop(1)
+                    .Text("* Multiple unspecified size records are combined.")
+                    .FontSize(7).FontColor(Colors.Grey.Darken1);
+        });
+
+        foreach (var group in statistics.DetailedGroups)
+            ComposeDetailedPrintGroup(col, group);
+    }
+
+    private static void ComposeDetailedPrintGroup(ColumnDescriptor col, OrderPrintCopyGroup group)
+    {
+        // Small blocks keep the established PreventPageBreak behaviour. Large or text-heavy groups may
+        // continue safely, while EnsureSpace keeps the heading with at least the first content row.
+        var estimatedCharacters = group.Memberships.Sum(membership =>
+            membership.ProductName.Length + membership.Colour.Length + membership.GarmentSize.Length
+            + (membership.ProductionNote?.Length ?? 0));
+        var groupContainer = group.Memberships.Count <= 8 && estimatedCharacters <= 900
+            ? col.Item().PreventPageBreak()
+            : col.Item().EnsureSpace(62);
+
+        groupContainer.PaddingTop(5).PaddingLeft(8).BorderLeft(2)
+            .BorderColor(Colors.Grey.Lighten1).PaddingLeft(6).Decoration(decoration =>
+            {
+                decoration.Before().Element(header =>
+                    header.PaddingBottom(2).Row(row =>
+                    {
+                        row.RelativeItem().Text(text =>
+                        {
+                            text.Span(group.DesignLabel).SemiBold().FontSize(9);
+                            text.Span("\n");
+                            text.Span($"{group.PrintAreaLabel} · {group.PrintSizeLabel}")
+                                .FontSize(9).FontColor(Colors.Grey.Darken1);
+                        });
+
+                        row.ConstantItem(82).AlignRight().Text(
+                                $"{group.CopyCount.ToString(CultureInfo.InvariantCulture)} " +
+                                (group.CopyCount == 1 ? "copy" : "copies"))
+                            .SemiBold().FontSize(9);
+                    }));
+
+                decoration.Content().Column(content =>
+                {
+                    var garments = group.Memberships
+                        .GroupBy(membership => (membership.ProductName, membership.Colour))
+                        .Select(bucket => new
+                        {
+                            bucket.Key,
+                            Rows = bucket.ToList(),
+                            FirstItemId = bucket.Min(row => row.SourceOrderItemId.ToString("N")),
+                        })
+                        .OrderBy(bucket => bucket.Key.ProductName, StringComparer.OrdinalIgnoreCase)
+                        .ThenBy(bucket => bucket.Key.ProductName, StringComparer.Ordinal)
+                        .ThenBy(bucket => bucket.Key.Colour, StringComparer.OrdinalIgnoreCase)
+                        .ThenBy(bucket => bucket.Key.Colour, StringComparer.Ordinal)
+                        .ThenBy(bucket => bucket.FirstItemId, StringComparer.Ordinal)
+                        .ToList();
+
+                    foreach (var garment in garments)
+                    {
+                        var sizes = garment.Rows.Select(row => row.GarmentSize)
+                            .Where(size => size.Length > 0)
+                            .Distinct(StringComparer.Ordinal)
+                            .OrderBy(SizeRank)
+                            .ThenBy(size => size, StringComparer.OrdinalIgnoreCase)
+                            .ThenBy(size => size, StringComparer.Ordinal)
+                            .ToList();
+                        var variantText = sizes.Count > 0
+                            ? $"{garment.Key.Colour} / {string.Join(", ", sizes)}"
+                            : garment.Key.Colour;
+
+                        content.Item().Text(text =>
+                        {
+                            text.Span($"{garment.Key.ProductName} · ")
+                                .FontSize(9).FontColor(Colors.Grey.Darken1);
+                            text.Span(variantText).FontSize(9).SemiBold();
+                        });
+                    }
+
+                    foreach (var note in group.Memberships.Select(row => row.ProductionNote)
+                                 .Where(note => note is not null).Cast<string>()
+                                 .Distinct(StringComparer.Ordinal)
+                                 .OrderBy(note => note, StringComparer.Ordinal))
+                        content.Item().Text($"Print note: {note}").FontSize(8)
+                            .FontColor(Colors.Grey.Darken1);
+                });
+            });
+    }
+
     private void ComposeDesignOnlyItems(ColumnDescriptor col, OrderDto order)
     {
         // Badge (and any future non-garment, non-banner design-only kind). Banner has its own section.
+        // Jira 10104 — explicitly ordered; this previously followed order.Items encounter order.
         var designOnly = order.Items
             .Where(i => i.ProductKind != ProductKind.Garment && i.ProductKind != ProductKind.Banner)
+            .OrderBy(i => i.ProductName, StringComparer.OrdinalIgnoreCase)
+            .ThenBy(i => i.ProductName, StringComparer.Ordinal)
+            .ThenBy(i => DesignLabel(i.UploadedAssetUrl, i.DesignNote), StringComparer.OrdinalIgnoreCase)
+            .ThenBy(i => DesignLabel(i.UploadedAssetUrl, i.DesignNote), StringComparer.Ordinal)
+            .ThenBy(i => i.Quantity)
+            .ThenBy(i => i.Id.ToString("N"), StringComparer.Ordinal)
             .ToList();
         if (designOnly.Count == 0)
             return;
@@ -312,7 +564,7 @@ public class OrderProductionPdfService : IOrderProductionPdfService, ITransientD
 
         foreach (var item in designOnly)
         {
-            col.Item().PaddingTop(4).PaddingLeft(8).BorderLeft(2).BorderColor(Colors.Grey.Lighten1)
+            col.Item().PreventPageBreak().PaddingTop(4).PaddingLeft(8).BorderLeft(2).BorderColor(Colors.Grey.Lighten1)
                 .PaddingLeft(6).Column(ic =>
                 {
                     ic.Item().Text(t =>
@@ -340,7 +592,16 @@ public class OrderProductionPdfService : IOrderProductionPdfService, ITransientD
     /// </summary>
     private void ComposeBannerItems(ColumnDescriptor col, OrderDto order)
     {
-        var banners = order.Items.Where(i => i.ProductKind == ProductKind.Banner).ToList();
+        // Jira 10104 — explicitly ordered; this previously followed order.Items encounter order. The
+        // configuration label is the tiebreak because two banner lines of one product differ only by it.
+        var banners = order.Items
+            .Where(i => i.ProductKind == ProductKind.Banner)
+            .OrderBy(i => i.ProductName, StringComparer.OrdinalIgnoreCase)
+            .ThenBy(i => i.ProductName, StringComparer.Ordinal)
+            .ThenBy(i => BannerSortLabel(i.BannerDetail), StringComparer.Ordinal)
+            .ThenBy(i => i.Quantity)
+            .ThenBy(i => i.Id.ToString("N"), StringComparer.Ordinal)
+            .ToList();
         if (banners.Count == 0)
             return;
 
@@ -348,7 +609,7 @@ public class OrderProductionPdfService : IOrderProductionPdfService, ITransientD
 
         foreach (var item in banners)
         {
-            col.Item().PaddingTop(4).PaddingLeft(8).BorderLeft(2).BorderColor(Colors.Grey.Lighten1)
+            col.Item().PreventPageBreak().PaddingTop(4).PaddingLeft(8).BorderLeft(2).BorderColor(Colors.Grey.Lighten1)
                 .PaddingLeft(6).Column(ic =>
                 {
                     ic.Item().Text(t =>
@@ -476,62 +737,54 @@ public class OrderProductionPdfService : IOrderProductionPdfService, ITransientD
         => container.BorderBottom(0.5f).BorderColor(Colors.Grey.Lighten2).PaddingVertical(4).PaddingHorizontal(2)
             .DefaultTextStyle(s => s.FontSize(9));
 
-    /// <summary>An empty bordered square in a table cell for staff to tick off on the printed sheet.</summary>
-    private static void CheckBoxCell(IContainer container)
-        => BodyCell(container).AlignCenter().AlignMiddle()
-            .Height(12).Width(12).Border(1).BorderColor(Colors.Grey.Darken1);
+    // CheckBoxCell was removed in Jira 10105 with the two checklist columns it existed to draw. The
+    // frozen LegacyOrderProductionPdfBaseline keeps its own private copy on purpose — that is the
+    // historical pre-10103 sheet and must not follow this change.
 
     // ── Formatting helpers ──────────────────────────────────────────────────────
 
-    /// <summary>Culture-independent NZD money formatting, e.g. "1,250.00 NZD".</summary>
-    private static string FormatMoney(decimal value)
-        => $"{value.ToString("N2", CultureInfo.InvariantCulture)} NZD";
+    /// <summary>
+    /// Culture-independent NZD money formatting, e.g. "1,250.00 NZD". Delegates to the shared
+    /// <see cref="OrderProductGroupRowFormatter"/> (Jira 10104) so the sheet has one money format;
+    /// the produced text is character-for-character what this method always produced.
+    /// </summary>
+    private static string FormatMoney(decimal value) => OrderProductGroupRowFormatter.Money(value);
 
     /// <summary>
-    /// Splits a "Colour / Size" variant label into its parts. Splits on the last " / " so colours that
-    /// contain a slash stay intact; returns an empty size when the label has no separator.
+    /// Deterministic, display-derived sort key for a Banner item: the same configuration text the sheet
+    /// shows, so two banner lines of one product order by what visibly distinguishes them. Never used for
+    /// grouping and never rendered.
+    /// </summary>
+    private static string BannerSortLabel(BannerDetailDto? detail)
+    {
+        if (detail == null)
+            return string.Empty;
+
+        return string.Join("|",
+            BannerDetailFormatter.SizeSummary(
+                detail.SizeMode, detail.Width, detail.Height, detail.Unit,
+                detail.AreaSquareMetres, detail.SizeLabel),
+            BannerDetailFormatter.MaterialSummary(detail.Material, detail.MaterialDisplayName),
+            BannerDetailFormatter.FinishingSummary(
+                detail.FinishingEyelets, detail.FinishingHemming, detail.FinishingPolePocket,
+                detail.FinishingOther, detail.StandIncluded, detail.StandReplacementOnly),
+            detail.Notes ?? string.Empty);
+    }
+
+    /// <summary>
+    /// Splits a "Colour / Size" variant label into its parts, via the shared
+    /// <see cref="OrderVariantLabelParser"/> (Jira 10103 — this file's private duplicate was removed).
+    /// <c>ParseForDisplay</c> keeps the sheet's long-standing rendering-boundary behaviour of returning
+    /// empty strings rather than nulls, so ordering, grouping and the rendered text are unchanged.
     /// </summary>
     private static (string Color, string Size) SplitVariantLabel(string? variantLabel)
-    {
-        var label = variantLabel?.Trim() ?? string.Empty;
-        var idx = label.LastIndexOf(" / ", StringComparison.Ordinal);
-        return idx < 0
-            ? (label, string.Empty)
-            : (label[..idx].Trim(), label[(idx + 3)..].Trim());
-    }
-
-    /// <summary>Canonical apparel size order used to sequence garment rows (index = rank).</summary>
-    private static readonly string[] SizeSequence =
-        { "XXS", "XS", "S", "M", "L", "XL", "XXL", "XXXL", "XXXXL", "XXXXXL", "XXXXXXL" };
-
-    private static readonly System.Text.RegularExpressions.Regex NumericXlSize =
-        new(@"^(\d+)\s*XL$", System.Text.RegularExpressions.RegexOptions.Compiled);
+        => OrderVariantLabelParser.ParseForDisplay(variantLabel);
 
     /// <summary>
-    /// Ranks a garment size for sorting: known apparel sizes in their natural sequence (XS…XXXL),
-    /// then purely numeric sizes in numeric order, then any other named size (alphabetical via the
-    /// caller's secondary sort), then blank/no-size last. Normalises "2XL"/"3XL" to "XXL"/"XXXL".
+    /// Ranks a garment size for sorting, via the shared <see cref="GarmentSizeOrder"/> helper
+    /// (Jira 10103 — this file's private duplicate was removed; the semantics are identical).
     /// </summary>
-    private static int SizeRank(string size)
-    {
-        var s = size.Trim().ToUpperInvariant();
-        if (s.Length == 0)
-            return int.MaxValue;
-
-        var m = NumericXlSize.Match(s);
-        if (m.Success && int.TryParse(m.Groups[1].Value, out var xCount) && xCount >= 2)
-            s = new string('X', xCount) + "L";
-
-        var idx = Array.IndexOf(SizeSequence, s);
-        if (idx >= 0)
-            return idx;
-
-        // Kids/numeric sizes (e.g. "8", "10") after the letter sizes but in numeric order.
-        if (int.TryParse(s, NumberStyles.Integer, CultureInfo.InvariantCulture, out var numeric))
-            return 10_000 + numeric;
-
-        return int.MaxValue - 1; // unknown named size: before blanks, alphabetised by secondary sort
-    }
+    private static int SizeRank(string size) => GarmentSizeOrder.Rank(size);
 
     private static string FormatDateTime(DateTime utc)
     {
