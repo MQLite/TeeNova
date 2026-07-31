@@ -15,6 +15,8 @@ public class PaymentTransaction : CreationAuditedEntity<Guid>
     public ManualPaymentMethod Method { get; private set; }
     public string? Reference { get; private set; }
     public string? Note { get; private set; }
+    public Guid? SourceAiOrderImportId { get; private set; }
+    public DateTime? EvidenceReceivedAt { get; private set; }
 
     protected PaymentTransaction() { }
 
@@ -24,7 +26,9 @@ public class PaymentTransaction : CreationAuditedEntity<Guid>
         decimal amount,
         ManualPaymentMethod method,
         string? reference = null,
-        string? note = null)
+        string? note = null,
+        Guid? sourceAiOrderImportId = null,
+        DateTime? evidenceReceivedAt = null)
         : base(id)
     {
         OrderId = orderId;
@@ -32,5 +36,7 @@ public class PaymentTransaction : CreationAuditedEntity<Guid>
         Method = method;
         Reference = reference;
         Note = note;
+        SourceAiOrderImportId = sourceAiOrderImportId;
+        EvidenceReceivedAt = evidenceReceivedAt;
     }
 }

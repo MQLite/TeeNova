@@ -779,7 +779,13 @@ export interface OrderPrintGroup {
 
 export interface OrderItem {
   id: string
-  productId: string
+  productId: string | null
+  productSource?: 'Catalogue' | 'AdHoc'
+  orderAdHocProductSnapshotId?: string | null
+  colourSnapshot?: string | null
+  sizeSnapshot?: string | null
+  isAdHocProduct?: boolean
+  inventoryBehavior?: 'NotTracked' | 'CataloguePolicy'
   /** Garment variant id; null for non-garment items such as Badge (Jira 9503). */
   productVariantId: string | null
   productName: string
@@ -890,6 +896,19 @@ export interface Order {
   totalAmount: number
   shippingAddress: ShippingAddress
   items: OrderItem[]
+  source?: 'Checkout' | 'AdminManual' | 'AiOrderImport'
+  sourceAiOrderImportId?: string | null
+  sourceAiOrderConfirmedRevision?: number | null
+  sourceAiOrderConfirmedCanonicalSha256?: string | null
+  sourceAiOrderConfirmedByAdminId?: string | null
+  sourceAiOrderConfirmedAt?: string | null
+  sourceAiOrderMaterializedByAdminId?: string | null
+  sourceAiOrderMaterializedAt?: string | null
+  aiWrittenOrderTotal?: number | null
+  aiCalculatedMaterializationTotal?: number | null
+  aiPricingMode?: string | null
+  aiPricingReason?: string | null
+  adHocProductSnapshots?: OrderAdHocProductSnapshot[]
   // Additive grouped print read model (Jira 9403). Optional so an older backend that omits it
   // never breaks the page. Display-only; order totals stay based on `items` / `totalAmount`.
   printGroups?: OrderPrintGroup[]
@@ -916,6 +935,20 @@ export interface Order {
   lastPriceAdjustedAt?: string | null
   lastPriceAdjustmentReason?: string | null
   lastPriceAdjustmentAmount?: number | null
+}
+
+export interface OrderAdHocProductSnapshot {
+  id: string
+  displayName: string
+  writtenName: string
+  brand?: string | null
+  supplierName?: string | null
+  supplierCode?: string | null
+  supplySource?: string | null
+  inventoryBehavior: 'NotTracked'
+  confirmedImportGroupId: string
+  confirmedRevision: number
+  printingDetailsJson?: string | null
 }
 
 // Cart (client-side)

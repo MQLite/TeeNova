@@ -5,6 +5,7 @@ import { useEffect, useRef, useState } from 'react'
 import {
   getAiOrderImport,
   getAiOrderRecognitionOptions,
+  getAiOrderOperationsStatus,
   removeAiOrderSource,
   reorderAiOrderSources,
   setAiOrderSourceRotation,
@@ -13,6 +14,7 @@ import {
   uploadAiOrderSource,
   type AiOrderImport,
   type AiOrderRecognitionOptions,
+  type AiOrderOperationsStatus,
   type AiOrderSourceDocument,
 } from '@/api/ai-order-imports'
 
@@ -39,6 +41,7 @@ export function AiOrderImportIntakeClient({ importId }: Props) {
   const [replaceTarget, setReplaceTarget] = useState<string>()
   const [error, setError] = useState<string>()
   const [recognitionOptions, setRecognitionOptions] = useState<AiOrderRecognitionOptions>()
+  const [operations, setOperations] = useState<AiOrderOperationsStatus>()
   const [provider, setProvider] = useState('')
   const [model, setModel] = useState('')
   const [startingRecognition, setStartingRecognition] = useState(false)
@@ -52,6 +55,7 @@ export function AiOrderImportIntakeClient({ importId }: Props) {
   useEffect(() => {
     Promise.all([
       refresh(),
+      getAiOrderOperationsStatus().then(setOperations),
       getAiOrderRecognitionOptions().then((options) => {
         setRecognitionOptions(options)
         const firstProvider = options.providers[0]
@@ -231,7 +235,7 @@ export function AiOrderImportIntakeClient({ importId }: Props) {
           <button
             type="button"
             onClick={() => cameraInput.current?.click()}
-            disabled={!data?.canModifyDocuments}
+            disabled={!data?.canModifyDocuments || !operations?.features.intakeEnabled}
             className="rounded-full bg-black px-5 py-2.5 text-sm text-white disabled:opacity-40"
           >
             Take Photo
@@ -239,7 +243,7 @@ export function AiOrderImportIntakeClient({ importId }: Props) {
           <button
             type="button"
             onClick={() => fileInput.current?.click()}
-            disabled={!data?.canModifyDocuments}
+            disabled={!data?.canModifyDocuments || !operations?.features.intakeEnabled}
             className="rounded-full border border-black/[0.14] bg-white px-5 py-2.5 text-sm text-black disabled:opacity-40"
           >
             Upload Image or PDF
@@ -361,11 +365,11 @@ export function AiOrderImportIntakeClient({ importId }: Props) {
                   </div>
                   <div className="grid grid-cols-3 gap-2 md:flex md:w-44 md:flex-wrap md:justify-end">
                     <button type="button" onClick={() => setPreview(document)} className="rounded-full border px-3 py-1.5 text-xs">Preview</button>
-                    <button type="button" disabled={!data.canModifyDocuments} onClick={() => void rotate(document)} className="rounded-full border px-3 py-1.5 text-xs disabled:opacity-40">Rotate</button>
-                    <button type="button" disabled={!data.canModifyDocuments || index === 0} onClick={() => void move(document.id, -1)} className="rounded-full border px-3 py-1.5 text-xs disabled:opacity-40">Up</button>
-                    <button type="button" disabled={!data.canModifyDocuments || index === data.sourceDocuments.length - 1} onClick={() => void move(document.id, 1)} className="rounded-full border px-3 py-1.5 text-xs disabled:opacity-40">Down</button>
-                    <button type="button" disabled={!data.canModifyDocuments} onClick={() => chooseReplacement(document.id)} className="rounded-full border px-3 py-1.5 text-xs disabled:opacity-40">Replace</button>
-                    <button type="button" disabled={!data.canModifyDocuments} onClick={() => void remove(document.id)} className="rounded-full border border-red-200 px-3 py-1.5 text-xs text-red-700 disabled:opacity-40">Remove</button>
+                    <button type="button" disabled={!data.canModifyDocuments || !operations?.features.intakeEnabled} onClick={() => void rotate(document)} className="rounded-full border px-3 py-1.5 text-xs disabled:opacity-40">Rotate</button>
+                    <button type="button" disabled={!data.canModifyDocuments || !operations?.features.intakeEnabled || index === 0} onClick={() => void move(document.id, -1)} className="rounded-full border px-3 py-1.5 text-xs disabled:opacity-40">Up</button>
+                    <button type="button" disabled={!data.canModifyDocuments || !operations?.features.intakeEnabled || index === data.sourceDocuments.length - 1} onClick={() => void move(document.id, 1)} className="rounded-full border px-3 py-1.5 text-xs disabled:opacity-40">Down</button>
+                    <button type="button" disabled={!data.canModifyDocuments || !operations?.features.intakeEnabled} onClick={() => chooseReplacement(document.id)} className="rounded-full border px-3 py-1.5 text-xs disabled:opacity-40">Replace</button>
+                    <button type="button" disabled={!data.canModifyDocuments || !operations?.features.intakeEnabled} onClick={() => void remove(document.id)} className="rounded-full border border-red-200 px-3 py-1.5 text-xs text-red-700 disabled:opacity-40">Remove</button>
                   </div>
                 </div>
               </article>
@@ -424,6 +428,7 @@ export function AiOrderImportIntakeClient({ importId }: Props) {
               data?.status === 'NeedsReview' ||
               (!data?.canContinueToRecognition && data?.status !== 'Failed') ||
               !recognitionOptions?.recognitionEnabled ||
+              !operations?.features.recognitionEnabled ||
               !provider ||
               !model
             }
@@ -440,7 +445,8 @@ export function AiOrderImportIntakeClient({ importId }: Props) {
                     ? 'Starting recognition…'
                     : 'Start AI recognition'}
           </button>
-          {(data?.status === 'NeedsReview' || data?.status === 'Draft') && (
+          {(data?.status === 'NeedsReview' || data?.status === 'Draft') &&
+            operations?.features.reviewEnabled && (
             <Link
               href={`/admin/ai-order-imports/${importId}/review`}
               className="block w-full rounded-full bg-black px-5 py-2.5 text-center text-sm text-white"

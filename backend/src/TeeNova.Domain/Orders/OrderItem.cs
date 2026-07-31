@@ -15,7 +15,10 @@ namespace TeeNova.Orders;
 public class OrderItem : Entity<Guid>
 {
     public Guid OrderId { get; set; }
-    public Guid ProductId { get; set; }
+    public Guid? ProductId { get; private set; }
+    public OrderItemProductSource ProductSource { get; private set; } =
+        OrderItemProductSource.Catalogue;
+    public Guid? OrderAdHocProductSnapshotId { get; private set; }
 
     /// <summary>Garment variant. Null for non-garment products (Badge has no color/size variant).</summary>
     public Guid? ProductVariantId { get; set; }
@@ -23,6 +26,8 @@ public class OrderItem : Entity<Guid>
 
     /// <summary>"Color / Size" snapshot for garments; null for non-garment products (Jira 9503).</summary>
     public string? VariantLabel { get; set; }   // e.g., "Red / XL"
+    public string? ColourSnapshot { get; private set; }
+    public string? SizeSnapshot { get; private set; }
     public int Quantity { get; set; }
     public decimal UnitPrice { get; set; }
 
@@ -84,11 +89,59 @@ public class OrderItem : Entity<Guid>
     {
         OrderId = orderId;
         ProductId = productId;
+        ProductSource = OrderItemProductSource.Catalogue;
+        OrderAdHocProductSnapshotId = null;
         ProductVariantId = productVariantId;
         ProductName = productName;
         VariantLabel = variantLabel;
         Quantity = quantity;
         UnitPrice = unitPrice;
+    }
+
+    public static OrderItem CreateAdHoc(
+        Guid id,
+        Guid orderId,
+        Guid adHocSnapshotId,
+        string productName,
+        string colour,
+        string size,
+        int quantity,
+        decimal unitPrice)
+    {
+        if (adHocSnapshotId == Guid.Empty)
+            throw new ArgumentException("An ad-hoc snapshot identifier is required.", nameof(adHocSnapshotId));
+        if (quantity <= 0)
+            throw new ArgumentOutOfRangeException(nameof(quantity));
+        if (unitPrice < 0)
+            throw new ArgumentOutOfRangeException(nameof(unitPrice));
+
+        var item = new OrderItem
+        {
+            Id = id,
+            OrderId = orderId,
+            ProductId = null,
+            ProductSource = OrderItemProductSource.AdHoc,
+            OrderAdHocProductSnapshotId = adHocSnapshotId,
+            ProductVariantId = null,
+            ProductName = productName,
+            VariantLabel = $"{colour} / {size}",
+            ColourSnapshot = colour,
+            SizeSnapshot = size,
+            Quantity = quantity,
+            UnitPrice = unitPrice,
+            PricingModel = PricingModel.GarmentPrint,
+            ProductKind = ProductKind.Garment,
+            InventoryDeductionEligible = false,
+        };
+        return item;
+    }
+
+    public void SetCatalogueVariantSnapshots(string colour, string size)
+    {
+        if (ProductSource != OrderItemProductSource.Catalogue)
+            throw new InvalidOperationException("Only catalogue items use catalogue variant snapshots.");
+        ColourSnapshot = colour?.Trim();
+        SizeSnapshot = size?.Trim();
     }
 
     public void AddPrint(

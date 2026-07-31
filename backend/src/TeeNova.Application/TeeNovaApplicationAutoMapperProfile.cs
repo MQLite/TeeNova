@@ -65,6 +65,7 @@ public class TeeNovaApplicationAutoMapperProfile : Profile
         CreateMap<OrderTimelineEntry, OrderTimelineEntryDto>();
         CreateMap<PaymentTransaction, PaymentTransactionDto>();
         CreateMap<OrderPriceAdjustment, OrderPriceAdjustmentDto>();
+        CreateMap<OrderAdHocProductSnapshot, OrderAdHocProductSnapshotDto>();
         CreateMap<OrderItem, OrderItemDto>()
             .ForMember(d => d.Prints, o => o.MapFrom(s => s.Prints))
             .ForMember(d => d.BannerDetail, o => o.MapFrom(s => s.BannerDetail));

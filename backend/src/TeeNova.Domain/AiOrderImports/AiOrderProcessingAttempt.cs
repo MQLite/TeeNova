@@ -39,6 +39,9 @@ public class AiOrderProcessingAttempt : CreationAuditedEntity<Guid>
     public long? DurationMilliseconds { get; private set; }
     public DateTime? RawResultRetentionUntil { get; private set; }
     public DateTime? RawResultDeletedAt { get; private set; }
+    public int RawResultDeletionFailureCount { get; private set; }
+    public DateTime? RawResultDeletionNextRetryAt { get; private set; }
+    public string? RawResultDeletionSafeErrorCode { get; private set; }
     public string? WorkerClaimToken { get; private set; }
     public DateTime? WorkerClaimExpiresAt { get; private set; }
     public bool RepairAttempted { get; private set; }
@@ -146,6 +149,25 @@ public class AiOrderProcessingAttempt : CreationAuditedEntity<Guid>
             RawResultRetentionUntil.Value > deletedAt)
             throw new BusinessException("TeeNova:AiOrderImport:RawResultCannotBeDeleted");
         RawResultDeletedAt = deletedAt;
+        RawResultDeletionNextRetryAt = null;
+        RawResultDeletionSafeErrorCode = null;
+    }
+
+    public void MarkRawResultDeletionFailed(string safeErrorCode, DateTime nextRetryAt)
+    {
+        if (RawResultDeletedAt.HasValue || RawResultObjectKey is null)
+            throw new BusinessException("TeeNova:AiOrderImport:RawResultCannotBeDeleted");
+        RawResultDeletionFailureCount++;
+        RawResultDeletionNextRetryAt = nextRetryAt;
+        RawResultDeletionSafeErrorCode = AiOrderImport.EnsureText(
+            safeErrorCode,
+            nameof(safeErrorCode),
+            128);
+    }
+
+    public void SetRawResultRetentionUntil(DateTime? retentionUntil)
+    {
+        RawResultRetentionUntil = retentionUntil;
     }
 
     public void Complete(

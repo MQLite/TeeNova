@@ -75,3 +75,15 @@ public enum AiOrderSourceAccessType
     InlineView,
     Download,
 }
+
+public enum AiOrderOperationalEventType
+{
+    RetentionHoldPlaced,
+    RetentionHoldReleased,
+    RetentionExtended,
+    SourceDeleted,
+    SourceDeletionFailed,
+    RawEvidenceDeleted,
+    RawEvidenceDeletionFailed,
+    RetentionWorkerCompleted,
+}

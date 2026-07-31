@@ -6,6 +6,7 @@ import { AiOrderImportIntakeClient } from './AiOrderImportIntakeClient'
 const api = vi.hoisted(() => ({
   getAiOrderImport: vi.fn(),
   getAiOrderRecognitionOptions: vi.fn(),
+  getAiOrderOperationsStatus: vi.fn(),
   removeAiOrderSource: vi.fn(),
   reorderAiOrderSources: vi.fn(),
   setAiOrderSourceRotation: vi.fn(),
@@ -42,6 +43,16 @@ describe('AiOrderImportIntakeClient', () => {
           supportsPdf: true,
         }],
       }],
+    })
+    api.getAiOrderOperationsStatus.mockResolvedValue({
+      features: {
+        enabled: true,
+        intakeEnabled: true,
+        recognitionEnabled: true,
+        reviewEnabled: true,
+        confirmationEnabled: false,
+        materializationEnabled: false,
+      },
     })
     api.startAiOrderRecognition.mockResolvedValue({
       attemptId: 'attempt-1',

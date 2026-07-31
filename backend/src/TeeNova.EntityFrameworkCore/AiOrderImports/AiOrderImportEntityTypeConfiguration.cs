@@ -10,7 +10,8 @@ public sealed class AiOrderImportEntityTypeConfiguration :
     IEntityTypeConfiguration<AiOrderProcessingAttempt>,
     IEntityTypeConfiguration<AiOrderImportRevision>,
     IEntityTypeConfiguration<AiOrderReviewEvent>,
-    IEntityTypeConfiguration<AiOrderSourceAccessAudit>
+    IEntityTypeConfiguration<AiOrderSourceAccessAudit>,
+    IEntityTypeConfiguration<AiOrderOperationalEvent>
 {
     public void Configure(EntityTypeBuilder<AiOrderImport> builder)
     {
@@ -21,7 +22,10 @@ public sealed class AiOrderImportEntityTypeConfiguration :
                 "[CurrentRevision] >= 0");
             table.HasCheckConstraint(
                 "CK_AiOrderImports_ConfirmationMetadata",
-                "([Status] <> 'Confirmed') OR ([ConfirmedAt] IS NOT NULL AND [ConfirmedByAdminId] IS NOT NULL AND [CurrentRevision] > 0)");
+                "([Status] <> 'Confirmed') OR ([ConfirmedAt] IS NOT NULL AND [ConfirmedByAdminId] IS NOT NULL AND [ConfirmedRevision] = [CurrentRevision] AND [ConfirmedCanonicalSha256] IS NOT NULL AND [ConfirmedReviewVersion] IS NOT NULL AND [ConfirmedBlockingIssueCount] = 0 AND [ConfirmationOperationKey] IS NOT NULL)");
+            table.HasCheckConstraint(
+                "CK_AiOrderImports_MaterializationMetadata",
+                "([FormalOrderId] IS NULL AND [MaterializationOperationKey] IS NULL AND [MaterializationRequestHash] IS NULL AND [MaterializedByAdminId] IS NULL AND [MaterializedAt] IS NULL) OR ([FormalOrderId] IS NOT NULL AND [MaterializationOperationKey] IS NOT NULL AND [MaterializationRequestHash] IS NOT NULL AND [MaterializedByAdminId] IS NOT NULL AND [MaterializedAt] IS NOT NULL)");
             table.HasCheckConstraint(
                 "CK_AiOrderImports_CancellationMetadata",
                 "([Status] <> 'Cancelled') OR ([CancelledAt] IS NOT NULL AND [CancelledByAdminId] IS NOT NULL)");
@@ -38,8 +42,13 @@ public sealed class AiOrderImportEntityTypeConfiguration :
         builder.Property(x => x.IdempotencyKey).HasMaxLength(128).IsRequired();
         builder.Property(x => x.RequestHash).HasMaxLength(64).IsFixedLength().IsRequired();
         builder.Property(x => x.ActiveProcessingLeaseToken).HasMaxLength(64);
+        builder.Property(x => x.ConfirmedCanonicalSha256).HasMaxLength(64).IsFixedLength();
+        builder.Property(x => x.ConfirmedReviewVersion).HasMaxLength(32);
+        builder.Property(x => x.ConfirmationOperationKey).HasMaxLength(128);
         builder.Property(x => x.MaterializationOperationKey).HasMaxLength(128);
+        builder.Property(x => x.MaterializationRequestHash).HasMaxLength(64).IsFixedLength();
         builder.Property(x => x.RetentionClass).HasMaxLength(64).IsRequired();
+        builder.Property(x => x.RetentionHoldReason).HasMaxLength(500);
 
         builder.HasIndex(x => new { x.CreatedByAdminId, x.IdempotencyKey })
             .IsUnique()
@@ -52,6 +61,10 @@ public sealed class AiOrderImportEntityTypeConfiguration :
             .IsUnique()
             .HasFilter("[FormalOrderId] IS NOT NULL")
             .HasDatabaseName("UX_AiOrderImports_FormalOrderId");
+        builder.HasIndex(x => x.ConfirmationOperationKey)
+            .IsUnique()
+            .HasFilter("[ConfirmationOperationKey] IS NOT NULL")
+            .HasDatabaseName("UX_AiOrderImports_ConfirmationOperationKey");
         builder.HasIndex(x => x.MaterializationOperationKey)
             .IsUnique()
             .HasFilter("[MaterializationOperationKey] IS NOT NULL")
@@ -91,6 +104,7 @@ public sealed class AiOrderImportEntityTypeConfiguration :
             .HasMaxLength(32)
             .IsRequired();
         builder.Property(x => x.SafeDeletionErrorCode).HasMaxLength(128);
+        builder.Property(x => x.DeletionFailureCount).HasDefaultValue(0);
         builder.Property(x => x.UploadIdempotencyKey).HasMaxLength(128);
         builder.Property(x => x.QualityWarningsJson).HasColumnType("nvarchar(max)");
 
@@ -110,6 +124,7 @@ public sealed class AiOrderImportEntityTypeConfiguration :
         builder.HasIndex(x => x.Sha256);
         builder.HasIndex(x => x.RetentionUntil);
         builder.HasIndex(x => x.ContentDeletedAt);
+        builder.HasIndex(x => new { x.DeletionOutcome, x.DeletionNextRetryAt });
     }
 
     public void Configure(EntityTypeBuilder<AiOrderProcessingAttempt> builder)
@@ -152,6 +167,8 @@ public sealed class AiOrderImportEntityTypeConfiguration :
         builder.Property(x => x.WorkerClaimToken)
             .HasMaxLength(64)
             .IsConcurrencyToken();
+        builder.Property(x => x.RawResultDeletionSafeErrorCode).HasMaxLength(128);
+        builder.Property(x => x.RawResultDeletionFailureCount).HasDefaultValue(0);
 
         builder.HasOne<AiOrderImport>()
             .WithMany()
@@ -172,6 +189,7 @@ public sealed class AiOrderImportEntityTypeConfiguration :
             .HasDatabaseName("UX_AiOrderProcessingAttempts_Import_StartKey");
         builder.HasIndex(x => new { x.Outcome, x.WorkerClaimExpiresAt });
         builder.HasIndex(x => new { x.RawResultRetentionUntil, x.RawResultDeletedAt });
+        builder.HasIndex(x => new { x.RawResultDeletionNextRetryAt, x.RawResultDeletedAt });
     }
 
     public void Configure(EntityTypeBuilder<AiOrderImportRevision> builder)
@@ -246,5 +264,35 @@ public sealed class AiOrderImportEntityTypeConfiguration :
         builder.HasIndex(x => new { x.ImportId, x.AccessedAt });
         builder.HasIndex(x => new { x.SourceDocumentId, x.AccessedAt });
         builder.HasIndex(x => new { x.AdminActorId, x.AccessedAt });
+    }
+
+    public void Configure(EntityTypeBuilder<AiOrderOperationalEvent> builder)
+    {
+        builder.ToTable("AiOrderOperationalEvents");
+        builder.Property(x => x.EventType)
+            .HasConversion<string>()
+            .HasMaxLength(48)
+            .IsRequired();
+        builder.Property(x => x.ActorType).HasMaxLength(32).IsRequired();
+        builder.Property(x => x.Reason).HasMaxLength(500);
+        builder.Property(x => x.Outcome).HasMaxLength(32).IsRequired();
+        builder.Property(x => x.SafeErrorCode).HasMaxLength(128);
+
+        builder.HasOne<AiOrderImport>()
+            .WithMany()
+            .HasForeignKey(x => x.ImportId)
+            .OnDelete(DeleteBehavior.Restrict);
+        builder.HasOne<AiOrderSourceDocument>()
+            .WithMany()
+            .HasForeignKey(x => x.SourceDocumentId)
+            .OnDelete(DeleteBehavior.Restrict);
+        builder.HasOne<AiOrderProcessingAttempt>()
+            .WithMany()
+            .HasForeignKey(x => x.ProcessingAttemptId)
+            .OnDelete(DeleteBehavior.Restrict);
+
+        builder.HasIndex(x => new { x.ImportId, x.OccurredAt });
+        builder.HasIndex(x => new { x.EventType, x.OccurredAt });
+        builder.HasIndex(x => new { x.Outcome, x.OccurredAt });
     }
 }

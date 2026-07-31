@@ -6,12 +6,14 @@ import { AiOrderImportListClient } from './AiOrderImportListClient'
 const dependencies = vi.hoisted(() => ({
   createAiOrderImport: vi.fn(),
   listAiOrderImports: vi.fn(),
+  getAiOrderOperationsStatus: vi.fn(),
   push: vi.fn(),
 }))
 
 vi.mock('@/api/ai-order-imports', () => ({
   createAiOrderImport: dependencies.createAiOrderImport,
   listAiOrderImports: dependencies.listAiOrderImports,
+  getAiOrderOperationsStatus: dependencies.getAiOrderOperationsStatus,
 }))
 
 vi.mock('next/navigation', () => ({
@@ -21,6 +23,9 @@ vi.mock('next/navigation', () => ({
 describe('AiOrderImportListClient', () => {
   beforeEach(() => {
     dependencies.listAiOrderImports.mockResolvedValue([])
+    dependencies.getAiOrderOperationsStatus.mockResolvedValue({
+      features: { intakeEnabled: true },
+    })
     vi.spyOn(globalThis.crypto, 'randomUUID')
       .mockReturnValue('10000000-0000-4000-8000-000000000001')
   })

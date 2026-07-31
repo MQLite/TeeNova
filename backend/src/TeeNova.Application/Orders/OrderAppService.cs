@@ -185,6 +185,7 @@ public class OrderAppService : ApplicationService, IOrderAppService
             .ThenInclude(i => i.Prints)
             .Include(o => o.Items)
             .ThenInclude(i => i.BannerDetail)
+            .Include(o => o.AdHocProductSnapshots)
             .FirstOrDefaultAsync(o => o.Id == id);
 
         if (order == null)
@@ -261,6 +262,21 @@ public class OrderAppService : ApplicationService, IOrderAppService
         dto.PaymentTransactions = new();
         dto.LastPaymentNote      = null;
         dto.LastPaymentReference = null;
+
+        // AI-import provenance is Admin audit data. The public GUID-based order
+        // view may display the order-owned item snapshots, but never import IDs,
+        // actors, canonical hashes, or internal pricing-decision evidence.
+        dto.SourceAiOrderImportId = null;
+        dto.SourceAiOrderConfirmedRevision = null;
+        dto.SourceAiOrderConfirmedCanonicalSha256 = null;
+        dto.SourceAiOrderConfirmedByAdminId = null;
+        dto.SourceAiOrderConfirmedAt = null;
+        dto.SourceAiOrderMaterializedByAdminId = null;
+        dto.SourceAiOrderMaterializedAt = null;
+        dto.AiWrittenOrderTotal = null;
+        dto.AiCalculatedMaterializationTotal = null;
+        dto.AiPricingMode = null;
+        dto.AiPricingReason = null;
     }
 
     public async Task<OrderDto> AdjustPriceAsync(Guid id, AdjustOrderPriceDto input)
@@ -493,7 +509,8 @@ public class OrderAppService : ApplicationService, IOrderAppService
             .Include(o => o.Items)
             .ThenInclude(i => i.Prints)
             .Include(o => o.Items)
-            .ThenInclude(i => i.BannerDetail);
+            .ThenInclude(i => i.BannerDetail)
+            .Include(o => o.AdHocProductSnapshots);
 
         // TODO: apply input.Status, input.Search, input.DateFrom, input.DateTo filters
 

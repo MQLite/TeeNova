@@ -23,6 +23,11 @@ public class PaymentTransactionEntityTypeConfiguration : IEntityTypeConfiguratio
         builder.Property(p => p.Note)
             .HasMaxLength(1000);
 
+        builder.HasIndex(p => p.SourceAiOrderImportId)
+            .IsUnique()
+            .HasFilter("[SourceAiOrderImportId] IS NOT NULL")
+            .HasDatabaseName("UX_PaymentTransactions_SourceAiOrderImportId");
+
         // OrderId is a foreign-key column with an index. No explicit FK relationship
         // is configured here (consistent with OrderTimelineEntry pattern in this project).
         builder.HasIndex(p => p.OrderId);

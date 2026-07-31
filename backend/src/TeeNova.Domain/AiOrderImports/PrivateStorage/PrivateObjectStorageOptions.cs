@@ -9,4 +9,6 @@ public sealed class PrivateObjectStorageOptions
     /// The resolved path must not be inside wwwroot.
     /// </summary>
     public string? RootPath { get; set; }
+    public long MinimumFreeSpaceBytes { get; set; } = 1_073_741_824;
+    public string[] ForbiddenPathPrefixes { get; set; } = [];
 }

@@ -78,6 +78,35 @@ public sealed class LocalPrivateObjectStorageTests : IDisposable
     }
 
     [Fact]
+    public async Task Readiness_probe_writes_reads_deletes_and_leaves_no_object()
+    {
+        var storage = CreateStorage("private/ai-order-imports");
+
+        var result = await storage.CheckReadinessAsync();
+
+        Assert.Equal(PrivateStorageReadinessStatus.Ready, result.Status);
+        var rawDirectory = Path.Combine(
+            _contentRoot,
+            "private",
+            "ai-order-imports",
+            "raw-provider-evidence");
+        Assert.Empty(Directory.GetFiles(rawDirectory));
+    }
+
+    [Fact]
+    public async Task Readiness_reports_low_space_without_exposing_a_path()
+    {
+        var storage = CreateStorage(
+            "private/ai-order-imports",
+            minimumFreeSpaceBytes: long.MaxValue);
+
+        var result = await storage.CheckReadinessAsync();
+
+        Assert.Equal(PrivateStorageReadinessStatus.LowSpace, result.Status);
+        Assert.DoesNotContain(_contentRoot, result.ToString(), StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
     public void Missing_root_configuration_fails_closed()
     {
         Assert.Throws<InvalidOperationException>(() =>
@@ -99,13 +128,16 @@ public sealed class LocalPrivateObjectStorageTests : IDisposable
             Directory.Delete(_contentRoot, recursive: true);
     }
 
-    private LocalPrivateObjectStorage CreateStorage(string? configuredRoot)
+    private LocalPrivateObjectStorage CreateStorage(
+        string? configuredRoot,
+        long minimumFreeSpaceBytes = 0)
     {
         Directory.CreateDirectory(_contentRoot);
         var environment = new FakeHostEnvironment(_contentRoot);
         var options = Options.Create(new PrivateObjectStorageOptions
         {
             RootPath = configuredRoot,
+            MinimumFreeSpaceBytes = minimumFreeSpaceBytes,
         });
         return new LocalPrivateObjectStorage(environment, options);
     }

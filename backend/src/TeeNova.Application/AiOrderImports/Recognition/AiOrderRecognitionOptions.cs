@@ -32,6 +32,16 @@ public sealed class AiOrderRecognitionProviderOptions
     public string DisplayName { get; set; } = string.Empty;
     public string ApiKey { get; set; } = string.Empty;
     public string BaseUrl { get; set; } = string.Empty;
+    public int MaximumDailyCalls { get; set; } = 250;
+    public decimal MaximumMonthlyCostUsd { get; set; } = 100m;
+    public string PrivacyApprovalStatus { get; set; } = "NotReviewed";
+    public string ApprovedEnvironment { get; set; } = string.Empty;
+    public DateTime? PrivacyApprovalDate { get; set; }
+    public string ApproverNote { get; set; } = string.Empty;
+    public string DataUsePolicyReference { get; set; } = string.Empty;
+    public string AllowedDocumentClassification { get; set; } = string.Empty;
+    public DateTime? LastSanitizedSmokeTestAt { get; set; }
+    public bool LastSanitizedSmokeTestSucceeded { get; set; }
     public Dictionary<string, AiOrderRecognitionModelOptions> Models { get; set; } =
         new(StringComparer.Ordinal);
 }
@@ -58,6 +68,22 @@ public sealed class AiOrderRecognitionOptionsValidator :
 {
     private static readonly HashSet<string> KnownProviders =
         new(["gemini", "openai", "claude"], StringComparer.OrdinalIgnoreCase);
+    private static readonly IReadOnlyDictionary<string, string> ApprovedHosts =
+        new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["gemini"] = "generativelanguage.googleapis.com",
+            ["openai"] = "api.openai.com",
+            ["claude"] = "api.anthropic.com",
+        };
+    private static readonly HashSet<string> PrivacyStatuses =
+        new(
+        [
+            "NotReviewed",
+            "ApprovedForSanitizedTesting",
+            "ApprovedForProductionCustomerData",
+            "Suspended",
+        ],
+        StringComparer.Ordinal);
 
     public ValidateOptionsResult Validate(string? name, AiOrderRecognitionOptions options)
     {
@@ -87,11 +113,18 @@ public sealed class AiOrderRecognitionOptionsValidator :
                     $"Enabled provider '{providerId}' requires a server-side API key.");
             if (provider.Enabled &&
                 (!Uri.TryCreate(provider.BaseUrl, UriKind.Absolute, out var uri) ||
-                 uri.Scheme != Uri.UriSchemeHttps))
+                 uri.Scheme != Uri.UriSchemeHttps ||
+                 !ApprovedHosts.TryGetValue(providerId, out var approvedHost) ||
+                 !string.Equals(uri.Host, approvedHost, StringComparison.OrdinalIgnoreCase)))
             {
                 return ValidateOptionsResult.Fail(
-                    $"Enabled provider '{providerId}' requires an HTTPS BaseUrl.");
+                    $"Enabled provider '{providerId}' requires its approved HTTPS BaseUrl.");
             }
+            if (!PrivacyStatuses.Contains(provider.PrivacyApprovalStatus) ||
+                provider.MaximumDailyCalls < 1 ||
+                provider.MaximumMonthlyCostUsd < 0)
+                return ValidateOptionsResult.Fail(
+                    $"Provider '{providerId}' has invalid privacy or budget metadata.");
 
             foreach (var (modelId, model) in provider.Models)
             {

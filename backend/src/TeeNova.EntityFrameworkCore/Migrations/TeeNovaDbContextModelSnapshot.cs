@@ -50,11 +50,30 @@ namespace TeeNova.Migrations
                         .HasColumnType("nvarchar(40)")
                         .HasColumnName("ConcurrencyStamp");
 
+                    b.Property<string>("ConfirmationOperationKey")
+                        .HasMaxLength(128)
+                        .HasColumnType("nvarchar(128)");
+
                     b.Property<DateTime?>("ConfirmedAt")
                         .HasColumnType("datetime2");
 
+                    b.Property<int?>("ConfirmedBlockingIssueCount")
+                        .HasColumnType("int");
+
                     b.Property<Guid?>("ConfirmedByAdminId")
                         .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("ConfirmedCanonicalSha256")
+                        .HasMaxLength(64)
+                        .HasColumnType("nchar(64)")
+                        .IsFixedLength();
+
+                    b.Property<string>("ConfirmedReviewVersion")
+                        .HasMaxLength(32)
+                        .HasColumnType("nvarchar(32)");
+
+                    b.Property<int?>("ConfirmedRevision")
+                        .HasColumnType("int");
 
                     b.Property<string>("ContractVersion")
                         .IsRequired()
@@ -117,6 +136,17 @@ namespace TeeNova.Migrations
                         .HasMaxLength(128)
                         .HasColumnType("nvarchar(128)");
 
+                    b.Property<string>("MaterializationRequestHash")
+                        .HasMaxLength(64)
+                        .HasColumnType("nchar(64)")
+                        .IsFixedLength();
+
+                    b.Property<DateTime?>("MaterializedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<Guid?>("MaterializedByAdminId")
+                        .HasColumnType("uniqueidentifier");
+
                     b.Property<DateTime?>("NextRetryAt")
                         .HasColumnType("datetime2");
 
@@ -130,6 +160,19 @@ namespace TeeNova.Migrations
                         .IsRequired()
                         .HasMaxLength(64)
                         .HasColumnType("nvarchar(64)");
+
+                    b.Property<DateTime?>("RetentionHoldExpiresAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<DateTime?>("RetentionHoldPlacedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<Guid?>("RetentionHoldPlacedByAdminId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("RetentionHoldReason")
+                        .HasMaxLength(500)
+                        .HasColumnType("nvarchar(500)");
 
                     b.Property<DateTime?>("RetentionUntil")
                         .HasColumnType("datetime2");
@@ -145,6 +188,11 @@ namespace TeeNova.Migrations
                         .IsUnique()
                         .HasDatabaseName("UX_AiOrderImports_ActiveLeaseToken")
                         .HasFilter("[ActiveProcessingLeaseToken] IS NOT NULL");
+
+                    b.HasIndex("ConfirmationOperationKey")
+                        .IsUnique()
+                        .HasDatabaseName("UX_AiOrderImports_ConfirmationOperationKey")
+                        .HasFilter("[ConfirmationOperationKey] IS NOT NULL");
 
                     b.HasIndex("CreationTime");
 
@@ -170,9 +218,11 @@ namespace TeeNova.Migrations
                         {
                             t.HasCheckConstraint("CK_AiOrderImports_CancellationMetadata", "([Status] <> 'Cancelled') OR ([CancelledAt] IS NOT NULL AND [CancelledByAdminId] IS NOT NULL)");
 
-                            t.HasCheckConstraint("CK_AiOrderImports_ConfirmationMetadata", "([Status] <> 'Confirmed') OR ([ConfirmedAt] IS NOT NULL AND [ConfirmedByAdminId] IS NOT NULL AND [CurrentRevision] > 0)");
+                            t.HasCheckConstraint("CK_AiOrderImports_ConfirmationMetadata", "([Status] <> 'Confirmed') OR ([ConfirmedAt] IS NOT NULL AND [ConfirmedByAdminId] IS NOT NULL AND [ConfirmedRevision] = [CurrentRevision] AND [ConfirmedCanonicalSha256] IS NOT NULL AND [ConfirmedReviewVersion] IS NOT NULL AND [ConfirmedBlockingIssueCount] = 0 AND [ConfirmationOperationKey] IS NOT NULL)");
 
                             t.HasCheckConstraint("CK_AiOrderImports_CurrentRevision", "[CurrentRevision] >= 0");
+
+                            t.HasCheckConstraint("CK_AiOrderImports_MaterializationMetadata", "([FormalOrderId] IS NULL AND [MaterializationOperationKey] IS NULL AND [MaterializationRequestHash] IS NULL AND [MaterializedByAdminId] IS NULL AND [MaterializedAt] IS NULL) OR ([FormalOrderId] IS NOT NULL AND [MaterializationOperationKey] IS NOT NULL AND [MaterializationRequestHash] IS NOT NULL AND [MaterializedByAdminId] IS NOT NULL AND [MaterializedAt] IS NOT NULL)");
 
                             t.HasCheckConstraint("CK_AiOrderImports_ProcessingLease", "([Status] <> 'Processing') OR ([ActiveProcessingLeaseToken] IS NOT NULL AND [ActiveProcessingLeaseExpiresAt] IS NOT NULL)");
                         });
@@ -268,6 +318,75 @@ namespace TeeNova.Migrations
                         {
                             t.HasCheckConstraint("CK_AiOrderImportRevisions_Revision", "[Revision] > 0");
                         });
+                });
+
+            modelBuilder.Entity("TeeNova.AiOrderImports.AiOrderOperationalEvent", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid?>("ActorAdminId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("ActorType")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("nvarchar(32)");
+
+                    b.Property<DateTime>("CreationTime")
+                        .HasColumnType("datetime2")
+                        .HasColumnName("CreationTime");
+
+                    b.Property<Guid?>("CreatorId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("CreatorId");
+
+                    b.Property<string>("EventType")
+                        .IsRequired()
+                        .HasMaxLength(48)
+                        .HasColumnType("nvarchar(48)");
+
+                    b.Property<DateTime?>("ExpiresAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<Guid?>("ImportId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTime>("OccurredAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("Outcome")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("nvarchar(32)");
+
+                    b.Property<Guid?>("ProcessingAttemptId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("Reason")
+                        .HasMaxLength(500)
+                        .HasColumnType("nvarchar(500)");
+
+                    b.Property<string>("SafeErrorCode")
+                        .HasMaxLength(128)
+                        .HasColumnType("nvarchar(128)");
+
+                    b.Property<Guid?>("SourceDocumentId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ProcessingAttemptId");
+
+                    b.HasIndex("SourceDocumentId");
+
+                    b.HasIndex("EventType", "OccurredAt");
+
+                    b.HasIndex("ImportId", "OccurredAt");
+
+                    b.HasIndex("Outcome", "OccurredAt");
+
+                    b.ToTable("AiOrderOperationalEvents", "teenova");
                 });
 
             modelBuilder.Entity("TeeNova.AiOrderImports.AiOrderProcessingAttempt", b =>
@@ -370,6 +489,18 @@ namespace TeeNova.Migrations
                     b.Property<DateTime?>("RawResultDeletedAt")
                         .HasColumnType("datetime2");
 
+                    b.Property<int>("RawResultDeletionFailureCount")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int")
+                        .HasDefaultValue(0);
+
+                    b.Property<DateTime?>("RawResultDeletionNextRetryAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("RawResultDeletionSafeErrorCode")
+                        .HasMaxLength(128)
+                        .HasColumnType("nvarchar(128)");
+
                     b.Property<string>("RawResultObjectKey")
                         .HasMaxLength(160)
                         .HasColumnType("nvarchar(160)");
@@ -439,6 +570,8 @@ namespace TeeNova.Migrations
                         .HasFilter("[StartOperationKey] IS NOT NULL");
 
                     b.HasIndex("Outcome", "WorkerClaimExpiresAt");
+
+                    b.HasIndex("RawResultDeletionNextRetryAt", "RawResultDeletedAt");
 
                     b.HasIndex("RawResultRetentionUntil", "RawResultDeletedAt");
 
@@ -588,6 +721,14 @@ namespace TeeNova.Migrations
                         .HasColumnType("uniqueidentifier")
                         .HasColumnName("CreatorId");
 
+                    b.Property<int>("DeletionFailureCount")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int")
+                        .HasDefaultValue(0);
+
+                    b.Property<DateTime?>("DeletionNextRetryAt")
+                        .HasColumnType("datetime2");
+
                     b.Property<string>("DeletionOutcome")
                         .IsRequired()
                         .HasMaxLength(32)
@@ -656,6 +797,8 @@ namespace TeeNova.Migrations
                     b.HasIndex("RetentionUntil");
 
                     b.HasIndex("Sha256");
+
+                    b.HasIndex("DeletionOutcome", "DeletionNextRetryAt");
 
                     b.HasIndex("ImportId", "Sequence")
                         .IsUnique()
@@ -1501,6 +1644,20 @@ namespace TeeNova.Migrations
                         .HasMaxLength(4000)
                         .HasColumnType("nvarchar(4000)");
 
+                    b.Property<decimal?>("AiCalculatedMaterializationTotal")
+                        .HasColumnType("decimal(18,4)");
+
+                    b.Property<string>("AiPricingMode")
+                        .HasMaxLength(32)
+                        .HasColumnType("nvarchar(32)");
+
+                    b.Property<string>("AiPricingReason")
+                        .HasMaxLength(1000)
+                        .HasColumnType("nvarchar(1000)");
+
+                    b.Property<decimal?>("AiWrittenOrderTotal")
+                        .HasColumnType("decimal(18,4)");
+
                     b.Property<decimal>("BalanceAmount")
                         .HasColumnType("decimal(18,4)");
 
@@ -1615,6 +1772,40 @@ namespace TeeNova.Migrations
                     b.Property<decimal>("RequiredPaymentAmount")
                         .HasColumnType("decimal(18,4)");
 
+                    b.Property<string>("Source")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasMaxLength(32)
+                        .HasColumnType("nvarchar(32)")
+                        .HasDefaultValue("Checkout");
+
+                    b.Property<DateTime?>("SourceAiOrderConfirmedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<Guid?>("SourceAiOrderConfirmedByAdminId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("SourceAiOrderConfirmedCanonicalSha256")
+                        .HasMaxLength(64)
+                        .HasColumnType("nchar(64)")
+                        .IsFixedLength();
+
+                    b.Property<int?>("SourceAiOrderConfirmedRevision")
+                        .HasColumnType("int");
+
+                    b.Property<Guid?>("SourceAiOrderImportId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("SourceAiOrderMaterializationOperationKey")
+                        .HasMaxLength(128)
+                        .HasColumnType("nvarchar(128)");
+
+                    b.Property<DateTime?>("SourceAiOrderMaterializedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<Guid?>("SourceAiOrderMaterializedByAdminId")
+                        .HasColumnType("uniqueidentifier");
+
                     b.Property<string>("Status")
                         .IsRequired()
                         .HasMaxLength(32)
@@ -1630,7 +1821,76 @@ namespace TeeNova.Migrations
 
                     b.HasIndex("PaymentStatus");
 
+                    b.HasIndex("SourceAiOrderImportId")
+                        .IsUnique()
+                        .HasDatabaseName("UX_Orders_SourceAiOrderImportId")
+                        .HasFilter("[SourceAiOrderImportId] IS NOT NULL");
+
+                    b.HasIndex("SourceAiOrderMaterializationOperationKey")
+                        .IsUnique()
+                        .HasDatabaseName("UX_Orders_AiMaterializationOperationKey")
+                        .HasFilter("[SourceAiOrderMaterializationOperationKey] IS NOT NULL");
+
                     b.ToTable("Orders", "teenova");
+                });
+
+            modelBuilder.Entity("TeeNova.Orders.OrderAdHocProductSnapshot", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("Brand")
+                        .HasMaxLength(128)
+                        .HasColumnType("nvarchar(128)");
+
+                    b.Property<string>("ConfirmedImportGroupId")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("nvarchar(128)");
+
+                    b.Property<int>("ConfirmedRevision")
+                        .HasColumnType("int");
+
+                    b.Property<string>("DisplayName")
+                        .IsRequired()
+                        .HasMaxLength(256)
+                        .HasColumnType("nvarchar(256)");
+
+                    b.Property<string>("InventoryBehavior")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("nvarchar(32)");
+
+                    b.Property<Guid>("OrderId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("PrintingDetailsJson")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("SupplierCode")
+                        .HasMaxLength(128)
+                        .HasColumnType("nvarchar(128)");
+
+                    b.Property<string>("SupplierName")
+                        .HasMaxLength(256)
+                        .HasColumnType("nvarchar(256)");
+
+                    b.Property<string>("SupplySource")
+                        .HasMaxLength(32)
+                        .HasColumnType("nvarchar(32)");
+
+                    b.Property<string>("WrittenName")
+                        .IsRequired()
+                        .HasMaxLength(256)
+                        .HasColumnType("nvarchar(256)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("OrderId", "ConfirmedImportGroupId")
+                        .IsUnique()
+                        .HasDatabaseName("UX_OrderAdHocProductSnapshots_Order_Group");
+
+                    b.ToTable("OrderAdHocProductSnapshots", "teenova");
                 });
 
             modelBuilder.Entity("TeeNova.Orders.OrderItem", b =>
@@ -1640,6 +1900,10 @@ namespace TeeNova.Migrations
 
                     b.Property<int?>("AppliedQuantityTierMinQuantity")
                         .HasColumnType("int");
+
+                    b.Property<string>("ColourSnapshot")
+                        .HasMaxLength(128)
+                        .HasColumnType("nvarchar(128)");
 
                     b.Property<string>("ConfigurationJson")
                         .HasColumnType("nvarchar(max)");
@@ -1656,6 +1920,9 @@ namespace TeeNova.Migrations
                         .HasColumnType("bit")
                         .HasDefaultValue(false);
 
+                    b.Property<Guid?>("OrderAdHocProductSnapshotId")
+                        .HasColumnType("uniqueidentifier");
+
                     b.Property<Guid>("OrderId")
                         .HasColumnType("uniqueidentifier");
 
@@ -1666,7 +1933,7 @@ namespace TeeNova.Migrations
                         .HasColumnType("nvarchar(32)")
                         .HasDefaultValue("GarmentPrint");
 
-                    b.Property<Guid>("ProductId")
+                    b.Property<Guid?>("ProductId")
                         .HasColumnType("uniqueidentifier");
 
                     b.Property<string>("ProductKind")
@@ -1681,11 +1948,22 @@ namespace TeeNova.Migrations
                         .HasMaxLength(256)
                         .HasColumnType("nvarchar(256)");
 
+                    b.Property<string>("ProductSource")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasMaxLength(32)
+                        .HasColumnType("nvarchar(32)")
+                        .HasDefaultValue("Catalogue");
+
                     b.Property<Guid?>("ProductVariantId")
                         .HasColumnType("uniqueidentifier");
 
                     b.Property<int>("Quantity")
                         .HasColumnType("int");
+
+                    b.Property<string>("SizeSnapshot")
+                        .HasMaxLength(128)
+                        .HasColumnType("nvarchar(128)");
 
                     b.Property<decimal>("UnitPrice")
                         .HasColumnType("decimal(18,4)");
@@ -1703,9 +1981,14 @@ namespace TeeNova.Migrations
 
                     b.HasKey("Id");
 
+                    b.HasIndex("OrderAdHocProductSnapshotId");
+
                     b.HasIndex("OrderId");
 
-                    b.ToTable("OrderItems", "teenova");
+                    b.ToTable("OrderItems", "teenova", t =>
+                        {
+                            t.HasCheckConstraint("CK_OrderItems_ProductSource", "([ProductSource] = 'Catalogue' AND [ProductId] IS NOT NULL AND [OrderAdHocProductSnapshotId] IS NULL) OR ([ProductSource] = 'AdHoc' AND [ProductId] IS NULL AND [OrderAdHocProductSnapshotId] IS NOT NULL AND [InventoryDeductionEligible] = 0)");
+                        });
                 });
 
             modelBuilder.Entity("TeeNova.Orders.OrderItemBannerDetail", b =>
@@ -1952,6 +2235,9 @@ namespace TeeNova.Migrations
                         .HasColumnType("uniqueidentifier")
                         .HasColumnName("CreatorId");
 
+                    b.Property<DateTime?>("EvidenceReceivedAt")
+                        .HasColumnType("datetime2");
+
                     b.Property<string>("Method")
                         .IsRequired()
                         .HasMaxLength(32)
@@ -1968,9 +2254,17 @@ namespace TeeNova.Migrations
                         .HasMaxLength(256)
                         .HasColumnType("nvarchar(256)");
 
+                    b.Property<Guid?>("SourceAiOrderImportId")
+                        .HasColumnType("uniqueidentifier");
+
                     b.HasKey("Id");
 
                     b.HasIndex("OrderId");
+
+                    b.HasIndex("SourceAiOrderImportId")
+                        .IsUnique()
+                        .HasDatabaseName("UX_PaymentTransactions_SourceAiOrderImportId")
+                        .HasFilter("[SourceAiOrderImportId] IS NOT NULL");
 
                     b.ToTable("PaymentTransactions", "teenova");
                 });
@@ -2504,6 +2798,24 @@ namespace TeeNova.Migrations
                         .OnDelete(DeleteBehavior.Restrict);
                 });
 
+            modelBuilder.Entity("TeeNova.AiOrderImports.AiOrderOperationalEvent", b =>
+                {
+                    b.HasOne("TeeNova.AiOrderImports.AiOrderImport", null)
+                        .WithMany()
+                        .HasForeignKey("ImportId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
+                    b.HasOne("TeeNova.AiOrderImports.AiOrderProcessingAttempt", null)
+                        .WithMany()
+                        .HasForeignKey("ProcessingAttemptId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
+                    b.HasOne("TeeNova.AiOrderImports.AiOrderSourceDocument", null)
+                        .WithMany()
+                        .HasForeignKey("SourceDocumentId")
+                        .OnDelete(DeleteBehavior.Restrict);
+                });
+
             modelBuilder.Entity("TeeNova.AiOrderImports.AiOrderProcessingAttempt", b =>
                 {
                     b.HasOne("TeeNova.AiOrderImports.AiOrderImport", null)
@@ -2650,8 +2962,22 @@ namespace TeeNova.Migrations
                         .IsRequired();
                 });
 
+            modelBuilder.Entity("TeeNova.Orders.OrderAdHocProductSnapshot", b =>
+                {
+                    b.HasOne("TeeNova.Orders.Order", null)
+                        .WithMany("AdHocProductSnapshots")
+                        .HasForeignKey("OrderId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+                });
+
             modelBuilder.Entity("TeeNova.Orders.OrderItem", b =>
                 {
+                    b.HasOne("TeeNova.Orders.OrderAdHocProductSnapshot", null)
+                        .WithMany()
+                        .HasForeignKey("OrderAdHocProductSnapshotId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
                     b.HasOne("TeeNova.Orders.Order", null)
                         .WithMany("Items")
                         .HasForeignKey("OrderId")
@@ -2728,6 +3054,8 @@ namespace TeeNova.Migrations
 
             modelBuilder.Entity("TeeNova.Orders.Order", b =>
                 {
+                    b.Navigation("AdHocProductSnapshots");
+
                     b.Navigation("Items");
                 });
 

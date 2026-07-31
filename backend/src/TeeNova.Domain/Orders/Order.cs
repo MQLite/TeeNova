@@ -38,6 +38,19 @@ public class Order : FullAuditedAggregateRoot<Guid>
     public string? AdminNotes { get; set; }
     public bool IsApprovedForPrinting { get; private set; }
     public DeliveryMethod? DeliveryMethod { get; set; }
+    public OrderSource Source { get; private set; } = OrderSource.Checkout;
+    public Guid? SourceAiOrderImportId { get; private set; }
+    public int? SourceAiOrderConfirmedRevision { get; private set; }
+    public string? SourceAiOrderConfirmedCanonicalSha256 { get; private set; }
+    public Guid? SourceAiOrderConfirmedByAdminId { get; private set; }
+    public DateTime? SourceAiOrderConfirmedAt { get; private set; }
+    public string? SourceAiOrderMaterializationOperationKey { get; private set; }
+    public Guid? SourceAiOrderMaterializedByAdminId { get; private set; }
+    public DateTime? SourceAiOrderMaterializedAt { get; private set; }
+    public decimal? AiWrittenOrderTotal { get; private set; }
+    public decimal? AiCalculatedMaterializationTotal { get; private set; }
+    public string? AiPricingMode { get; private set; }
+    public string? AiPricingReason { get; private set; }
 
     // ── Payment snapshot fields ───────────────────────────────────────────────
     // Proper initialization (based on DeliveryMethod) is done in Phase 12A-2.
@@ -56,6 +69,9 @@ public class Order : FullAuditedAggregateRoot<Guid>
 
     private readonly List<OrderItem> _items = new();
     public IReadOnlyList<OrderItem> Items => _items.AsReadOnly();
+    private readonly List<OrderAdHocProductSnapshot> _adHocProductSnapshots = new();
+    public IReadOnlyList<OrderAdHocProductSnapshot> AdHocProductSnapshots =>
+        _adHocProductSnapshots.AsReadOnly();
 
     protected Order() { }
 
@@ -72,6 +88,68 @@ public class Order : FullAuditedAggregateRoot<Guid>
     {
         _items.Add(item);
         RecalculateTotal();
+    }
+
+    public void AddAdHocProductSnapshot(OrderAdHocProductSnapshot snapshot)
+    {
+        if (Source != OrderSource.AiOrderImport || snapshot.OrderId != Id)
+            throw new BusinessException("TeeNova:Order:InvalidAdHocProductSnapshot");
+        if (_adHocProductSnapshots.Any(x =>
+                string.Equals(
+                    x.ConfirmedImportGroupId,
+                    snapshot.ConfirmedImportGroupId,
+                    StringComparison.Ordinal)))
+            throw new BusinessException("TeeNova:Order:DuplicateAdHocProductSnapshot");
+        _adHocProductSnapshots.Add(snapshot);
+    }
+
+    public void MarkCreatedFromAiImport(
+        Guid importId,
+        int confirmedRevision,
+        string confirmedCanonicalSha256,
+        Guid confirmedByAdminId,
+        DateTime confirmedAt,
+        string materializationOperationKey,
+        Guid materializedByAdminId,
+        DateTime materializedAt,
+        decimal writtenOrderTotal,
+        decimal calculatedMaterializationTotal,
+        string pricingMode,
+        string? pricingReason)
+    {
+        if (SourceAiOrderImportId.HasValue || importId == Guid.Empty ||
+            confirmedRevision < 1 || confirmedByAdminId == Guid.Empty ||
+            materializedByAdminId == Guid.Empty)
+            throw new BusinessException("TeeNova:Order:InvalidAiOrderImportProvenance");
+
+        Source = OrderSource.AiOrderImport;
+        SourceAiOrderImportId = importId;
+        SourceAiOrderConfirmedRevision = confirmedRevision;
+        SourceAiOrderConfirmedCanonicalSha256 =
+            AiOrderImports.AiOrderImport.EnsureSha256(
+                confirmedCanonicalSha256,
+                nameof(confirmedCanonicalSha256));
+        SourceAiOrderConfirmedByAdminId = confirmedByAdminId;
+        SourceAiOrderConfirmedAt = confirmedAt;
+        SourceAiOrderMaterializationOperationKey =
+            AiOrderImports.AiOrderImport.EnsureText(
+                materializationOperationKey,
+                nameof(materializationOperationKey),
+                128);
+        SourceAiOrderMaterializedByAdminId = materializedByAdminId;
+        SourceAiOrderMaterializedAt = materializedAt;
+        AiWrittenOrderTotal = writtenOrderTotal;
+        AiCalculatedMaterializationTotal = calculatedMaterializationTotal;
+        AiPricingMode = AiOrderImports.AiOrderImport.EnsureText(
+            pricingMode,
+            nameof(pricingMode),
+            32);
+        AiPricingReason = string.IsNullOrWhiteSpace(pricingReason)
+            ? null
+            : AiOrderImports.AiOrderImport.EnsureText(
+                pricingReason,
+                nameof(pricingReason),
+                1000);
     }
 
     /// <summary>

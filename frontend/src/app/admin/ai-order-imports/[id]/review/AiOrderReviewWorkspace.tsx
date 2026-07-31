@@ -9,8 +9,11 @@ import {
   type ReactNode,
 } from 'react'
 import {
+  confirmAiOrderImport,
   getAiOrderImport,
+  getAiOrderMaterializationPreflight,
   getAiOrderReview,
+  materializeAiOrderImport,
   saveAiOrderReview,
   searchAiOrderCatalogue,
   sourceContentUrl,
@@ -19,6 +22,8 @@ import {
   type AiOrderConfirmationReadiness,
   type AiOrderControlledValue,
   type AiOrderImport,
+  type AiOrderMaterializationPreflight,
+  type AiOrderMaterializationResult,
   type AiOrderReview,
   type AiOrderReviewDecision,
   type AiOrderReviewField,
@@ -29,6 +34,7 @@ import {
   type AiOrderReviewSaveInput,
   type AiOrderSourceDocument,
   type AiOrderSourceReference,
+  type MaterializeAiOrderImportInput,
 } from '@/api/ai-order-imports'
 import { ApiError } from '@/lib/api-client'
 
@@ -76,6 +82,9 @@ export function AiOrderReviewWorkspace({ importId }: Props) {
   const [catalogueGroupId, setCatalogueGroupId] = useState<string>()
   const [catalogueSearching, setCatalogueSearching] = useState(false)
   const [catalogueCache, setCatalogueCache] = useState<Record<string, AiOrderCatalogueSearchItem>>({})
+  const [preflight, setPreflight] = useState<AiOrderMaterializationPreflight>()
+  const [confirming, setConfirming] = useState(false)
+  const confirmationOperationKey = useRef<string | undefined>(undefined)
   const mainRef = useRef<HTMLDivElement>(null)
 
   async function load() {
@@ -90,6 +99,11 @@ export function AiOrderReviewWorkspace({ importId }: Props) {
     setDirty(false)
     setConflict(false)
     setError(undefined)
+    if (nextReview.status === 'Confirmed') {
+      setPreflight(await getAiOrderMaterializationPreflight(importId))
+    } else {
+      setPreflight(undefined)
+    }
   }
 
   useEffect(() => {
@@ -435,7 +449,7 @@ export function AiOrderReviewWorkspace({ importId }: Props) {
         element = mainRef.current?.querySelector<HTMLElement>(selector)
         candidate = candidate.slice(0, candidate.lastIndexOf('/'))
       }
-      element?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+      element?.scrollIntoView?.({ behavior: 'smooth', block: 'center' })
       element?.focus({ preventScroll: true })
     }, 50)
   }
@@ -474,6 +488,30 @@ export function AiOrderReviewWorkspace({ importId }: Props) {
       }
     } finally {
       setSaving(false)
+    }
+  }
+
+  async function confirmReviewedImport() {
+    if (!review || dirty || !review.confirmationReadiness.confirmOrderEnabled) return
+    const accepted = window.confirm(
+      'Confirming will lock this reviewed import. It will not create an Order yet.',
+    )
+    if (!accepted) return
+    confirmationOperationKey.current ??= crypto.randomUUID()
+    setConfirming(true)
+    setError(undefined)
+    try {
+      await confirmAiOrderImport(
+        importId,
+        review.currentRevision,
+        confirmationOperationKey.current,
+      )
+      await load()
+      setNotice('Import confirmed. Formal Order has not been created.')
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : 'Import confirmation failed.')
+    } finally {
+      setConfirming(false)
     }
   }
 
@@ -575,6 +613,21 @@ export function AiOrderReviewWorkspace({ importId }: Props) {
           aria-label="Structured order"
           className={`${activeTab === 'Order' ? 'block' : 'hidden'} min-w-0 space-y-4 xl:block`}
         >
+          {review.status === 'Confirmed' && preflight && (
+            <MaterializationPanel
+              importId={importId}
+              review={review}
+              preflight={preflight}
+              onCreated={(result) => {
+                setNotice(
+                  result.created
+                    ? `Formal Order ${result.orderNumber} created in Pending status. No email, inventory, production work, or PDF was triggered.`
+                    : 'No formal Order was created.',
+                )
+                void load()
+              }}
+            />
+          )}
           {guided ? (
             <GuidedPanel
               issue={guidedIssue}
@@ -587,7 +640,15 @@ export function AiOrderReviewWorkspace({ importId }: Props) {
               onViewSource={viewSource}
             />
           ) : (
-            <>
+            <fieldset
+              disabled={review.status === 'Confirmed'}
+              className="min-w-0 space-y-4 disabled:opacity-75"
+            >
+              {review.status === 'Confirmed' && (
+                <div className="rounded-2xl border border-black/[0.10] bg-black/[0.03] p-4 text-sm text-black/60">
+                  This confirmed review is immutable. Review fields cannot be edited.
+                </div>
+              )}
               <CustomerSection customer={draft.customer} onChange={updateCustomer} onViewSource={viewSource} />
               <div className="space-y-4">
                 <div className="flex items-center justify-between gap-3">
@@ -652,7 +713,7 @@ export function AiOrderReviewWorkspace({ importId }: Props) {
                 })}
                 onViewSource={viewSource}
               />
-            </>
+            </fieldset>
           )}
         </main>
 
@@ -694,15 +755,25 @@ export function AiOrderReviewWorkspace({ importId }: Props) {
           <div className="flex gap-2">
             <button
               type="button"
-              disabled
-              title="Formal confirmation is owned by Jira 10207"
-              className="rounded-full border border-black/[0.14] px-4 py-2 text-sm text-black/40"
+              disabled={
+                confirming ||
+                dirty ||
+                review.status !== 'Draft' ||
+                !review.confirmationReadiness.confirmOrderEnabled
+              }
+              title={
+                dirty
+                  ? 'Save the Draft before confirmation'
+                  : 'Confirm and seal this reviewed import without creating an Order'
+              }
+              onClick={() => void confirmReviewedImport()}
+              className="rounded-full border border-black/[0.14] px-4 py-2 text-sm text-black disabled:cursor-not-allowed disabled:text-black/40"
             >
-              Confirm Order
+              {confirming ? 'Confirming…' : 'Confirm Reviewed Import'}
             </button>
             <button
               type="button"
-              disabled={saving}
+              disabled={saving || review.status === 'Confirmed'}
               onClick={() => void saveDraft()}
               className="rounded-full bg-black px-5 py-2 text-sm text-white disabled:opacity-40"
             >
@@ -734,6 +805,298 @@ export function AiOrderReviewWorkspace({ importId }: Props) {
         />
       )}
     </div>
+  )
+}
+
+function MaterializationPanel({
+  importId,
+  review,
+  preflight,
+  onCreated,
+}: {
+  importId: string
+  review: AiOrderReview
+  preflight: AiOrderMaterializationPreflight
+  onCreated: (result: AiOrderMaterializationResult) => void
+}) {
+  const [customerName, setCustomerName] = useState(review.customer.name.staffValue ?? '')
+  const [customerEmail, setCustomerEmail] = useState(review.customer.email.staffValue ?? '')
+  const [deliveryMethod, setDeliveryMethod] = useState<'Pickup' | 'Shipping'>('Pickup')
+  const [address, setAddress] = useState({
+    fullName: review.customer.name.staffValue ?? '',
+    addressLine1: '',
+    addressLine2: '',
+    city: '',
+    state: '',
+    postalCode: '',
+    country: 'NZ',
+    phone: review.customer.phone.staffValue ?? '',
+  })
+  const [pricingMode, setPricingMode] =
+    useState<'UseCalculatedTotal' | 'UseWrittenTotal' | 'RejectAndReturnToReview'>(
+      'UseCalculatedTotal',
+    )
+  const [pricingReason, setPricingReason] = useState('')
+  const [adHocPrices, setAdHocPrices] = useState<Record<string, string>>({})
+  const [printSelections, setPrintSelections] = useState<
+    Record<string, { printAreaId: string; printSizeId: string }>
+  >({})
+  const [paymentMethod, setPaymentMethod] =
+    useState<'Cash' | 'Eftpos' | 'BankTransfer' | 'Other'>('BankTransfer')
+  const [paymentReference, setPaymentReference] = useState('')
+  const [receivedAt, setReceivedAt] = useState('')
+  const [paymentAcknowledged, setPaymentAcknowledged] = useState(false)
+  const [creating, setCreating] = useState(false)
+  const [error, setError] = useState<string>()
+  const operationKey = useRef<string | undefined>(undefined)
+
+  async function createFormalOrder() {
+    const accepted = window.confirm(
+      'This will create a TeeNova Order from the confirmed review. No email, inventory deduction, or production work will be triggered.',
+    )
+    if (!accepted) return
+    operationKey.current ??= crypto.randomUUID()
+    const adHocPricing = preflight.productGroups
+      .filter((group) => group.productSource === 'AdHoc')
+      .flatMap((group) => group.rows.map((row) => ({
+        groupId: group.groupId,
+        rowId: row.rowId,
+        unitPrice: adHocPrices[`${group.groupId}:${row.rowId}`] ?? '',
+      })))
+    const cataloguePrinting = review.productGroups
+      .filter((group) => group.productSelection.mode === 'Catalogue')
+      .flatMap((group) => group.printing.map((print) => ({
+        groupId: group.groupId,
+        printId: print.printId,
+        printAreaId: printSelections[`${group.groupId}:${print.printId}`]?.printAreaId ?? '',
+        printSizeId: printSelections[`${group.groupId}:${print.printId}`]?.printSizeId ?? '',
+      })))
+    const input: MaterializeAiOrderImportInput = {
+      materializationOperationKey: operationKey.current,
+      confirmedRevision: preflight.confirmedRevision,
+      customer: { name: customerName || null, email: customerEmail },
+      fulfilment: {
+        deliveryMethod,
+        shippingAddress: deliveryMethod === 'Shipping' ? address : null,
+      },
+      pricingDecision: {
+        mode: pricingMode,
+        reason: pricingReason || null,
+      },
+      adHocPricing,
+      cataloguePrinting,
+      depositEvidence: preflight.paymentEvidenceRequired
+        ? {
+            paymentMethod,
+            reference: paymentReference,
+            receivedAt: receivedAt ? new Date(receivedAt).toISOString() : undefined,
+            acknowledgedByAdmin: paymentAcknowledged,
+          }
+        : null,
+      notificationPolicy: 'DoNotSend',
+    }
+    setCreating(true)
+    setError(undefined)
+    try {
+      onCreated(await materializeAiOrderImport(importId, input))
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : 'Formal Order creation failed.')
+    } finally {
+      setCreating(false)
+    }
+  }
+
+  if (preflight.alreadyMaterialized && preflight.formalOrderId) {
+    return (
+      <section className="card border-emerald-200 bg-emerald-50 p-5">
+        <h2 className="text-base text-black" style={{ fontWeight: 540 }}>Formal Order created</h2>
+        <p className="mt-1 text-sm text-black/60">This import is linked idempotently to one TeeNova Order.</p>
+        <Link
+          href={`/admin/orders/${preflight.formalOrderId}`}
+          className="mt-3 inline-flex rounded-full bg-black px-4 py-2 text-sm text-white"
+        >
+          View Formal Order
+        </Link>
+      </section>
+    )
+  }
+
+  const adHocRows = preflight.productGroups
+    .filter((group) => group.productSource === 'AdHoc')
+    .flatMap((group) => group.rows.map((row) => ({ group, row })))
+  const cataloguePrints = review.productGroups
+    .filter((group) => group.productSelection.mode === 'Catalogue')
+    .flatMap((group) => group.printing.map((print) => ({ group, print })))
+
+  return (
+    <section className="card border-black/[0.14] p-5">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <p className="font-mono text-[10px] uppercase tracking-[0.54px] text-black/45">
+            Separate action 2
+          </p>
+          <h2 className="mt-1 text-lg text-black" style={{ fontWeight: 550 }}>Create Formal Order</h2>
+          <p className="mt-1 text-sm text-black/55">
+            Confirmed revision {preflight.confirmedRevision} · proposed status Pending
+          </p>
+        </div>
+        <StatusPill
+          label={`Catalogue: ${preflight.catalogueStatus}`}
+          tone={preflight.catalogueStatus === 'Current' ? 'good' : 'bad'}
+        />
+      </div>
+
+      <div className="mt-4 grid gap-3 sm:grid-cols-2">
+        <label className="text-xs text-black/60">
+          Customer name
+          <input aria-label="Materialization customer name" value={customerName} onChange={(event) => setCustomerName(event.target.value)} className={inputClass} />
+        </label>
+        <label className="text-xs text-black/60">
+          Customer email
+          <input aria-label="Materialization customer email" type="email" value={customerEmail} onChange={(event) => setCustomerEmail(event.target.value)} className={inputClass} />
+        </label>
+        <label className="text-xs text-black/60">
+          Fulfilment method
+          <select aria-label="Fulfilment method" value={deliveryMethod} onChange={(event) => setDeliveryMethod(event.target.value as 'Pickup' | 'Shipping')} className={inputClass}>
+            <option value="Pickup">Pickup</option>
+            <option value="Shipping">Shipping</option>
+          </select>
+        </label>
+        <label className="text-xs text-black/60">
+          Pricing treatment
+          <select aria-label="Pricing treatment" value={pricingMode} onChange={(event) => setPricingMode(event.target.value as typeof pricingMode)} className={inputClass}>
+            <option value="UseCalculatedTotal">Use calculated total</option>
+            <option value="UseWrittenTotal">Use written total</option>
+            <option value="RejectAndReturnToReview">Reject — create no Order</option>
+          </select>
+        </label>
+      </div>
+
+      <div className="mt-3 rounded-xl border border-black/[0.08] bg-black/[0.02] p-3 text-xs text-black/60">
+        Written total: ${preflight.writtenOrderTotal} · Calculated catalogue total:{' '}
+        {preflight.calculatedCatalogueTotal ? `$${preflight.calculatedCatalogueTotal}` : 'requires complete materialization inputs'} · Deposit Paid: ${preflight.depositPaid}
+      </div>
+
+      {pricingMode === 'UseWrittenTotal' && (
+        <label className="mt-3 block text-xs text-black/60">
+          Required pricing reason
+          <textarea aria-label="Written total reason" value={pricingReason} onChange={(event) => setPricingReason(event.target.value)} className={inputClass} rows={2} />
+        </label>
+      )}
+
+      {deliveryMethod === 'Shipping' && (
+        <div className="mt-4 grid gap-3 rounded-xl border border-black/[0.08] p-3 sm:grid-cols-2">
+          {([
+            ['fullName', 'Shipping full name'],
+            ['addressLine1', 'Address line 1'],
+            ['addressLine2', 'Address line 2'],
+            ['city', 'City'],
+            ['state', 'Region'],
+            ['postalCode', 'Postal code'],
+            ['country', 'Country'],
+            ['phone', 'Phone'],
+          ] as const).map(([key, label]) => (
+            <label key={key} className="text-xs text-black/60">
+              {label}
+              <input
+                aria-label={label}
+                value={address[key]}
+                onChange={(event) => setAddress((current) => ({ ...current, [key]: event.target.value }))}
+                className={inputClass}
+              />
+            </label>
+          ))}
+        </div>
+      )}
+
+      {adHocRows.length > 0 && (
+        <div className="mt-4 space-y-2">
+          <h3 className="text-sm text-black" style={{ fontWeight: 520 }}>Ad-hoc pricing</h3>
+          {adHocRows.map(({ group, row }) => {
+            const key = `${group.groupId}:${row.rowId}`
+            return (
+              <label key={key} className="block text-xs text-black/60">
+                {group.productName} · {row.colour} / {row.size} · Qty {row.quantity} — unit price
+                <input aria-label={`Unit price for ${group.productName} ${row.size}`} inputMode="decimal" value={adHocPrices[key] ?? ''} onChange={(event) => setAdHocPrices((current) => ({ ...current, [key]: event.target.value }))} className={inputClass} />
+              </label>
+            )
+          })}
+        </div>
+      )}
+
+      {cataloguePrints.length > 0 && (
+        <div className="mt-4 space-y-3">
+          <h3 className="text-sm text-black" style={{ fontWeight: 520 }}>Catalogue print selections</h3>
+          <p className="text-xs text-black/45">Enter current catalogue Print Area and Print Size IDs for each reviewed placement; the server validates and prices them.</p>
+          {cataloguePrints.map(({ group, print }) => {
+            const key = `${group.groupId}:${print.printId}`
+            const value = printSelections[key] ?? { printAreaId: '', printSizeId: '' }
+            return (
+              <div key={key} className="grid gap-2 rounded-xl border border-black/[0.08] p-3 sm:grid-cols-2">
+                <p className="sm:col-span-2 text-xs text-black/60">
+                  {group.writtenProductName.staffValue} · {print.position.staffValue || 'Placement'} · {print.printSize.staffValue || 'Size'}
+                </p>
+                <input aria-label={`Print Area ID for ${print.printId}`} placeholder="Print Area UUID" value={value.printAreaId} onChange={(event) => setPrintSelections((current) => ({ ...current, [key]: { ...value, printAreaId: event.target.value } }))} className={inputClass} />
+                <input aria-label={`Print Size ID for ${print.printId}`} placeholder="Print Size UUID" value={value.printSizeId} onChange={(event) => setPrintSelections((current) => ({ ...current, [key]: { ...value, printSizeId: event.target.value } }))} className={inputClass} />
+              </div>
+            )
+          })}
+        </div>
+      )}
+
+      {preflight.paymentEvidenceRequired && (
+        <div className="mt-4 grid gap-3 rounded-xl border border-amber-200 bg-amber-50 p-3 sm:grid-cols-2">
+          <h3 className="sm:col-span-2 text-sm text-black" style={{ fontWeight: 520 }}>Positive-deposit evidence</h3>
+          <label className="text-xs text-black/60">
+            Manual payment method
+            <select aria-label="Deposit payment method" value={paymentMethod} onChange={(event) => setPaymentMethod(event.target.value as typeof paymentMethod)} className={inputClass}>
+              <option value="BankTransfer">Bank transfer</option>
+              <option value="Cash">Cash</option>
+              <option value="Eftpos">Eftpos</option>
+              <option value="Other">Other</option>
+            </select>
+          </label>
+          <label className="text-xs text-black/60">
+            Reference
+            <input aria-label="Deposit payment reference" value={paymentReference} onChange={(event) => setPaymentReference(event.target.value)} className={inputClass} />
+          </label>
+          <label className="text-xs text-black/60">
+            Received at
+            <input aria-label="Deposit received at" type="datetime-local" value={receivedAt} onChange={(event) => setReceivedAt(event.target.value)} className={inputClass} />
+          </label>
+          <label className="flex items-center gap-2 text-xs text-black/70">
+            <input type="checkbox" checked={paymentAcknowledged} onChange={(event) => setPaymentAcknowledged(event.target.checked)} />
+            I acknowledge this historical deposit evidence.
+          </label>
+        </div>
+      )}
+
+      {preflight.blockers.length > 0 && (
+        <div className="mt-4 rounded-xl border border-black/[0.08] p-3">
+          <h3 className="text-sm text-black" style={{ fontWeight: 520 }}>Materialization preflight</h3>
+          <ul className="mt-2 space-y-1 text-xs text-black/60">
+            {preflight.blockers.map((blocker, index) => (
+              <li key={`${blocker.code}-${index}`}>
+                <span className="font-mono text-[10px] text-black/45">{blocker.code}</span> — {blocker.message}
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+
+      {error && <div role="alert" className="mt-4 rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-700">{error}</div>}
+      <p className="mt-4 text-xs text-black/50">
+        No customer or Admin email, online payment session, inventory deduction, production job, or production PDF will be triggered.
+      </p>
+      <button
+        type="button"
+        disabled={creating}
+        onClick={() => void createFormalOrder()}
+        className="mt-4 rounded-full bg-black px-5 py-2 text-sm text-white disabled:opacity-40"
+      >
+        {creating ? 'Creating…' : pricingMode === 'RejectAndReturnToReview' ? 'Create no Order' : 'Create Formal Order'}
+      </button>
+    </section>
   )
 }
 
@@ -894,7 +1257,11 @@ function CustomerSection({
     ['addressOrFulfilmentNotes', 'Address / fulfilment notes'],
   ]
   return (
-    <section className="card p-4 sm:p-5">
+    <section
+      data-review-path="/customer"
+      tabIndex={-1}
+      className="card p-4 outline-none focus:ring-2 focus:ring-black/20 sm:p-5"
+    >
       <h2 className="text-base text-black" style={{ fontWeight: 540 }}>Customer</h2>
       <p className="mt-1 text-xs text-black/45">Optional in Jira 10206; no customer record is created or matched.</p>
       <div className="mt-4 grid gap-4 sm:grid-cols-2">
@@ -995,6 +1362,7 @@ function ProductGroupCard({
           onViewSource={onViewSource}
         >
           <input
+            aria-label="Written / display product name"
             value={group.writtenProductName.staffValue ?? ''}
             onChange={(event) => onUpdate((next) => {
               next.writtenProductName = updateTextField(next.writtenProductName, event.target.value)
@@ -1077,6 +1445,7 @@ function ProductGroupCard({
           >
             <div className="grid grid-cols-[1fr_auto] gap-2">
               <input
+                aria-label="Garment colour"
                 value={group.colour.staffValue?.label ?? ''}
                 onChange={(event) => onUpdate((next) => {
                   next.colour = updateControlledField(next.colour, {
@@ -1128,6 +1497,7 @@ function ProductGroupCard({
             onViewSource={onViewSource}
           >
             <select
+              aria-label="Supply source"
               value={group.supplySource.staffValue ?? 'Unknown'}
               onChange={(event) => onUpdate((next) => {
                 next.supplySource = updateTextField(next.supplySource, event.target.value)
@@ -1140,13 +1510,13 @@ function ProductGroupCard({
             </select>
           </FieldShell>
           <FieldShell label="Artwork / design identity" field={group.artworkIdentity} path={`/productGroups/${index}/artworkIdentity`} onViewSource={onViewSource}>
-            <input value={group.artworkIdentity.staffValue ?? ''} onChange={(event) => onUpdate((next) => { next.artworkIdentity = updateTextField(next.artworkIdentity, event.target.value) })} className={inputClass} />
+            <input aria-label="Artwork / design identity" value={group.artworkIdentity.staffValue ?? ''} onChange={(event) => onUpdate((next) => { next.artworkIdentity = updateTextField(next.artworkIdentity, event.target.value) })} className={inputClass} />
           </FieldShell>
           <FieldShell label="Artwork description" field={group.artworkDescription} path={`/productGroups/${index}/artworkDescription`} onViewSource={onViewSource}>
-            <input value={group.artworkDescription.staffValue ?? ''} onChange={(event) => onUpdate((next) => { next.artworkDescription = updateTextField(next.artworkDescription, event.target.value) })} className={inputClass} />
+            <input aria-label="Artwork description" value={group.artworkDescription.staffValue ?? ''} onChange={(event) => onUpdate((next) => { next.artworkDescription = updateTextField(next.artworkDescription, event.target.value) })} className={inputClass} />
           </FieldShell>
           <FieldShell label="Production notes" field={group.productionNotes} path={`/productGroups/${index}/productionNotes`} onViewSource={onViewSource}>
-            <textarea value={group.productionNotes.staffValue ?? ''} onChange={(event) => onUpdate((next) => { next.productionNotes = updateTextField(next.productionNotes, event.target.value) })} className={inputClass} rows={2} />
+            <textarea aria-label="Production notes" value={group.productionNotes.staffValue ?? ''} onChange={(event) => onUpdate((next) => { next.productionNotes = updateTextField(next.productionNotes, event.target.value) })} className={inputClass} rows={2} />
           </FieldShell>
         </div>
 
@@ -1458,7 +1828,7 @@ function FinancialSection({
         <FieldShell label="Order Total" field={financials.orderTotal} path="/financials/orderTotal" onViewSource={onViewSource}>
           <div className="relative">
             <span className="pointer-events-none absolute left-3 top-3 text-sm text-black/45">$</span>
-            <input inputMode="decimal" value={financials.orderTotal.staffValue ?? ''} onChange={(event) => onChange('orderTotal', event.target.value)} className={`${inputClass} pl-7`} />
+            <input aria-label="Order Total" inputMode="decimal" value={financials.orderTotal.staffValue ?? ''} onChange={(event) => onChange('orderTotal', event.target.value)} className={`${inputClass} pl-7`} />
           </div>
           {financials.orderTotal.unresolved && financials.orderTotal.staffValue != null && (
             <button type="button" className={`${smallButton} mt-2`} onClick={() => onAccept('orderTotal')}>Accept Order Total</button>
@@ -1470,7 +1840,7 @@ function FinancialSection({
         <FieldShell label="Deposit Paid" field={financials.depositPaid} path="/financials/depositPaid" onViewSource={onViewSource}>
           <div className="relative">
             <span className="pointer-events-none absolute left-3 top-3 text-sm text-black/45">$</span>
-            <input inputMode="decimal" value={financials.depositPaid.staffValue ?? ''} onChange={(event) => onChange('depositPaid', event.target.value)} className={`${inputClass} pl-7`} />
+            <input aria-label="Deposit Paid" inputMode="decimal" value={financials.depositPaid.staffValue ?? ''} onChange={(event) => onChange('depositPaid', event.target.value)} className={`${inputClass} pl-7`} />
           </div>
           <button type="button" className={`${smallButton} mt-2`} onClick={onSetZero}>No deposit paid — set $0.00</button>
           {financials.depositPaid.unresolved && financials.depositPaid.staffValue != null && (

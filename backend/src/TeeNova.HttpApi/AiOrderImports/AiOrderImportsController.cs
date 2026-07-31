@@ -8,6 +8,7 @@ using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.Net.Http.Headers;
 using TeeNova.AiOrderImports.Dtos;
 using TeeNova.AiOrderImports.Recognition;
+using TeeNova.AiOrderImports.Operations;
 using TeeNova.AiOrderImports.Validation;
 using TeeNova.Auth;
 
@@ -22,15 +23,27 @@ public sealed class AiOrderImportsController : TeeNovaControllerBase
     private readonly AiOrderImportIntakeAppService _appService;
     private readonly AiOrderRecognitionAppService _recognition;
     private readonly AiOrderReviewAppService _review;
+    private readonly AiOrderConfirmationMaterializationService _confirmationMaterialization;
+    private readonly AiOrderFeatureGate _features;
+    private readonly AiOrderOperationsAppService _operations;
+    private readonly AiOrderRetentionAppService _retention;
 
     public AiOrderImportsController(
         AiOrderImportIntakeAppService appService,
         AiOrderRecognitionAppService recognition,
-        AiOrderReviewAppService review)
+        AiOrderReviewAppService review,
+        AiOrderConfirmationMaterializationService confirmationMaterialization,
+        AiOrderFeatureGate features,
+        AiOrderOperationsAppService operations,
+        AiOrderRetentionAppService retention)
     {
         _appService = appService;
         _recognition = recognition;
         _review = review;
+        _confirmationMaterialization = confirmationMaterialization;
+        _features = features;
+        _operations = operations;
+        _retention = retention;
     }
 
     [HttpPost]
@@ -39,7 +52,8 @@ public sealed class AiOrderImportsController : TeeNovaControllerBase
         [FromHeader(Name = "Idempotency-Key")] string? idempotencyKey,
         [FromBody] CreateAiOrderImportInput? input,
         CancellationToken cancellationToken) =>
-        _appService.CreateAsync(idempotencyKey ?? string.Empty, input, cancellationToken);
+        Gate(_features.RequireIntake, () =>
+            _appService.CreateAsync(idempotencyKey ?? string.Empty, input, cancellationToken));
 
     [HttpGet]
     public Task<AiOrderImportListResultDto> GetListAsync(CancellationToken cancellationToken) =>
@@ -63,6 +77,7 @@ public sealed class AiOrderImportsController : TeeNovaControllerBase
         [FromForm] AiOrderCaptureMethod captureMethod = AiOrderCaptureMethod.Upload,
         CancellationToken cancellationToken = default)
     {
+        _features.RequireIntake();
         await using var stream = file.OpenReadStream();
         return await _appService.UploadAsync(
             id,
@@ -108,7 +123,7 @@ public sealed class AiOrderImportsController : TeeNovaControllerBase
         Guid id,
         [FromBody] ReorderAiOrderDocumentsInput input,
         CancellationToken cancellationToken) =>
-        _appService.ReorderAsync(id, input, cancellationToken);
+        Gate(_features.RequireIntake, () => _appService.ReorderAsync(id, input, cancellationToken));
 
     [HttpPut("{id:guid}/documents/{documentId:guid}/rotation")]
     public Task SetRotationAsync(
@@ -116,18 +131,18 @@ public sealed class AiOrderImportsController : TeeNovaControllerBase
         Guid documentId,
         [FromBody] SetAiOrderDocumentRotationInput input,
         CancellationToken cancellationToken) =>
-        _appService.SetRotationAsync(id, documentId, input, cancellationToken);
+        Gate(_features.RequireIntake, () => _appService.SetRotationAsync(id, documentId, input, cancellationToken));
 
     [HttpDelete("{id:guid}/documents/{documentId:guid}")]
     public Task RemoveAsync(
         Guid id,
         Guid documentId,
         CancellationToken cancellationToken) =>
-        _appService.RemoveAsync(id, documentId, cancellationToken);
+        Gate(_features.RequireIntake, () => _appService.RemoveAsync(id, documentId, cancellationToken));
 
     [HttpPost("{id:guid}/cancel")]
     public Task CancelAsync(Guid id, CancellationToken cancellationToken) =>
-        _appService.CancelAsync(id, cancellationToken);
+        Gate(_features.RequireIntake, () => _appService.CancelAsync(id, cancellationToken));
 
     [HttpGet("recognition-options")]
     public Task<AiOrderRecognitionOptionsDto> GetRecognitionOptionsAsync() =>
@@ -139,11 +154,11 @@ public sealed class AiOrderImportsController : TeeNovaControllerBase
         [FromHeader(Name = "Idempotency-Key")] string? idempotencyKey,
         [FromBody] StartAiOrderRecognitionInput input,
         CancellationToken cancellationToken) =>
-        _recognition.StartAsync(
+        Gate(_features.RequireRecognition, () => _recognition.StartAsync(
             id,
             idempotencyKey ?? string.Empty,
             input,
-            cancellationToken);
+            cancellationToken));
 
     [HttpPost("{id:guid}/recognition/retry")]
     public Task<AiOrderRecognitionStatusDto> RetryRecognitionAsync(
@@ -151,11 +166,11 @@ public sealed class AiOrderImportsController : TeeNovaControllerBase
         [FromHeader(Name = "Idempotency-Key")] string? idempotencyKey,
         [FromBody] StartAiOrderRecognitionInput input,
         CancellationToken cancellationToken) =>
-        _recognition.RetryAsync(
+        Gate(_features.RequireRecognition, () => _recognition.RetryAsync(
             id,
             idempotencyKey ?? string.Empty,
             input,
-            cancellationToken);
+            cancellationToken));
 
     [HttpGet("{id:guid}/review")]
     public Task<AiOrderReviewDto> GetReviewAsync(
@@ -169,7 +184,7 @@ public sealed class AiOrderImportsController : TeeNovaControllerBase
         Guid id,
         [FromBody] SaveAiOrderReviewInput input,
         CancellationToken cancellationToken) =>
-        _review.SaveAsync(id, input, cancellationToken);
+        Gate(_features.RequireReview, () => _review.SaveAsync(id, input, cancellationToken));
 
     [HttpGet("{id:guid}/review/catalogue")]
     public Task<AiOrderCatalogueSearchResultDto> SearchReviewCatalogueAsync(
@@ -182,5 +197,86 @@ public sealed class AiOrderImportsController : TeeNovaControllerBase
     public Task<AiOrderReviewDto> RevalidateAsync(
         Guid id,
         CancellationToken cancellationToken) =>
-        _review.RevalidateAsync(id, cancellationToken);
+        Gate(_features.RequireReview, () => _review.RevalidateAsync(id, cancellationToken));
+
+    [HttpPost("{id:guid}/confirm")]
+    public Task<AiOrderImportConfirmationDto> ConfirmAsync(
+        Guid id,
+        [FromBody] ConfirmAiOrderImportInput input,
+        CancellationToken cancellationToken) =>
+        Gate(_features.RequireConfirmation, () =>
+            _confirmationMaterialization.ConfirmAsync(id, input, cancellationToken));
+
+    [HttpGet("{id:guid}/materialization-preflight")]
+    public Task<AiOrderMaterializationPreflightDto> GetMaterializationPreflightAsync(
+        Guid id,
+        CancellationToken cancellationToken) =>
+        _confirmationMaterialization.GetPreflightAsync(id, cancellationToken);
+
+    [HttpPost("{id:guid}/materialize")]
+    [RequestSizeLimit(1024 * 1024)]
+    public Task<AiOrderMaterializationResultDto> MaterializeAsync(
+        Guid id,
+        [FromBody] MaterializeAiOrderImportInput input,
+        CancellationToken cancellationToken) =>
+        Gate(_features.RequireMaterialization, () =>
+            _confirmationMaterialization.MaterializeAsync(id, input, cancellationToken));
+
+    [HttpGet("operations/status")]
+    public Task<AiOrderOperationsStatusDto> GetOperationsStatusAsync(
+        CancellationToken cancellationToken) =>
+        _operations.GetStatusAsync(cancellationToken);
+
+    [HttpGet("{id:guid}/retention")]
+    public Task<AiOrderRetentionSummaryDto> GetRetentionAsync(
+        Guid id,
+        CancellationToken cancellationToken) =>
+        _retention.GetSummaryAsync(id, cancellationToken);
+
+    [HttpPost("{id:guid}/retention-hold")]
+    public Task<AiOrderRetentionSummaryDto> PlaceRetentionHoldAsync(
+        Guid id,
+        [FromBody] PlaceAiOrderRetentionHoldInput input,
+        CancellationToken cancellationToken) =>
+        _retention.PlaceHoldAsync(id, input, cancellationToken);
+
+    [HttpDelete("{id:guid}/retention-hold")]
+    public Task<AiOrderRetentionSummaryDto> ReleaseRetentionHoldAsync(
+        Guid id,
+        [FromBody] ReleaseAiOrderRetentionHoldInput input,
+        CancellationToken cancellationToken) =>
+        _retention.ReleaseHoldAsync(id, input, cancellationToken);
+
+    [HttpPost("{id:guid}/retention/extend")]
+    public Task<AiOrderRetentionSummaryDto> ExtendRetentionAsync(
+        Guid id,
+        [FromBody] ExtendAiOrderRetentionInput input,
+        CancellationToken cancellationToken) =>
+        _retention.ExtendAsync(id, input, cancellationToken);
+
+    [HttpPost("{id:guid}/retention/delete-source")]
+    public Task DeleteRetainedSourceAsync(
+        Guid id,
+        [FromBody] DeleteAiOrderRetainedBytesInput input,
+        CancellationToken cancellationToken) =>
+        _retention.DeleteSourceAsync(id, input, cancellationToken);
+
+    [HttpPost("{id:guid}/retention/delete-raw-evidence")]
+    public Task DeleteRetainedRawEvidenceAsync(
+        Guid id,
+        [FromBody] DeleteAiOrderRetainedBytesInput input,
+        CancellationToken cancellationToken) =>
+        _retention.DeleteRawEvidenceAsync(id, input, cancellationToken);
+
+    private static Task<T> Gate<T>(Action require, Func<Task<T>> action)
+    {
+        require();
+        return action();
+    }
+
+    private static Task Gate(Action require, Func<Task> action)
+    {
+        require();
+        return action();
+    }
 }

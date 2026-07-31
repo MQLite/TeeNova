@@ -83,7 +83,7 @@ function buildWorkingCopy(order: Order): WorkingItem[] {
   return order.items.map((item) => ({
     localKey: newKey('item'),
     id: item.id,
-    productId: item.productId,
+    productId: item.productId ?? '',
     productKind: item.productKind ?? 'Garment',
     // Badge order items have a null variant (Jira 9503/9505); coerce to '' so the garment variant
     // <select> stays controlled. The badge editor ignores this field entirely.
@@ -301,7 +301,11 @@ export function OrderContentEditModal({ order, open, onClose, onSaved }: Props) 
         setSizes(sizeList)
 
         // Preload variant detail for every product already on the order.
-        const distinctIds = Array.from(new Set(order.items.map((i) => i.productId)))
+        const distinctIds = Array.from(new Set(
+          order.items
+            .map((item) => item.productId)
+            .filter((productId): productId is string => Boolean(productId)),
+        ))
         const details = await Promise.all(distinctIds.map((pid) => catalogApi.getProduct(pid).catch(() => null)))
         if (cancelled) return
         const map: Record<string, Product> = {}

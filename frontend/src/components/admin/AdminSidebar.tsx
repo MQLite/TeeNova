@@ -123,6 +123,17 @@ const logsNavItem = {
   ),
 }
 
+const aiOperationsNavItem = {
+  href: '/admin/ai-order-imports/operations',
+  label: 'AI Order Operations',
+  exact: true,
+  icon: (
+    <svg viewBox="0 0 20 20" fill="currentColor" className="h-4 w-4 shrink-0" aria-hidden="true">
+      <path fillRule="evenodd" d="M10 2a1 1 0 011 1v1.1a6 6 0 012.17.9l.78-.78a1 1 0 111.42 1.42l-.78.78A6 6 0 0115.9 9H17a1 1 0 110 2h-1.1a6 6 0 01-.9 2.17l.78.78a1 1 0 01-1.42 1.42l-.78-.78A6 6 0 0111 15.9V17a1 1 0 11-2 0v-1.1a6 6 0 01-2.17-.9l-.78.78a1 1 0 01-1.42-1.42l.78-.78A6 6 0 014.1 11H3a1 1 0 110-2h1.1A6 6 0 015 6.83l-.78-.78a1 1 0 111.42-1.42l.78.78A6 6 0 019 4.1V3a1 1 0 011-1zm0 5a3 3 0 100 6 3 3 0 000-6z" clipRule="evenodd" />
+    </svg>
+  ),
+}
+
 interface AdminSidebarProps {
   role?: string
 }
@@ -182,6 +193,20 @@ export function AdminSidebar({ role }: AdminSidebarProps) {
             <p className="mb-1.5 px-2 font-mono text-[9px] uppercase tracking-[0.54px] text-black/45">
               System
             </p>
+            <Link
+              href={aiOperationsNavItem.href}
+              className={[
+                'mb-1 flex items-center gap-2.5 rounded-[50px] px-3 py-2.5 text-sm transition-all',
+                isActive(aiOperationsNavItem.href, aiOperationsNavItem.exact)
+                  ? 'bg-black text-white shadow-sm'
+                  : 'text-black/50 hover:bg-black/[0.05] hover:text-black hover:translate-x-[1px]',
+              ].join(' ')}
+            >
+              <span className={isActive(aiOperationsNavItem.href, aiOperationsNavItem.exact) ? 'text-white' : 'text-black/50'}>
+                {aiOperationsNavItem.icon}
+              </span>
+              {aiOperationsNavItem.label}
+            </Link>
             <Link
               href={logsNavItem.href}
               className={[

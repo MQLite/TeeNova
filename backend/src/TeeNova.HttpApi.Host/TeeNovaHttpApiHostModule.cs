@@ -203,6 +203,27 @@ public class TeeNovaHttpApiHostModule : AbpModule
             options.Map(AiOrderImportErrorCodes.ReviewReasonRequired, HttpStatusCode.UnprocessableEntity);
             options.Map(AiOrderImportErrorCodes.CatalogueSelectionInvalid, HttpStatusCode.UnprocessableEntity);
             options.Map(AiOrderImportErrorCodes.VariantSelectionInvalid, HttpStatusCode.UnprocessableEntity);
+            options.Map(AiOrderImportErrorCodes.ConfirmationNotAllowed, HttpStatusCode.Conflict);
+            options.Map(AiOrderImportErrorCodes.ConfirmationNotReady, HttpStatusCode.UnprocessableEntity);
+            options.Map(AiOrderImportErrorCodes.ConfirmationOperationConflict, HttpStatusCode.Conflict);
+            options.Map(AiOrderImportErrorCodes.MaterializationNotAllowed, HttpStatusCode.Conflict);
+            options.Map(AiOrderImportErrorCodes.MaterializationBlocked, HttpStatusCode.UnprocessableEntity);
+            options.Map(AiOrderImportErrorCodes.MaterializationOperationConflict, HttpStatusCode.Conflict);
+            options.Map(AiOrderImportErrorCodes.MaterializationAlreadyCompleted, HttpStatusCode.Conflict);
+            options.Map(AiOrderImportErrorCodes.MaterializationRejected, HttpStatusCode.UnprocessableEntity);
+            options.Map(AiOrderImportErrorCodes.FeatureDisabled, HttpStatusCode.ServiceUnavailable);
+            options.Map(AiOrderImportErrorCodes.OperationsStatusDisabled, HttpStatusCode.NotFound);
+            options.Map(AiOrderImportErrorCodes.RetentionInputInvalid, HttpStatusCode.UnprocessableEntity);
+            options.Map(AiOrderImportErrorCodes.RetentionConfirmationRequired, HttpStatusCode.UnprocessableEntity);
+            options.Map(AiOrderImportErrorCodes.RetentionHoldActive, HttpStatusCode.Conflict);
+            options.Map(AiOrderImportErrorCodes.RetentionNotEligible, HttpStatusCode.Conflict);
+            options.Map(AiOrderImportErrorCodes.ImportQuotaExceeded, HttpStatusCode.TooManyRequests);
+            options.Map(AiOrderImportErrorCodes.RecognitionConcurrencyExceeded, HttpStatusCode.TooManyRequests);
+            options.Map(AiOrderImportErrorCodes.RecognitionProviderDailyQuotaExceeded, HttpStatusCode.TooManyRequests);
+            options.Map(AiOrderImportErrorCodes.RecognitionProviderBudgetExceeded, HttpStatusCode.TooManyRequests);
+            options.Map(AiOrderImportErrorCodes.RecognitionTotalBudgetExceeded, HttpStatusCode.TooManyRequests);
+            options.Map(AiOrderImportErrorCodes.RecognitionImportBudgetExceeded, HttpStatusCode.TooManyRequests);
+            options.Map(AiOrderImportErrorCodes.RawEvidenceStorageQuotaExceeded, HttpStatusCode.TooManyRequests);
         });
     }
 

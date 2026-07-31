@@ -75,6 +75,61 @@ export interface AiOrderRecognitionOptions {
   providers: AiOrderRecognitionProviderOption[]
 }
 
+export interface AiOrderOperationsStatus {
+  environment: string
+  generatedAt: string
+  overallStatus: 'Ready' | 'Warning' | 'Blocked'
+  features: {
+    enabled: boolean
+    intakeEnabled: boolean
+    recognitionEnabled: boolean
+    reviewEnabled: boolean
+    confirmationEnabled: boolean
+    materializationEnabled: boolean
+  }
+  migrations: {
+    expectedMigrationIds: string[]
+    appliedExpectedMigrationIds: string[]
+    runtimeSchemaCurrent: boolean
+    status: string
+  }
+  privateStorageStatus: string
+  privateStorageAvailableBytes?: number | null
+  providers: Array<{
+    provider: string
+    displayName: string
+    status: string
+    privacyApprovalStatus: string
+    approvedEnvironment: string
+    privacyApprovalDate?: string | null
+    approverNote?: string | null
+    dataUsePolicyReference?: string | null
+    allowedDocumentClassification?: string | null
+    enabledModels: string[]
+    maximumMonthlyCostUsd: number
+    maximumDailyCalls: number
+    lastSanitizedSmokeTestAt?: string | null
+    lastSanitizedSmokeTestSucceeded: boolean
+  }>
+  queuedRecognitionJobs: number
+  activeRecognitionLeases: number
+  expiredOrStuckLeases: number
+  retryableFailures: number
+  deletionBacklog: number
+  failedDeletionCount: number
+  activeRetentionHolds: number
+  sourceAccessesLast24Hours: number
+  deniedSourceAccessesLast24Hours: number
+  currentMonthProviderCalls: number
+  currentMonthEstimatedCostUsd: number
+  currentMonthActualCostUsd: number
+  maximumMonthlyTotalCostUsd: number
+  lastRetentionWorkerRunAt?: string | null
+  lastRetentionWorkerOutcome?: string | null
+  warnings: string[]
+  blockers: string[]
+}
+
 export interface AiOrderImport extends AiOrderImportSummary {
   sourceDocuments: AiOrderSourceDocument[]
   canContinueToRecognition: boolean
@@ -221,7 +276,114 @@ export interface AiOrderConfirmationReadiness {
   catalogueSelectionsCurrent: boolean
   message: string
   confirmationOwnedBy: 'Jira 10207'
-  confirmOrderEnabled: false
+  confirmOrderEnabled: boolean
+}
+
+export interface AiOrderImportConfirmation {
+  importId: string
+  status: 'Confirmed'
+  confirmedRevision: number
+  confirmedCanonicalSha256: string
+  reviewVersion: string
+  confirmedByAdminId: string
+  confirmedAt: string
+  blockingIssueCount: number
+  formalOrderCreated: boolean
+  formalOrderId?: string | null
+}
+
+export interface AiOrderMaterializationBlocker {
+  code: string
+  message: string
+  path?: string | null
+}
+
+export interface AiOrderMaterializationPreflight {
+  importId: string
+  confirmedRevision: number
+  confirmedCanonicalSha256: string
+  productGroups: Array<{
+    groupId: string
+    productSource: 'Catalogue' | 'AdHoc'
+    productName: string
+    catalogueProductId?: string | null
+    rows: Array<{
+      rowId: string
+      colour: string
+      size: string
+      quantity: number
+      catalogueVariantId?: string | null
+    }>
+  }>
+  catalogueStatus: 'Current' | 'Stale'
+  writtenOrderTotal: string
+  depositPaid: string
+  calculatedCatalogueTotal?: string | null
+  pricingStatus: string
+  paymentEvidenceRequired: boolean
+  proposedInitialOrderStatus: 'Pending'
+  blockers: AiOrderMaterializationBlocker[]
+  canMaterialize: boolean
+  alreadyMaterialized: boolean
+  formalOrderId?: string | null
+}
+
+export interface MaterializeAiOrderImportInput {
+  materializationOperationKey: string
+  confirmedRevision: number
+  customer: { name?: string | null; email: string }
+  fulfilment: {
+    deliveryMethod: 'Pickup' | 'Shipping'
+    shippingAddress?: {
+      fullName: string
+      addressLine1: string
+      addressLine2?: string
+      city: string
+      state?: string
+      postalCode: string
+      country: string
+      phone?: string
+    } | null
+  }
+  pricingDecision: {
+    mode: 'UseCalculatedTotal' | 'UseWrittenTotal' | 'RejectAndReturnToReview'
+    reason?: string | null
+  }
+  adHocPricing: Array<{ groupId: string; rowId: string; unitPrice: string }>
+  cataloguePrinting: Array<{
+    groupId: string
+    printId: string
+    printAreaId: string
+    printSizeId: string
+  }>
+  depositEvidence?: {
+    paymentMethod?: 'Cash' | 'Eftpos' | 'BankTransfer' | 'Other'
+    reference?: string
+    receivedAt?: string
+    acknowledgedByAdmin: boolean
+  } | null
+  notificationPolicy: 'DoNotSend'
+}
+
+export interface AiOrderMaterializationResult {
+  importId: string
+  created: boolean
+  wasIdempotentReplay: boolean
+  outcome: string
+  orderId?: string | null
+  orderNumber?: string | null
+  orderStatus?: 'Pending' | null
+  paymentStatus?: string | null
+  pricingMode: string
+  writtenOrderTotal: string
+  calculatedMaterializationTotal: string
+  finalOrderTotal: string
+  depositPaid: string
+  paymentTransactionCreated: boolean
+  emailSent: false
+  inventoryChanged: false
+  productionWorkCreated: false
+  productionPdfGenerated: false
 }
 
 export interface AiOrderReview {
@@ -407,6 +569,32 @@ export function saveAiOrderReview(
   return adminApiClient.put(`/api/admin/ai-order-imports/${id}/review`, input)
 }
 
+export function confirmAiOrderImport(
+  id: string,
+  expectedRevision: number,
+  confirmationOperationKey: string,
+): Promise<AiOrderImportConfirmation> {
+  return adminApiClient.post(`/api/admin/ai-order-imports/${id}/confirm`, {
+    expectedRevision,
+    confirmationOperationKey,
+  })
+}
+
+export function getAiOrderMaterializationPreflight(
+  id: string,
+): Promise<AiOrderMaterializationPreflight> {
+  return adminApiClient.get(
+    `/api/admin/ai-order-imports/${id}/materialization-preflight`,
+  )
+}
+
+export function materializeAiOrderImport(
+  id: string,
+  input: MaterializeAiOrderImportInput,
+): Promise<AiOrderMaterializationResult> {
+  return adminApiClient.post(`/api/admin/ai-order-imports/${id}/materialize`, input)
+}
+
 export async function searchAiOrderCatalogue(
   id: string,
   query: string,
@@ -420,6 +608,10 @@ export async function searchAiOrderCatalogue(
 
 export function getAiOrderRecognitionOptions(): Promise<AiOrderRecognitionOptions> {
   return adminApiClient.get('/api/admin/ai-order-imports/recognition-options')
+}
+
+export function getAiOrderOperationsStatus(): Promise<AiOrderOperationsStatus> {
+  return adminApiClient.get('/api/admin/ai-order-imports/operations/status')
 }
 
 export function startAiOrderRecognition(

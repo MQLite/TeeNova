@@ -233,7 +233,7 @@ public class AiOrderImportFoundationService : ITransientDependency
             cancellationToken);
         if (source is null)
             return;
-        source.MarkDeletionFailed(safeErrorCode);
+        source.MarkDeletionFailed(safeErrorCode, UtcNow().AddMinutes(5));
         await _sources.UpdateAsync(source, autoSave: true, cancellationToken);
     }
 

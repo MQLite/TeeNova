@@ -42,4 +42,25 @@ public static class AiOrderImportErrorCodes
     public const string ReviewReasonRequired = "TeeNova:AiOrderImport:ReviewReasonRequired";
     public const string CatalogueSelectionInvalid = "TeeNova:AiOrderImport:CatalogueSelectionInvalid";
     public const string VariantSelectionInvalid = "TeeNova:AiOrderImport:VariantSelectionInvalid";
+    public const string ConfirmationNotAllowed = "TeeNova:AiOrderImport:ConfirmationNotAllowed";
+    public const string ConfirmationNotReady = "TeeNova:AiOrderImport:ConfirmationNotReady";
+    public const string ConfirmationOperationConflict = "TeeNova:AiOrderImport:ConfirmationOperationConflict";
+    public const string MaterializationNotAllowed = "TeeNova:AiOrderImport:MaterializationNotAllowed";
+    public const string MaterializationBlocked = "TeeNova:AiOrderImport:MaterializationBlocked";
+    public const string MaterializationOperationConflict = "TeeNova:AiOrderImport:MaterializationOperationConflict";
+    public const string MaterializationAlreadyCompleted = "TeeNova:AiOrderImport:MaterializationAlreadyCompleted";
+    public const string MaterializationRejected = "TeeNova:AiOrderImport:MaterializationRejected";
+    public const string FeatureDisabled = "TeeNova:AiOrderImport:FeatureDisabled";
+    public const string OperationsStatusDisabled = "TeeNova:AiOrderImport:OperationsStatusDisabled";
+    public const string RetentionInputInvalid = "TeeNova:AiOrderImport:RetentionInputInvalid";
+    public const string RetentionConfirmationRequired = "TeeNova:AiOrderImport:RetentionConfirmationRequired";
+    public const string RetentionHoldActive = "TeeNova:AiOrderImport:RetentionHoldActive";
+    public const string RetentionNotEligible = "TeeNova:AiOrderImport:RetentionNotEligible";
+    public const string ImportQuotaExceeded = "TeeNova:AiOrderImport:ImportQuotaExceeded";
+    public const string RecognitionConcurrencyExceeded = "TeeNova:AiOrderImport:RecognitionConcurrencyExceeded";
+    public const string RecognitionProviderDailyQuotaExceeded = "TeeNova:AiOrderImport:RecognitionProviderDailyQuotaExceeded";
+    public const string RecognitionProviderBudgetExceeded = "TeeNova:AiOrderImport:RecognitionProviderBudgetExceeded";
+    public const string RecognitionTotalBudgetExceeded = "TeeNova:AiOrderImport:RecognitionTotalBudgetExceeded";
+    public const string RecognitionImportBudgetExceeded = "TeeNova:AiOrderImport:RecognitionImportBudgetExceeded";
+    public const string RawEvidenceStorageQuotaExceeded = "TeeNova:AiOrderImport:RawEvidenceStorageQuotaExceeded";
 }

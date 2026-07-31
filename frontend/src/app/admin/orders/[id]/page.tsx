@@ -542,6 +542,9 @@ export default function AdminOrderDetailPage() {
   const hasQuoteOnlyItem = order.items.some(
     (item) => item.productKind === 'Banner' || item.pricingModel === 'CustomQuoteOnly',
   )
+  const hasAdHocItem = order.items.some(
+    (item) => item.productSource === 'AdHoc' || item.isAdHocProduct,
+  )
 
   return (
     <div className="admin-page admin-stack">
@@ -678,6 +681,34 @@ export default function AdminOrderDetailPage() {
 
         {/* 鈹€鈹€ LEFT: meta + notes 鈹€鈹€ */}
         <div className="space-y-4">
+
+          {order.source === 'AiOrderImport' && order.sourceAiOrderImportId && (
+            <Card>
+              <CardHeader>
+                <h2 className="font-mono text-[11px] uppercase tracking-[0.54px] text-black/55">
+                  Created from AI Order Import
+                </h2>
+              </CardHeader>
+              <CardBody className="space-y-2 text-xs text-black/60">
+                <p>Confirmed revision: {order.sourceAiOrderConfirmedRevision}</p>
+                <p>Confirmed by: {order.sourceAiOrderConfirmedByAdminId}</p>
+                <p>Confirmed at: {order.sourceAiOrderConfirmedAt ? formatNzDateTime(order.sourceAiOrderConfirmedAt) : '—'}</p>
+                <p>Materialized by: {order.sourceAiOrderMaterializedByAdminId}</p>
+                <p>Materialized at: {order.sourceAiOrderMaterializedAt ? formatNzDateTime(order.sourceAiOrderMaterializedAt) : '—'}</p>
+                <div className="flex flex-wrap gap-2 pt-2">
+                  <Link className="rounded-full border border-black/[0.14] bg-white px-3 py-1.5 text-xs text-black hover:border-black/30" href={`/admin/ai-order-imports/${order.sourceAiOrderImportId}/review`}>
+                    View Source Import
+                  </Link>
+                  <Link className="rounded-full border border-black/[0.14] bg-white px-3 py-1.5 text-xs text-black hover:border-black/30" href={`/admin/ai-order-imports/${order.sourceAiOrderImportId}`}>
+                    View Source Documents
+                  </Link>
+                  <Link className="rounded-full border border-black/[0.14] bg-white px-3 py-1.5 text-xs text-black hover:border-black/30" href={`/admin/ai-order-imports/${order.sourceAiOrderImportId}/review`}>
+                    View Review Audit
+                  </Link>
+                </div>
+              </CardBody>
+            </Card>
+          )}
 
           {/* Customer */}
           <Card>
@@ -823,13 +854,15 @@ export default function AdminOrderDetailPage() {
                   ? `Editing is disabled while the order is ${isCancelled ? 'cancelled' : 'completed'}.`
                   : hasQuoteOnlyItem
                     ? 'Content editing is disabled for quote-only (Banner) orders. Use Adjust price to change the total.'
+                    : hasAdHocItem
+                      ? 'Content editing is disabled because this Order contains immutable Ad-hoc Product snapshots.'
                     : 'Edit items, variants, prints and notes. The server reprices and rehydrates the order.'}
               </p>
             </div>
             <Button
               size="sm"
               variant="white"
-              disabled={isTerminal || hasQuoteOnlyItem}
+              disabled={isTerminal || hasQuoteOnlyItem || hasAdHocItem}
               onClick={() => setEditContentOpen(true)}
             >
               Edit order content
@@ -1028,7 +1061,11 @@ export default function AdminOrderDetailPage() {
               </CardHeader>
               <CardBody className="p-0">
                 <div className="divide-y divide-black/[0.06]">
-                  {garmentOnlyItems.map((item) => (
+                  {garmentOnlyItems.map((item) => {
+                    const adHocSnapshot = order.adHocProductSnapshots?.find(
+                      (snapshot) => snapshot.id === item.orderAdHocProductSnapshotId,
+                    )
+                    return (
                     <div key={item.id} className="flex flex-wrap items-start gap-3 px-5 py-3">
                       <div className="min-w-0 flex-1">
                         <p className="text-sm text-black" style={{ fontWeight: 480, letterSpacing: '-0.14px' }}>
@@ -1037,6 +1074,28 @@ export default function AdminOrderDetailPage() {
                         <p className="mt-0.5 text-xs text-black/55" style={{ letterSpacing: '-0.14px' }}>
                           {item.variantLabel || '—'}
                         </p>
+                        {item.productSource === 'AdHoc' && (
+                          <div className="mt-2">
+                            {(adHocSnapshot?.brand || adHocSnapshot?.supplierName || adHocSnapshot?.supplierCode) && (
+                              <p className="mb-1.5 text-[11px] text-black/55">
+                                {[adHocSnapshot?.brand, adHocSnapshot?.supplierName, adHocSnapshot?.supplierCode]
+                                  .filter(Boolean)
+                                  .join(' · ')}
+                              </p>
+                            )}
+                            <div className="flex flex-wrap gap-1.5">
+                              <span className="rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 font-mono text-[9px] uppercase tracking-[0.54px] text-amber-700">
+                                Ad-hoc Product
+                              </span>
+                              <span className="rounded-full border border-black/[0.08] px-2 py-0.5 font-mono text-[9px] uppercase tracking-[0.54px] text-black/50">
+                                Not in catalogue
+                              </span>
+                              <span className="rounded-full border border-black/[0.08] px-2 py-0.5 font-mono text-[9px] uppercase tracking-[0.54px] text-black/50">
+                                Inventory: Not tracked
+                              </span>
+                            </div>
+                          </div>
+                        )}
                       </div>
                       <div className="shrink-0 text-right">
                         <p className="font-mono text-[10px] uppercase tracking-[0.54px] text-black/45">
@@ -1048,7 +1107,8 @@ export default function AdminOrderDetailPage() {
                         <p className="text-[10px] text-black/40">{formatMoney(item.unitPrice)} ea</p>
                       </div>
                     </div>
-                  ))}
+                    )
+                  })}
                 </div>
               </CardBody>
             </Card>

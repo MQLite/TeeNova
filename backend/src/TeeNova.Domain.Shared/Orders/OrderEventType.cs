@@ -9,4 +9,5 @@ public enum OrderEventType
     PaymentReceived = 4,
     PriceAdjusted = 5,
     ContentEdited = 6,
+    AiOrderImportMaterialized = 7,
 }

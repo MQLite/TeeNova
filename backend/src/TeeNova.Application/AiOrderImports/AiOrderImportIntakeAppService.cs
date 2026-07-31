@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Data;
 using System.IO;
 using System.Linq;
 using System.Security.Cryptography;
@@ -14,6 +15,7 @@ using Microsoft.Extensions.Options;
 using TeeNova.AiOrderImports.Dtos;
 using TeeNova.AiOrderImports.PrivateStorage;
 using TeeNova.AiOrderImports.Recognition;
+using TeeNova.AiOrderImports.Operations;
 using TeeNova.Auth;
 using Volo.Abp;
 using Volo.Abp.Application.Services;
@@ -27,7 +29,7 @@ namespace TeeNova.AiOrderImports;
 public class AiOrderImportIntakeAppService : ApplicationService
 {
     private const string ContractVersion = "1.0";
-    private const string RetentionClass = "standard";
+    private const string RetentionClass = "UploadedAbandoned";
 
     private readonly IRepository<AiOrderImport, Guid> _imports;
     private readonly IRepository<AiOrderSourceDocument, Guid> _sources;
@@ -38,6 +40,8 @@ public class AiOrderImportIntakeAppService : ApplicationService
     private readonly AiOrderIntakeOptions _options;
     private readonly TimeProvider _timeProvider;
     private readonly ILogger<AiOrderImportIntakeAppService> _logger;
+    private readonly AiOrderOperationsOptions _operations;
+    private readonly AiOrderRetentionOptions _retention;
 
     public AiOrderImportIntakeAppService(
         IRepository<AiOrderImport, Guid> imports,
@@ -47,6 +51,8 @@ public class AiOrderImportIntakeAppService : ApplicationService
         IPrivateObjectStorage privateStorage,
         AiOrderSourceFileValidator fileValidator,
         IOptions<AiOrderIntakeOptions> options,
+        IOptions<AiOrderOperationsOptions> operations,
+        IOptions<AiOrderRetentionOptions> retention,
         TimeProvider timeProvider,
         ILogger<AiOrderImportIntakeAppService> logger)
     {
@@ -57,15 +63,25 @@ public class AiOrderImportIntakeAppService : ApplicationService
         _privateStorage = privateStorage;
         _fileValidator = fileValidator;
         _options = options.Value;
+        _operations = operations.Value;
+        _retention = retention.Value;
         _timeProvider = timeProvider;
         _logger = logger;
     }
 
+    [UnitOfWork(IsDisabled = true)]
     public virtual async Task<AiOrderImportDto> CreateAsync(
         string idempotencyKey,
         CreateAiOrderImportInput? input,
         CancellationToken cancellationToken = default)
     {
+        using var unitOfWork = UnitOfWorkManager.Begin(
+            new AbpUnitOfWorkOptions
+            {
+                IsTransactional = true,
+                IsolationLevel = IsolationLevel.Serializable,
+            },
+            requiresNew: true);
         var actorId = RequireAdminId();
         if (string.IsNullOrWhiteSpace(idempotencyKey))
             throw Safe(
@@ -82,14 +98,49 @@ public class AiOrderImportIntakeAppService : ApplicationService
             .ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(canonicalRequest)))
             .ToLowerInvariant();
 
+        var importQuery = await _imports.GetQueryableAsync();
+        var existing = await importQuery.SingleOrDefaultAsync(
+            x => x.CreatedByAdminId == actorId &&
+                 x.IdempotencyKey == idempotencyKey.Trim(),
+            cancellationToken);
+        if (existing is not null)
+        {
+            var replay = await _foundation.CreateIdempotentlyAsync(
+                actorId,
+                idempotencyKey,
+                requestHash,
+                ContractVersion,
+                RetentionClass,
+                cancellationToken: cancellationToken);
+            var replayDto = await BuildImportDtoAsync(replay, cancellationToken);
+            await unitOfWork.CompleteAsync(cancellationToken);
+            return replayDto;
+        }
+
+        var now = _timeProvider.GetUtcNow().UtcDateTime;
+        var hourly = await importQuery.CountAsync(
+            x => x.CreatedByAdminId == actorId && x.CreationTime >= now.AddHours(-1),
+            cancellationToken);
+        var daily = await importQuery.CountAsync(
+            x => x.CreatedByAdminId == actorId && x.CreationTime >= now.AddDays(-1),
+            cancellationToken);
+        if (hourly >= _operations.MaximumImportsPerAdminPerHour ||
+            daily >= _operations.MaximumImportsPerAdminPerDay)
+            throw Safe(
+                AiOrderImportErrorCodes.ImportQuotaExceeded,
+                "The configured AI Order import quota has been reached.");
+
         var import = await _foundation.CreateIdempotentlyAsync(
             actorId,
             idempotencyKey,
             requestHash,
             ContractVersion,
             RetentionClass,
+            now.AddDays(_retention.GetRequired(RetentionClass).RetentionDays),
             cancellationToken: cancellationToken);
-        return await BuildImportDtoAsync(import, cancellationToken);
+        var result = await BuildImportDtoAsync(import, cancellationToken);
+        await unitOfWork.CompleteAsync(cancellationToken);
+        return result;
     }
 
     public virtual async Task<AiOrderImportListResultDto> GetListAsync(
@@ -280,6 +331,7 @@ public class AiOrderImportIntakeAppService : ApplicationService
                     sha256,
                     SanitizeOriginalFileName(originalFileName),
                     actorId,
+                    retentionUntil: import.RetentionUntil,
                     uploadIdempotencyKey: normalizedUploadKey,
                     imageWidth: inspected.ImageWidth,
                     imageHeight: inspected.ImageHeight,

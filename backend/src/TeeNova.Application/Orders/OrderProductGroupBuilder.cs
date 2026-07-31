@@ -106,7 +106,12 @@ public static class OrderProductGroupBuilder
     // -- Keys --------------------------------------------------------------------
 
     private static (Guid ProductId, ProductKind ProductKind, PricingModel PricingModel) OuterKey(OrderItemDto item)
-        => (item.ProductId, item.ProductKind, item.PricingModel);
+        => (
+            item.ProductId ??
+            item.OrderAdHocProductSnapshotId ??
+            throw new InvalidOperationException("An order item has no product source identity."),
+            item.ProductKind,
+            item.PricingModel);
 
     private static string GroupKey(Guid productId, ProductKind kind, PricingModel model)
         => $"{productId:N}|{kind}|{model}";

@@ -22,4 +22,22 @@ public interface IPrivateObjectStorage
     Task DeleteAsync(
         string objectKey,
         CancellationToken cancellationToken = default);
+
+    Task<PrivateStorageReadinessResult> CheckReadinessAsync(
+        CancellationToken cancellationToken = default);
 }
+
+public enum PrivateStorageReadinessStatus
+{
+    Ready,
+    Missing,
+    PermissionDenied,
+    UnsafeLocation,
+    LowSpace,
+    WriteTestFailed,
+    DeleteTestFailed,
+}
+
+public sealed record PrivateStorageReadinessResult(
+    PrivateStorageReadinessStatus Status,
+    long? AvailableBytes = null);

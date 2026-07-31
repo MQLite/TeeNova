@@ -20,6 +20,19 @@ public class OrderDto
     public decimal TotalAmount { get; set; }
     public ShippingAddressDto ShippingAddress { get; set; } = default!;
     public List<OrderItemDto> Items { get; set; } = new();
+    public OrderSource Source { get; set; }
+    public Guid? SourceAiOrderImportId { get; set; }
+    public int? SourceAiOrderConfirmedRevision { get; set; }
+    public string? SourceAiOrderConfirmedCanonicalSha256 { get; set; }
+    public Guid? SourceAiOrderConfirmedByAdminId { get; set; }
+    public DateTime? SourceAiOrderConfirmedAt { get; set; }
+    public Guid? SourceAiOrderMaterializedByAdminId { get; set; }
+    public DateTime? SourceAiOrderMaterializedAt { get; set; }
+    public decimal? AiWrittenOrderTotal { get; set; }
+    public decimal? AiCalculatedMaterializationTotal { get; set; }
+    public string? AiPricingMode { get; set; }
+    public string? AiPricingReason { get; set; }
+    public List<OrderAdHocProductSnapshotDto> AdHocProductSnapshots { get; set; } = new();
 
     /// <summary>
     /// Additive read-only grouping of print content by design + print position + print size (Jira 9403).
@@ -53,6 +66,21 @@ public class OrderDto
     public DateTime?                     LastPriceAdjustedAt       { get; set; }
     public string?                       LastPriceAdjustmentReason { get; set; }
     public decimal?                      LastPriceAdjustmentAmount { get; set; }
+}
+
+public class OrderAdHocProductSnapshotDto
+{
+    public Guid Id { get; set; }
+    public string DisplayName { get; set; } = default!;
+    public string WrittenName { get; set; } = default!;
+    public string? Brand { get; set; }
+    public string? SupplierName { get; set; }
+    public string? SupplierCode { get; set; }
+    public string? SupplySource { get; set; }
+    public OrderAdHocInventoryBehavior InventoryBehavior { get; set; }
+    public string ConfirmedImportGroupId { get; set; } = default!;
+    public int ConfirmedRevision { get; set; }
+    public string? PrintingDetailsJson { get; set; }
 }
 
 public class ShippingAddressDto

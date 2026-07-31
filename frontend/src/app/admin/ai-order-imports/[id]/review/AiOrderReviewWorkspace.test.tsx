@@ -12,6 +12,9 @@ import { AiOrderReviewWorkspace, isConfirmationControlDisabled } from './AiOrder
 const api = vi.hoisted(() => ({
   getAiOrderImport: vi.fn(),
   getAiOrderReview: vi.fn(),
+  getAiOrderMaterializationPreflight: vi.fn(),
+  confirmAiOrderImport: vi.fn(),
+  materializeAiOrderImport: vi.fn(),
   saveAiOrderReview: vi.fn(),
   searchAiOrderCatalogue: vi.fn(),
   sourceContentUrl: vi.fn(
@@ -185,6 +188,37 @@ describe('AI Order Review workspace', () => {
       status: 'Draft',
       currentRevision: 3,
     }))
+    api.confirmAiOrderImport.mockResolvedValue({
+      importId: 'import-1',
+      status: 'Confirmed',
+      confirmedRevision: 3,
+      confirmedCanonicalSha256: 'a'.repeat(64),
+      reviewVersion: 'ai-order-staff-review-v1',
+      confirmedByAdminId: 'admin-1',
+      confirmedAt: '2026-07-31T01:00:00Z',
+      blockingIssueCount: 0,
+      formalOrderCreated: false,
+    })
+    api.materializeAiOrderImport.mockResolvedValue({
+      importId: 'import-1',
+      created: true,
+      wasIdempotentReplay: false,
+      outcome: 'FormalOrderCreated',
+      orderId: 'order-1',
+      orderNumber: 'TN-ORDER001',
+      orderStatus: 'Pending',
+      paymentStatus: 'Unpaid',
+      pricingMode: 'UseCalculatedTotal',
+      writtenOrderTotal: '100.00',
+      calculatedMaterializationTotal: '100.00',
+      finalOrderTotal: '100.00',
+      depositPaid: '0.00',
+      paymentTransactionCreated: false,
+      emailSent: false,
+      inventoryChanged: false,
+      productionWorkCreated: false,
+      productionPdfGenerated: false,
+    })
   })
 
   it('renders source, structured order, issues, candidates, rows and disabled confirmation', async () => {
@@ -196,8 +230,15 @@ describe('AI Order Review workspace', () => {
     expect(screen.getByRole('heading', { name: 'Issues' })).toBeInTheDocument()
     expect(screen.getByText('Classic Tee')).toBeInTheDocument()
     expect(screen.getByRole('columnheader', { name: 'Variant' })).toBeInTheDocument()
+    expect(screen.getByRole('textbox', { name: 'Written / display product name' })).toBeInTheDocument()
+    expect(screen.getByRole('textbox', { name: 'Garment colour' })).toBeInTheDocument()
+    expect(screen.getByRole('combobox', { name: 'Supply source' })).toBeInTheDocument()
+    expect(screen.getByRole('textbox', { name: 'Artwork description' })).toBeInTheDocument()
+    expect(screen.getByRole('textbox', { name: 'Production notes' })).toBeInTheDocument()
+    expect(screen.getByRole('textbox', { name: 'Order Total' })).toBeInTheDocument()
+    expect(screen.getByRole('textbox', { name: 'Deposit Paid' })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Save Draft' })).toBeVisible()
-    expect(screen.getByRole('button', { name: 'Confirm Order' })).toBeDisabled()
+    expect(screen.getByRole('button', { name: 'Confirm Reviewed Import' })).toBeDisabled()
     expect(screen.getByRole('button', { name: 'Source' })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Order' })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: /Issues/ })).toBeInTheDocument()
@@ -310,6 +351,20 @@ describe('AI Order Review workspace', () => {
     expect(accept).toBeEnabled()
   })
 
+  it('navigates a customer-level issue to the customer section', async () => {
+    const user = userEvent.setup()
+    render(<AiOrderReviewWorkspace importId="import-1" />)
+    await screen.findByRole('heading', { name: 'Issues' })
+    await user.click(screen.getByRole('button', { name: 'Warning' }))
+    const panel = screen.getByRole('complementary', { name: 'Review issues' })
+
+    await user.click(within(panel).getByRole('button', { name: 'Go to field' }))
+
+    await waitFor(() => {
+      expect(document.activeElement).toHaveAttribute('data-review-path', '/customer')
+    })
+  })
+
   it('keeps confirmation disabled even when readiness preview is true', () => {
     expect(isConfirmationControlDisabled({
       readyToConfirm: true,
@@ -319,5 +374,98 @@ describe('AI Order Review workspace', () => {
       confirmationOwnedBy: 'Jira 10207',
       confirmOrderEnabled: false,
     })).toBe(true)
+  })
+
+  it('confirms a ready Draft separately without materializing an Order', async () => {
+    const ready = reviewFixture()
+    ready.status = 'Draft'
+    ready.currentRevision = 3
+    ready.hasStaffRevision = true
+    ready.blockingIssueCount = 0
+    ready.issues = []
+    ready.confirmationReadiness = {
+      readyToConfirm: true,
+      blockingIssueCount: 0,
+      catalogueSelectionsCurrent: true,
+      message: 'Ready',
+      confirmationOwnedBy: 'Jira 10207',
+      confirmOrderEnabled: true,
+    }
+    api.getAiOrderReview.mockResolvedValue(ready)
+    api.getAiOrderImport.mockResolvedValue({
+      ...intakeFixture(),
+      status: 'Draft',
+      currentRevision: 3,
+    })
+    vi.spyOn(window, 'confirm').mockReturnValue(true)
+    const user = userEvent.setup()
+
+    render(<AiOrderReviewWorkspace importId="import-1" />)
+    const button = await screen.findByRole('button', { name: 'Confirm Reviewed Import' })
+    expect(button).toBeEnabled()
+    await user.click(button)
+
+    await waitFor(() => {
+      expect(api.confirmAiOrderImport).toHaveBeenCalledWith(
+        'import-1',
+        3,
+        expect.any(String),
+      )
+    })
+    expect(api.materializeAiOrderImport).not.toHaveBeenCalled()
+    expect(
+      await screen.findByText('Import confirmed. Formal Order has not been created.'),
+    ).toBeInTheDocument()
+  })
+
+  it('shows zero-deposit materialization without payment evidence', async () => {
+    const confirmed = reviewFixture()
+    confirmed.status = 'Confirmed'
+    confirmed.currentRevision = 3
+    confirmed.hasStaffRevision = true
+    confirmed.blockingIssueCount = 0
+    confirmed.issues = []
+    confirmed.customer.email = field('aroha@example.com')
+    confirmed.confirmationReadiness = {
+      readyToConfirm: true,
+      blockingIssueCount: 0,
+      catalogueSelectionsCurrent: true,
+      message: 'Immutable confirmed review',
+      confirmationOwnedBy: 'Jira 10207',
+      confirmOrderEnabled: false,
+    }
+    api.getAiOrderReview.mockResolvedValue(confirmed)
+    api.getAiOrderImport.mockResolvedValue({
+      ...intakeFixture(),
+      status: 'Confirmed',
+      currentRevision: 3,
+    })
+    api.getAiOrderMaterializationPreflight.mockResolvedValue({
+      importId: 'import-1',
+      confirmedRevision: 3,
+      confirmedCanonicalSha256: 'a'.repeat(64),
+      productGroups: [],
+      catalogueStatus: 'Current',
+      writtenOrderTotal: '100.00',
+      depositPaid: '0.00',
+      calculatedCatalogueTotal: '100.00',
+      pricingStatus: 'CalculatedCatalogueTotalAvailable',
+      paymentEvidenceRequired: false,
+      proposedInitialOrderStatus: 'Pending',
+      blockers: [],
+      canMaterialize: true,
+      alreadyMaterialized: false,
+    })
+
+    render(<AiOrderReviewWorkspace importId="import-1" />)
+
+    expect(await screen.findByRole('heading', { name: 'Create Formal Order' })).toBeInTheDocument()
+    expect(
+      screen.queryByRole('heading', { name: 'Positive-deposit evidence' }),
+    ).not.toBeInTheDocument()
+    expect(
+      screen.getByText(/No customer or Admin email, online payment session/),
+    ).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Save Draft' })).toBeDisabled()
   })
 })

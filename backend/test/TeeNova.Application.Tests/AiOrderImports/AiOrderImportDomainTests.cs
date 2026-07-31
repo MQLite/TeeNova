@@ -21,7 +21,14 @@ public class AiOrderImportDomainTests
         import.AdvanceRevision(0, 1);
         import.CompleteProcessing("lease-one", Now.AddMinutes(1));
         import.MarkDraft();
-        import.Confirm(AdminId, 1, Now.AddMinutes(2));
+        import.Confirm(
+            AdminId,
+            1,
+            new string('a', 64),
+            "ai-order-staff-review-v1",
+            0,
+            "confirm-operation-1",
+            Now.AddMinutes(2));
 
         Assert.Equal(AiOrderImportStatus.Confirmed, import.Status);
         Assert.Equal(1, import.CurrentRevision);
@@ -37,7 +44,14 @@ public class AiOrderImportDomainTests
         var import = CreateImport();
 
         Assert.Throws<BusinessException>(() => import.MarkDraft());
-        Assert.Throws<BusinessException>(() => import.Confirm(AdminId, 0, Now));
+        Assert.Throws<BusinessException>(() => import.Confirm(
+            AdminId,
+            0,
+            new string('a', 64),
+            "ai-order-staff-review-v1",
+            0,
+            "confirm-operation-1",
+            Now));
         Assert.Throws<BusinessException>(() => import.CompleteProcessing("not-owned", Now));
     }
 

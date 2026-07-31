@@ -1,10 +1,12 @@
 using System.Security.Cryptography;
+using System.Data;
 using System.Text;
 using System.Text.Json;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
 using TeeNova.AiOrderImports.Dtos;
+using TeeNova.AiOrderImports.Operations;
 using TeeNova.Auth;
 using Volo.Abp;
 using Volo.Abp.Application.Services;
@@ -29,6 +31,9 @@ public class AiOrderRecognitionAppService : ApplicationService
     private readonly AiOrderRecognitionOptions _options;
     private readonly IGuidGenerator _guidGenerator;
     private readonly TimeProvider _timeProvider;
+    private readonly AiOrderOperationsOptions _operations;
+    private readonly AiOrderOperationalTelemetry _telemetry;
+    private readonly AiOrderFeatureOptions _features;
 
     public AiOrderRecognitionAppService(
         IRepository<AiOrderImport, Guid> imports,
@@ -37,8 +42,11 @@ public class AiOrderRecognitionAppService : ApplicationService
         IAiOrderRecognitionCostEstimator costs,
         AiOrderRecognitionSourcePreparer sources,
         IOptions<AiOrderRecognitionOptions> options,
+        IOptions<AiOrderOperationsOptions> operations,
+        IOptions<AiOrderFeatureOptions> features,
         IGuidGenerator guidGenerator,
-        TimeProvider timeProvider)
+        TimeProvider timeProvider,
+        AiOrderOperationalTelemetry telemetry)
     {
         _imports = imports;
         _attempts = attempts;
@@ -46,13 +54,18 @@ public class AiOrderRecognitionAppService : ApplicationService
         _costs = costs;
         _sources = sources;
         _options = options.Value;
+        _operations = operations.Value;
+        _features = features.Value;
         _guidGenerator = guidGenerator;
         _timeProvider = timeProvider;
+        _telemetry = telemetry;
     }
 
     public virtual Task<AiOrderRecognitionOptionsDto> GetOptionsAsync()
     {
-        var providers = _models.GetEnabledOptions();
+        var providers = _features.Enabled && _features.RecognitionEnabled
+            ? _models.GetEnabledOptions()
+            : [];
         return Task.FromResult(new AiOrderRecognitionOptionsDto
         {
             RecognitionEnabled = providers.Count > 0,
@@ -71,21 +84,50 @@ public class AiOrderRecognitionAppService : ApplicationService
         });
     }
 
-    [UnitOfWork]
-    public virtual Task<AiOrderRecognitionStatusDto> StartAsync(
+    [UnitOfWork(IsDisabled = true)]
+    public virtual async Task<AiOrderRecognitionStatusDto> StartAsync(
         Guid importId,
         string operationKey,
         StartAiOrderRecognitionInput input,
-        CancellationToken cancellationToken = default) =>
-        QueueAsync(importId, operationKey, input, isRetry: false, cancellationToken);
+        CancellationToken cancellationToken = default)
+    {
+        using var unitOfWork = BeginSerializableUnitOfWork();
+        var result = await QueueAsync(
+            importId,
+            operationKey,
+            input,
+            isRetry: false,
+            cancellationToken);
+        await unitOfWork.CompleteAsync(cancellationToken);
+        return result;
+    }
 
-    [UnitOfWork]
-    public virtual Task<AiOrderRecognitionStatusDto> RetryAsync(
+    [UnitOfWork(IsDisabled = true)]
+    public virtual async Task<AiOrderRecognitionStatusDto> RetryAsync(
         Guid importId,
         string operationKey,
         StartAiOrderRecognitionInput input,
-        CancellationToken cancellationToken = default) =>
-        QueueAsync(importId, operationKey, input, isRetry: true, cancellationToken);
+        CancellationToken cancellationToken = default)
+    {
+        using var unitOfWork = BeginSerializableUnitOfWork();
+        var result = await QueueAsync(
+            importId,
+            operationKey,
+            input,
+            isRetry: true,
+            cancellationToken);
+        await unitOfWork.CompleteAsync(cancellationToken);
+        return result;
+    }
+
+    private IUnitOfWork BeginSerializableUnitOfWork() =>
+        UnitOfWorkManager.Begin(
+            new AbpUnitOfWorkOptions
+            {
+                IsTransactional = true,
+                IsolationLevel = IsolationLevel.Serializable,
+            },
+            requiresNew: true);
 
     private async Task<AiOrderRecognitionStatusDto> QueueAsync(
         Guid importId,
@@ -138,6 +180,14 @@ public class AiOrderRecognitionAppService : ApplicationService
                 AiOrderImportErrorCodes.RecognitionAttemptLimitExceeded,
                 "The recognition attempt limit has been reached.");
 
+        var activeCount = await attemptQuery.CountAsync(
+            x => x.Outcome == AiOrderProcessingAttemptOutcome.Processing,
+            cancellationToken);
+        if (activeCount >= _operations.MaximumConcurrentRecognitionJobs)
+            throw Safe(
+                AiOrderImportErrorCodes.RecognitionConcurrencyExceeded,
+                "The configured recognition concurrency limit has been reached.");
+
         var estimate = _costs.Estimate(selection, sourceSnapshot);
         if (estimate.EstimatedCostUsd > _options.MaximumEstimatedCostUsdPerAttempt)
             throw Safe(
@@ -150,6 +200,66 @@ public class AiOrderRecognitionAppService : ApplicationService
                 AiOrderImportErrorCodes.RecognitionRetryNotReady,
                 "Recognition retry is not available until the provider retry delay has elapsed.");
         var monthStart = new DateTime(now.Year, now.Month, 1, 0, 0, 0, DateTimeKind.Utc);
+        var dayStart = now.Date;
+        var providerOptions = _options.Providers[selection.ProviderId];
+        var dailyCalls = await attemptQuery.CountAsync(
+            x => x.Provider == selection.ProviderId && x.SubmittedAt >= dayStart,
+            cancellationToken);
+        if (dailyCalls >= Math.Min(
+                providerOptions.MaximumDailyCalls,
+                _operations.MaximumDailyProviderCalls))
+        {
+            _telemetry.RecordProviderQuotaBlock(selection.ProviderId, "day");
+            throw Safe(
+                AiOrderImportErrorCodes.RecognitionProviderDailyQuotaExceeded,
+                "The provider daily call quota has been reached.");
+        }
+
+        var providerMonthCost = await attemptQuery
+            .Where(x => x.Provider == selection.ProviderId && x.SubmittedAt >= monthStart)
+            .SumAsync(
+                x => x.ActualCostUsd ?? x.EstimatedCostUsd ?? 0,
+                cancellationToken);
+        if (providerMonthCost + estimate.EstimatedCostUsd >
+            providerOptions.MaximumMonthlyCostUsd)
+        {
+            _telemetry.RecordProviderQuotaBlock(selection.ProviderId, "month");
+            throw Safe(
+                AiOrderImportErrorCodes.RecognitionProviderBudgetExceeded,
+                "The provider monthly recognition budget would be exceeded.");
+        }
+
+        var importEstimatedCost = await attemptQuery
+            .Where(x => x.ImportId == importId)
+            .SumAsync(x => x.EstimatedCostUsd ?? 0, cancellationToken);
+        if (importEstimatedCost + estimate.EstimatedCostUsd >
+            _operations.MaximumEstimatedCostPerImportUsd)
+            throw Safe(
+                AiOrderImportErrorCodes.RecognitionImportBudgetExceeded,
+                "The configured estimated cost per import would be exceeded.");
+
+        var totalMonthCost = await attemptQuery
+            .Where(x => x.SubmittedAt >= monthStart)
+            .SumAsync(
+                x => x.ActualCostUsd ?? x.EstimatedCostUsd ?? 0,
+                cancellationToken);
+        if (totalMonthCost + estimate.EstimatedCostUsd >
+            _operations.MaximumMonthlyTotalCostUsd)
+            throw Safe(
+                AiOrderImportErrorCodes.RecognitionTotalBudgetExceeded,
+                "The total monthly recognition budget would be exceeded.");
+
+        if (_options.RetainRawProviderEvidence)
+        {
+            var retainedRawCount = await attemptQuery.CountAsync(
+                x => x.RawResultObjectKey != null && x.RawResultDeletedAt == null,
+                cancellationToken);
+            if ((retainedRawCount + 1L) * _options.MaximumOutputCharacters >
+                _operations.MaximumRawEvidenceStorageBytes)
+                throw Safe(
+                    AiOrderImportErrorCodes.RawEvidenceStorageQuotaExceeded,
+                    "The configured raw-evidence storage quota would be exceeded.");
+        }
         var monthEstimate = await attemptQuery
             .Where(x => x.SubmittedAt >= monthStart && x.EstimatedCostUsd != null)
             .SumAsync(x => x.EstimatedCostUsd ?? 0, cancellationToken);

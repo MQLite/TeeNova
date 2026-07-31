@@ -7,7 +7,14 @@ namespace TeeNova.Orders.Dtos;
 public class OrderItemDto
 {
     public Guid Id { get; set; }
-    public Guid ProductId { get; set; }
+    public Guid? ProductId { get; set; }
+    public OrderItemProductSource ProductSource { get; set; }
+    public Guid? OrderAdHocProductSnapshotId { get; set; }
+    public string? ColourSnapshot { get; set; }
+    public string? SizeSnapshot { get; set; }
+    public bool IsAdHocProduct => ProductSource == OrderItemProductSource.AdHoc;
+    public string InventoryBehavior =>
+        IsAdHocProduct ? OrderAdHocInventoryBehavior.NotTracked.ToString() : "CataloguePolicy";
 
     /// <summary>Garment variant id; null for non-garment items (Badge) (Jira 9503).</summary>
     public Guid? ProductVariantId { get; set; }

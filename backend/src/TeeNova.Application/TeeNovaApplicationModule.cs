@@ -9,6 +9,7 @@ using TeeNova.AdminLogs;
 using TeeNova.AiOrderImports;
 using TeeNova.AiOrderImports.PrivateStorage;
 using TeeNova.AiOrderImports.Recognition;
+using TeeNova.AiOrderImports.Operations;
 using TeeNova.AiOrderImports.Validation;
 using TeeNova.Auth;
 using TeeNova.Email;
@@ -61,6 +62,24 @@ public class TeeNovaApplicationModule : AbpModule
             IValidateOptions<AiOrderValidationOptions>,
             AiOrderValidationOptionsValidator>();
         context.Services.AddOptions<AiOrderValidationOptions>().ValidateOnStart();
+        context.Services.Configure<AiOrderFeatureOptions>(
+            configuration.GetSection(AiOrderFeatureOptions.SectionName));
+        context.Services.Configure<AiOrderOperationsOptions>(
+            configuration.GetSection(AiOrderOperationsOptions.SectionName));
+        context.Services.Configure<AiOrderRetentionOptions>(
+            configuration.GetSection(AiOrderRetentionOptions.SectionName));
+        context.Services.AddSingleton<AiOrderOperationalOptionsValidator>();
+        context.Services.AddSingleton<IValidateOptions<AiOrderFeatureOptions>>(
+            sp => sp.GetRequiredService<AiOrderOperationalOptionsValidator>());
+        context.Services.AddSingleton<IValidateOptions<AiOrderOperationsOptions>>(
+            sp => sp.GetRequiredService<AiOrderOperationalOptionsValidator>());
+        context.Services.AddSingleton<IValidateOptions<AiOrderRetentionOptions>>(
+            sp => sp.GetRequiredService<AiOrderOperationalOptionsValidator>());
+        context.Services.AddOptions<AiOrderFeatureOptions>().ValidateOnStart();
+        context.Services.AddOptions<AiOrderOperationsOptions>().ValidateOnStart();
+        context.Services.AddOptions<AiOrderRetentionOptions>().ValidateOnStart();
+        context.Services.AddSingleton<AiOrderOperationalTelemetry>();
+        context.Services.AddHostedService<AiOrderStartupReadinessValidator>();
         context.Services.AddHttpClient("AiOrderRecognition", client =>
         {
             // Per-operation linked cancellation enforces the configured provider timeout.
@@ -182,5 +201,6 @@ public class TeeNovaApplicationModule : AbpModule
     {
         await context.AddBackgroundWorkerAsync<OrphanedAssetCleanupWorker>();
         await context.AddBackgroundWorkerAsync<AiOrderRecognitionWorker>();
+        await context.AddBackgroundWorkerAsync<AiOrderRetentionWorker>();
     }
 }

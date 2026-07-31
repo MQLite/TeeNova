@@ -10,6 +10,7 @@ public class OrderEntityTypeConfiguration :
     IEntityTypeConfiguration<OrderItem>,
     IEntityTypeConfiguration<OrderItemPrint>,
     IEntityTypeConfiguration<OrderItemBannerDetail>,
+    IEntityTypeConfiguration<OrderAdHocProductSnapshot>,
     IEntityTypeConfiguration<OrderTimelineEntry>,
     IEntityTypeConfiguration<OrderPriceAdjustment>
 {
@@ -47,6 +48,29 @@ public class OrderEntityTypeConfiguration :
             .HasConversion<string>()
             .HasMaxLength(32)
             .IsRequired(false);
+
+        builder.Property(o => o.Source)
+            .HasConversion<string>()
+            .HasMaxLength(32)
+            .HasDefaultValue(OrderSource.Checkout)
+            .IsRequired();
+        builder.Property(o => o.SourceAiOrderConfirmedCanonicalSha256)
+            .HasMaxLength(64)
+            .IsFixedLength();
+        builder.Property(o => o.SourceAiOrderMaterializationOperationKey)
+            .HasMaxLength(128);
+        builder.Property(o => o.AiWrittenOrderTotal).HasColumnType("decimal(18,4)");
+        builder.Property(o => o.AiCalculatedMaterializationTotal).HasColumnType("decimal(18,4)");
+        builder.Property(o => o.AiPricingMode).HasMaxLength(32);
+        builder.Property(o => o.AiPricingReason).HasMaxLength(1000);
+        builder.HasIndex(o => o.SourceAiOrderImportId)
+            .IsUnique()
+            .HasFilter("[SourceAiOrderImportId] IS NOT NULL")
+            .HasDatabaseName("UX_Orders_SourceAiOrderImportId");
+        builder.HasIndex(o => o.SourceAiOrderMaterializationOperationKey)
+            .IsUnique()
+            .HasFilter("[SourceAiOrderMaterializationOperationKey] IS NOT NULL")
+            .HasDatabaseName("UX_Orders_AiMaterializationOperationKey");
 
         // Owned value object — stored as columns in the Orders table
         builder.OwnsOne(o => o.ShippingAddress, sa =>
@@ -105,6 +129,10 @@ public class OrderEntityTypeConfiguration :
             .WithOne()
             .HasForeignKey(i => i.OrderId)
             .OnDelete(DeleteBehavior.Cascade);
+        builder.HasMany(o => o.AdHocProductSnapshots)
+            .WithOne()
+            .HasForeignKey(x => x.OrderId)
+            .OnDelete(DeleteBehavior.Cascade);
     }
 
     public void Configure(EntityTypeBuilder<OrderItem> builder)
@@ -112,6 +140,13 @@ public class OrderEntityTypeConfiguration :
         builder.ToTable("OrderItems");
 
         builder.Property(i => i.ProductName).IsRequired().HasMaxLength(256);
+        builder.Property(i => i.ProductSource)
+            .HasConversion<string>()
+            .HasMaxLength(32)
+            .HasDefaultValue(OrderItemProductSource.Catalogue)
+            .IsRequired();
+        builder.Property(i => i.ColourSnapshot).HasMaxLength(128);
+        builder.Property(i => i.SizeSnapshot).HasMaxLength(128);
         // VariantLabel + ProductVariantId are now nullable (Jira 9503): null for non-garment items
         // (Badge has no color/size variant). Garment items still carry both.
         builder.Property(i => i.VariantLabel).IsRequired(false).HasMaxLength(128);
@@ -150,6 +185,37 @@ public class OrderEntityTypeConfiguration :
             .WithOne()
             .HasForeignKey<OrderItemBannerDetail>(d => d.OrderItemId)
             .OnDelete(DeleteBehavior.Cascade);
+
+        builder.HasOne<OrderAdHocProductSnapshot>()
+            .WithMany()
+            .HasForeignKey(i => i.OrderAdHocProductSnapshotId)
+            .OnDelete(DeleteBehavior.Restrict);
+
+        builder.ToTable("OrderItems", table =>
+        {
+            table.HasCheckConstraint(
+                "CK_OrderItems_ProductSource",
+                "([ProductSource] = 'Catalogue' AND [ProductId] IS NOT NULL AND [OrderAdHocProductSnapshotId] IS NULL) OR ([ProductSource] = 'AdHoc' AND [ProductId] IS NULL AND [OrderAdHocProductSnapshotId] IS NOT NULL AND [InventoryDeductionEligible] = 0)");
+        });
+    }
+
+    public void Configure(EntityTypeBuilder<OrderAdHocProductSnapshot> builder)
+    {
+        builder.ToTable("OrderAdHocProductSnapshots");
+        builder.Property(x => x.DisplayName).HasMaxLength(256).IsRequired();
+        builder.Property(x => x.WrittenName).HasMaxLength(256).IsRequired();
+        builder.Property(x => x.Brand).HasMaxLength(128);
+        builder.Property(x => x.SupplierName).HasMaxLength(256);
+        builder.Property(x => x.SupplierCode).HasMaxLength(128);
+        builder.Property(x => x.SupplySource).HasMaxLength(32);
+        builder.Property(x => x.InventoryBehavior)
+            .HasConversion<string>()
+            .HasMaxLength(32)
+            .IsRequired();
+        builder.Property(x => x.ConfirmedImportGroupId).HasMaxLength(128).IsRequired();
+        builder.HasIndex(x => new { x.OrderId, x.ConfirmedImportGroupId })
+            .IsUnique()
+            .HasDatabaseName("UX_OrderAdHocProductSnapshots_Order_Group");
     }
 
     public void Configure(EntityTypeBuilder<OrderItemBannerDetail> builder)

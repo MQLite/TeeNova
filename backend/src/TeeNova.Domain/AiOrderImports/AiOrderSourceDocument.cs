@@ -21,6 +21,8 @@ public class AiOrderSourceDocument : CreationAuditedEntity<Guid>
     public DateTime? ContentDeletedAt { get; private set; }
     public AiOrderSourceDeletionOutcome DeletionOutcome { get; private set; }
     public string? SafeDeletionErrorCode { get; private set; }
+    public int DeletionFailureCount { get; private set; }
+    public DateTime? DeletionNextRetryAt { get; private set; }
     public string? UploadIdempotencyKey { get; private set; }
     public int? ImageWidth { get; private set; }
     public int? ImageHeight { get; private set; }
@@ -93,9 +95,10 @@ public class AiOrderSourceDocument : CreationAuditedEntity<Guid>
         ContentDeletedAt ??= deletedAt;
         DeletionOutcome = AiOrderSourceDeletionOutcome.Deleted;
         SafeDeletionErrorCode = null;
+        DeletionNextRetryAt = null;
     }
 
-    public void MarkDeletionFailed(string safeErrorCode)
+    public void MarkDeletionFailed(string safeErrorCode, DateTime nextRetryAt)
     {
         if (ContentDeletedAt.HasValue)
             throw new BusinessException("TeeNova:AiOrderImport:SourceAlreadyDeleted");
@@ -105,6 +108,13 @@ public class AiOrderSourceDocument : CreationAuditedEntity<Guid>
             safeErrorCode,
             nameof(safeErrorCode),
             128);
+        DeletionFailureCount++;
+        DeletionNextRetryAt = nextRetryAt;
+    }
+
+    public void SetRetentionUntil(DateTime? retentionUntil)
+    {
+        RetentionUntil = retentionUntil;
     }
 
     public void ChangeSequence(int sequence)

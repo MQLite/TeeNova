@@ -14,6 +14,7 @@ namespace TeeNova.AiOrderImports.PrivateStorage;
 public sealed partial class LocalPrivateObjectStorage : IPrivateObjectStorage
 {
     private readonly string _rootPath;
+    private readonly long _minimumFreeSpaceBytes;
 
     public LocalPrivateObjectStorage(
         IHostEnvironment environment,
@@ -34,12 +35,26 @@ public sealed partial class LocalPrivateObjectStorage : IPrivateObjectStorage
             Path.IsPathRooted(configuredRoot)
                 ? configuredRoot
                 : Path.Combine(contentRoot, configuredRoot));
+        _minimumFreeSpaceBytes = Math.Max(0, options.Value.MinimumFreeSpaceBytes);
 
         var publicRoot = Path.GetFullPath(Path.Combine(contentRoot, "wwwroot"));
         if (IsSameOrDescendant(_rootPath, publicRoot))
         {
             throw new InvalidOperationException(
                 "AI order private storage must resolve outside wwwroot.");
+        }
+
+        foreach (var forbidden in options.Value.ForbiddenPathPrefixes ?? [])
+        {
+            if (string.IsNullOrWhiteSpace(forbidden))
+                continue;
+            var resolved = Path.GetFullPath(
+                Path.IsPathRooted(forbidden)
+                    ? forbidden
+                    : Path.Combine(contentRoot, forbidden));
+            if (IsSameOrDescendant(_rootPath, resolved))
+                throw new InvalidOperationException(
+                    "AI order private storage resolves inside a forbidden static mapping.");
         }
 
         Directory.CreateDirectory(_rootPath);
@@ -140,6 +155,98 @@ public sealed partial class LocalPrivateObjectStorage : IPrivateObjectStorage
             File.Delete(path);
 
         return Task.CompletedTask;
+    }
+
+    public async Task<PrivateStorageReadinessResult> CheckReadinessAsync(
+        CancellationToken cancellationToken = default)
+    {
+        string? probeKey = null;
+        try
+        {
+            if (!Directory.Exists(_rootPath))
+                return new(PrivateStorageReadinessStatus.Missing);
+            EnsurePathHasNoReparseComponents(_rootPath);
+
+            var driveRoot = Path.GetPathRoot(_rootPath);
+            var available = string.IsNullOrWhiteSpace(driveRoot)
+                ? (long?)null
+                : new DriveInfo(driveRoot).AvailableFreeSpace;
+            if (available.HasValue && available.Value < _minimumFreeSpaceBytes)
+                return new(PrivateStorageReadinessStatus.LowSpace, available);
+
+            if (!OperatingSystem.IsWindows())
+            {
+                var mode = File.GetUnixFileMode(_rootPath);
+                if ((mode & (UnixFileMode.OtherRead | UnixFileMode.OtherWrite |
+                             UnixFileMode.GroupWrite)) != 0)
+                    return new(PrivateStorageReadinessStatus.UnsafeLocation, available);
+            }
+
+            try
+            {
+                await using var probe = new MemoryStream(
+                    System.Text.Encoding.ASCII.GetBytes("ai-order-storage-readiness-v1"));
+                probeKey = await SaveAsync(
+                    probe,
+                    PrivateObjectCategory.RawProviderEvidence,
+                    cancellationToken);
+                await using var reopened = await OpenReadAsync(probeKey, cancellationToken);
+                if (reopened.Length == 0)
+                    return new(PrivateStorageReadinessStatus.WriteTestFailed, available);
+            }
+            catch (UnauthorizedAccessException)
+            {
+                return new(PrivateStorageReadinessStatus.PermissionDenied, available);
+            }
+            catch
+            {
+                return new(PrivateStorageReadinessStatus.WriteTestFailed, available);
+            }
+
+            try
+            {
+                await DeleteAsync(probeKey, cancellationToken);
+                if (await ExistsAsync(probeKey, cancellationToken))
+                    return new(PrivateStorageReadinessStatus.DeleteTestFailed, available);
+                probeKey = null;
+            }
+            catch (UnauthorizedAccessException)
+            {
+                return new(PrivateStorageReadinessStatus.PermissionDenied, available);
+            }
+            catch
+            {
+                return new(PrivateStorageReadinessStatus.DeleteTestFailed, available);
+            }
+
+            return new(PrivateStorageReadinessStatus.Ready, available);
+        }
+        catch (UnauthorizedAccessException)
+        {
+            return new(PrivateStorageReadinessStatus.PermissionDenied);
+        }
+        catch (InvalidOperationException)
+        {
+            return new(PrivateStorageReadinessStatus.UnsafeLocation);
+        }
+        catch
+        {
+            return new(PrivateStorageReadinessStatus.WriteTestFailed);
+        }
+        finally
+        {
+            if (probeKey is not null)
+            {
+                try
+                {
+                    await DeleteAsync(probeKey, CancellationToken.None);
+                }
+                catch
+                {
+                    // The safe readiness status already reports the failed phase.
+                }
+            }
+        }
     }
 
     private string ResolveCategoryPath(string categorySegment)

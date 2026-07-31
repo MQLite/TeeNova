@@ -5,7 +5,9 @@ import { useEffect, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import {
   createAiOrderImport,
+  getAiOrderOperationsStatus,
   listAiOrderImports,
+  type AiOrderOperationsStatus,
   type AiOrderImportSummary,
 } from '@/api/ai-order-imports'
 
@@ -15,11 +17,15 @@ export function AiOrderImportListClient() {
   const [loading, setLoading] = useState(true)
   const [creating, setCreating] = useState(false)
   const [error, setError] = useState<string>()
+  const [operations, setOperations] = useState<AiOrderOperationsStatus>()
   const pendingCreate = useRef<{ key: string; captureSessionId: string }>()
 
   useEffect(() => {
-    listAiOrderImports()
-      .then(setItems)
+    Promise.all([listAiOrderImports(), getAiOrderOperationsStatus()])
+      .then(([imports, status]) => {
+        setItems(imports)
+        setOperations(status)
+      })
       .catch((reason: Error) => setError(reason.message))
       .finally(() => setLoading(false))
   }, [])
@@ -66,12 +72,18 @@ export function AiOrderImportListClient() {
         <button
           type="button"
           onClick={createImport}
-          disabled={creating}
+          disabled={creating || !operations?.features.intakeEnabled}
           className="rounded-full bg-black px-5 py-2.5 text-sm text-white transition-opacity disabled:opacity-50"
         >
           {creating ? 'Starting…' : 'Scan Handwritten Order'}
         </button>
       </div>
+
+      {operations && !operations.features.intakeEnabled && (
+        <div role="status" className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+          New AI Order intake is disabled by server configuration. Historical imports remain available.
+        </div>
+      )}
 
       {error && (
         <div role="alert" className="rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">

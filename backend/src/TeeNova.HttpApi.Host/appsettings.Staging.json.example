@@ -1,0 +1,17 @@
+{
+  "AiOrderImport": {
+    "Enabled": false,
+    "IntakeEnabled": false,
+    "RecognitionEnabled": false,
+    "ReviewEnabled": false,
+    "ConfirmationEnabled": false,
+    "MaterializationEnabled": false,
+    "OperationalStatusVisibleToAdmin": true
+  },
+  "AiOrderRetention": {
+    "WorkerEnabled": false
+  },
+  "AiOrderRecognition": {
+    "Enabled": false
+  }
+}

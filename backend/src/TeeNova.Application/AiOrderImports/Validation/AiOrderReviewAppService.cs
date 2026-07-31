@@ -262,6 +262,15 @@ public class AiOrderReviewAppService : ApplicationService
             readiness["message"] =
                 "Catalogue data changed. Save the Draft again to revalidate selections.";
         }
+        else
+        {
+            var ready = readiness["readyToConfirm"]?.GetValue<bool>() == true;
+            readiness["confirmOrderEnabled"] =
+                import.Status == AiOrderImportStatus.Draft && ready;
+            if (import.Status == AiOrderImportStatus.Confirmed)
+                readiness["message"] =
+                    "This reviewed import is immutable. Formal Order creation is a separate action.";
+        }
 
         var validationRoot = ParseObject(validation.CanonicalJson);
         var sourceRevision = validationRoot["sourceAiRevision"]?["revision"]?.GetValue<int>() ?? 0;

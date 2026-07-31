@@ -2,6 +2,7 @@ using System.Reflection;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.EntityFrameworkCore;
 using TeeNova.AiOrderImports.Dtos;
 using TeeNova.AiOrderImports.Validation;
 using TeeNova.Catalog;
@@ -39,6 +40,79 @@ public sealed class AiOrderStaffReviewTests
             "Tee",
             initial["productGroups"]![0]!["writtenProductName"]!["normalizedValue"]!
                 .GetValue<string>());
+    }
+
+    [Fact]
+    public void Initial_review_records_the_actual_validation_revision_canonical_hash()
+    {
+        var validation = Validation(withCandidate: true);
+        var validationRevisionHash = new string('d', 64);
+
+        var initial = _engine.BuildInitialDocument(
+            ImportId,
+            2,
+            2,
+            ValidationId,
+            validationRevisionHash,
+            validation);
+
+        Assert.Equal(
+            validationRevisionHash,
+            initial["sourceValidationRevision"]!["canonicalSha256"]!.GetValue<string>());
+        Assert.NotEqual(
+            validation["normalizedContentSha256"]!.GetValue<string>(),
+            initial["sourceValidationRevision"]!["canonicalSha256"]!.GetValue<string>());
+    }
+
+    [Fact]
+    public void Subsequent_review_uses_the_current_staff_revision_as_base_and_server_metadata()
+    {
+        var initial = Initial();
+        var firstInput = ValidCatalogueInput(initial);
+        firstInput.Customer.Name = Text("First staff value");
+        var first = Build(initial, firstInput);
+        var secondInput = ValidCatalogueInput(first.Document);
+        secondInput.ExpectedRevision = 3;
+        secondInput.Customer.Name = new AiOrderReviewTextInput
+        {
+            StaffValue = "Second staff value",
+            Decision = "Corrected",
+            Reason = "Confirmed against the source image",
+        };
+        var secondActor = Guid.Parse("30000000-0000-0000-0000-000000000002");
+        var secondTime = Now.AddMinutes(5);
+        var validationHash = new string('e', 64);
+
+        var second = _engine.BuildReviewedDocument(
+            ImportId,
+            3,
+            2,
+            ValidationId,
+            validationHash,
+            first.Document,
+            secondInput,
+            [Catalogue()],
+            secondActor,
+            secondTime);
+
+        Assert.Equal(3, second.Document["baseRevision"]!.GetValue<int>());
+        Assert.Equal(4, second.Document["revision"]!.GetValue<int>());
+        Assert.Equal(
+            validationHash,
+            second.Document["sourceValidationRevision"]!["canonicalSha256"]!.GetValue<string>());
+        Assert.Equal(
+            secondActor,
+            second.Document["editorMetadata"]!["lastEditedByAdminId"]!.GetValue<Guid>());
+        Assert.Equal(
+            secondTime.ToString("O"),
+            second.Document["editorMetadata"]!["lastEditedAt"]!.GetValue<string>());
+        Assert.Contains(
+            second.Events,
+            item =>
+                item.Action == AiOrderReviewAction.Corrected &&
+                item.BeforeJson is not null &&
+                item.AfterJson is not null);
+        Assert.Equal(AiOrderReviewAction.DraftSaved, second.Events[^1].Action);
     }
 
     [Fact]
@@ -463,6 +537,48 @@ public sealed class AiOrderStaffReviewTests
         Assert.Equal("TeeNova:AiOrderImport:RevisionConflict", exception.Code);
         Assert.Equal(2, import.CurrentRevision);
         Assert.Equal(AiOrderImportStatus.Draft, import.Status);
+    }
+
+    [Fact]
+    public void Expected_revision_is_mandatory_for_review_builds()
+    {
+        var previous = Initial();
+        var input = ValidCatalogueInput(previous);
+        input.ExpectedRevision = 0;
+
+        var exception = Assert.Throws<BusinessException>(() =>
+            _engine.BuildReviewedDocument(
+                ImportId,
+                0,
+                2,
+                ValidationId,
+                new string('a', 64),
+                previous,
+                input,
+                [Catalogue()],
+                AdminId,
+                Now));
+
+        Assert.Equal(AiOrderImportErrorCodes.ReviewDocumentInvalid, exception.Code);
+    }
+
+    [Theory]
+    [InlineData("UX_AiOrderImportRevisions_Import_Revision")]
+    [InlineData("IX_AiOrderImportRevisions_ImportId_Revision")]
+    [InlineData("duplicate key in AiOrderImportRevisions for ImportId and Revision")]
+    public void Revision_race_detection_accepts_configured_and_database_generated_index_names(
+        string databaseMessage)
+    {
+        var method = typeof(AiOrderReviewAppService).GetMethod(
+            "IsRevisionUniquenessConflict",
+            BindingFlags.Static | BindingFlags.NonPublic)!;
+        var exception = new DbUpdateException(
+            "Revision insert failed.",
+            new InvalidOperationException(databaseMessage));
+
+        var result = (bool)method.Invoke(null, [exception])!;
+
+        Assert.True(result);
     }
 
     private JsonObject Initial(bool withCandidate = true) =>
