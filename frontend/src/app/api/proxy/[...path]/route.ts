@@ -34,6 +34,10 @@ async function proxyRequest(
   }
   const contentType = req.headers.get('content-type')
   if (contentType) forwardHeaders['Content-Type'] = contentType
+  for (const name of ['idempotency-key', 'upload-idempotency-key']) {
+    const value = req.headers.get(name)
+    if (value) forwardHeaders[name] = value
+  }
 
   const hasBody = req.method !== 'GET' && req.method !== 'HEAD'
 

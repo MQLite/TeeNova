@@ -1,4 +1,5 @@
 using Microsoft.EntityFrameworkCore;
+using TeeNova.AiOrderImports;
 using TeeNova.Auth;
 using TeeNova.Catalog;
 using TeeNova.Customization;
@@ -17,6 +18,14 @@ namespace TeeNova.EntityFrameworkCore;
 [ConnectionStringName("Default")]
 public class TeeNovaDbContext : AbpDbContext<TeeNovaDbContext>
 {
+    // AI order imports
+    public DbSet<AiOrderImport> AiOrderImports { get; set; }
+    public DbSet<AiOrderSourceDocument> AiOrderSourceDocuments { get; set; }
+    public DbSet<AiOrderProcessingAttempt> AiOrderProcessingAttempts { get; set; }
+    public DbSet<AiOrderImportRevision> AiOrderImportRevisions { get; set; }
+    public DbSet<AiOrderReviewEvent> AiOrderReviewEvents { get; set; }
+    public DbSet<AiOrderSourceAccessAudit> AiOrderSourceAccessAudits { get; set; }
+
     // Auth
     public DbSet<AdminUser> AdminUsers { get; set; }
 

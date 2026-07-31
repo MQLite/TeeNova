@@ -3,6 +3,7 @@ using System;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Metadata;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using TeeNova.EntityFrameworkCore;
 using Volo.Abp.EntityFrameworkCore;
@@ -12,9 +13,11 @@ using Volo.Abp.EntityFrameworkCore;
 namespace TeeNova.Migrations
 {
     [DbContext(typeof(TeeNovaDbContext))]
-    partial class TeeNovaDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260730055530_AddAiOrderImportIntakeMetadata")]
+    partial class AddAiOrderImportIntakeMetadata
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -212,25 +215,6 @@ namespace TeeNova.Migrations
                     b.Property<Guid>("ImportId")
                         .HasColumnType("uniqueidentifier");
 
-                    b.Property<string>("Model")
-                        .HasMaxLength(128)
-                        .HasColumnType("nvarchar(128)");
-
-                    b.Property<string>("PricingVersion")
-                        .HasMaxLength(64)
-                        .HasColumnType("nvarchar(64)");
-
-                    b.Property<Guid?>("ProcessingAttemptId")
-                        .HasColumnType("uniqueidentifier");
-
-                    b.Property<string>("PromptVersion")
-                        .HasMaxLength(64)
-                        .HasColumnType("nvarchar(64)");
-
-                    b.Property<string>("Provider")
-                        .HasMaxLength(64)
-                        .HasColumnType("nvarchar(64)");
-
                     b.Property<DateTime>("RecordedAt")
                         .HasColumnType("datetime2");
 
@@ -242,10 +226,6 @@ namespace TeeNova.Migrations
                         .HasMaxLength(32)
                         .HasColumnType("nvarchar(32)");
 
-                    b.Property<string>("StructuredOutputMode")
-                        .HasMaxLength(64)
-                        .HasColumnType("nvarchar(64)");
-
                     b.Property<string>("ValidationVersion")
                         .IsRequired()
                         .HasMaxLength(32)
@@ -254,10 +234,6 @@ namespace TeeNova.Migrations
                     b.HasKey("Id");
 
                     b.HasIndex("CanonicalSha256");
-
-                    b.HasIndex("ProcessingAttemptId")
-                        .IsUnique()
-                        .HasFilter("[ProcessingAttemptId] IS NOT NULL");
 
                     b.HasIndex("RecordedAt");
 
@@ -275,30 +251,11 @@ namespace TeeNova.Migrations
                     b.Property<Guid>("Id")
                         .HasColumnType("uniqueidentifier");
 
-                    b.Property<decimal?>("ActualCostUsd")
-                        .HasPrecision(18, 6)
-                        .HasColumnType("decimal(18,6)");
-
-                    b.Property<string>("ApiMode")
-                        .HasMaxLength(64)
-                        .HasColumnType("nvarchar(64)");
-
-                    b.Property<string>("ApiVersion")
-                        .HasMaxLength(32)
-                        .HasColumnType("nvarchar(32)");
-
                     b.Property<int>("AttemptNumber")
                         .HasColumnType("int");
 
-                    b.Property<long?>("CachedInputTokenCount")
-                        .HasColumnType("bigint");
-
                     b.Property<DateTime?>("CompletedAt")
                         .HasColumnType("datetime2");
-
-                    b.Property<string>("ContractVersion")
-                        .HasMaxLength(32)
-                        .HasColumnType("nvarchar(32)");
 
                     b.Property<DateTime>("CreationTime")
                         .HasColumnType("datetime2")
@@ -307,17 +264,6 @@ namespace TeeNova.Migrations
                     b.Property<Guid?>("CreatorId")
                         .HasColumnType("uniqueidentifier")
                         .HasColumnName("CreatorId");
-
-                    b.Property<long?>("DurationMilliseconds")
-                        .HasColumnType("bigint");
-
-                    b.Property<decimal?>("EstimatedCostUsd")
-                        .HasPrecision(18, 6)
-                        .HasColumnType("decimal(18,6)");
-
-                    b.Property<string>("FinishReason")
-                        .HasMaxLength(128)
-                        .HasColumnType("nvarchar(128)");
 
                     b.Property<Guid>("ImportId")
                         .HasColumnType("uniqueidentifier");
@@ -348,17 +294,6 @@ namespace TeeNova.Migrations
                     b.Property<long?>("OutputTokenCount")
                         .HasColumnType("bigint");
 
-                    b.Property<string>("PricingSnapshotJson")
-                        .HasColumnType("nvarchar(max)");
-
-                    b.Property<string>("PricingVersion")
-                        .HasMaxLength(64)
-                        .HasColumnType("nvarchar(64)");
-
-                    b.Property<string>("PromptVersion")
-                        .HasMaxLength(64)
-                        .HasColumnType("nvarchar(64)");
-
                     b.Property<string>("Provider")
                         .HasMaxLength(64)
                         .HasColumnType("nvarchar(64)");
@@ -367,54 +302,21 @@ namespace TeeNova.Migrations
                         .HasMaxLength(256)
                         .HasColumnType("nvarchar(256)");
 
-                    b.Property<DateTime?>("RawResultDeletedAt")
-                        .HasColumnType("datetime2");
-
                     b.Property<string>("RawResultObjectKey")
                         .HasMaxLength(160)
                         .HasColumnType("nvarchar(160)");
-
-                    b.Property<DateTime?>("RawResultRetentionUntil")
-                        .HasColumnType("datetime2");
 
                     b.Property<string>("RawResultSha256")
                         .HasMaxLength(64)
                         .HasColumnType("nchar(64)")
                         .IsFixedLength();
 
-                    b.Property<bool>("RepairAttempted")
-                        .HasColumnType("bit");
-
                     b.Property<string>("SafeErrorCode")
                         .HasMaxLength(128)
                         .HasColumnType("nvarchar(128)");
 
-                    b.Property<string>("SourceSnapshotJson")
-                        .HasColumnType("nvarchar(max)");
-
-                    b.Property<string>("StartOperationKey")
-                        .HasMaxLength(128)
-                        .HasColumnType("nvarchar(128)");
-
-                    b.Property<string>("StartRequestHash")
-                        .HasMaxLength(64)
-                        .HasColumnType("nchar(64)")
-                        .IsFixedLength();
-
-                    b.Property<string>("StructuredOutputMode")
-                        .HasMaxLength(64)
-                        .HasColumnType("nvarchar(64)");
-
                     b.Property<DateTime>("SubmittedAt")
                         .HasColumnType("datetime2");
-
-                    b.Property<DateTime?>("WorkerClaimExpiresAt")
-                        .HasColumnType("datetime2");
-
-                    b.Property<string>("WorkerClaimToken")
-                        .IsConcurrencyToken()
-                        .HasMaxLength(64)
-                        .HasColumnType("nvarchar(64)");
 
                     b.HasKey("Id");
 
@@ -433,22 +335,11 @@ namespace TeeNova.Migrations
                     b.HasIndex("ImportId", "AttemptNumber")
                         .IsUnique();
 
-                    b.HasIndex("ImportId", "StartOperationKey")
-                        .IsUnique()
-                        .HasDatabaseName("UX_AiOrderProcessingAttempts_Import_StartKey")
-                        .HasFilter("[StartOperationKey] IS NOT NULL");
-
-                    b.HasIndex("Outcome", "WorkerClaimExpiresAt");
-
-                    b.HasIndex("RawResultRetentionUntil", "RawResultDeletedAt");
-
                     b.ToTable("AiOrderProcessingAttempts", "teenova", t =>
                         {
                             t.HasCheckConstraint("CK_AiOrderProcessingAttempts_AttemptNumber", "[AttemptNumber] > 0");
 
-                            t.HasCheckConstraint("CK_AiOrderProcessingAttempts_Costs", "([EstimatedCostUsd] IS NULL OR [EstimatedCostUsd] >= 0) AND ([ActualCostUsd] IS NULL OR [ActualCostUsd] >= 0)");
-
-                            t.HasCheckConstraint("CK_AiOrderProcessingAttempts_TokenCounts", "([InputTokenCount] IS NULL OR [InputTokenCount] >= 0) AND ([OutputTokenCount] IS NULL OR [OutputTokenCount] >= 0) AND ([CachedInputTokenCount] IS NULL OR [CachedInputTokenCount] >= 0)");
+                            t.HasCheckConstraint("CK_AiOrderProcessingAttempts_TokenCounts", "([InputTokenCount] IS NULL OR [InputTokenCount] >= 0) AND ([OutputTokenCount] IS NULL OR [OutputTokenCount] >= 0)");
                         });
                 });
 
@@ -2497,11 +2388,6 @@ namespace TeeNova.Migrations
                         .HasForeignKey("ImportId")
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
-
-                    b.HasOne("TeeNova.AiOrderImports.AiOrderProcessingAttempt", null)
-                        .WithMany()
-                        .HasForeignKey("ProcessingAttemptId")
-                        .OnDelete(DeleteBehavior.Restrict);
                 });
 
             modelBuilder.Entity("TeeNova.AiOrderImports.AiOrderProcessingAttempt", b =>

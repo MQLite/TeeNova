@@ -1,6 +1,7 @@
 using System;
 using System.Linq;
 using System.Net;
+using System.Security.Claims;
 using System.Text;
 using System.Text.Json.Serialization;
 using System.Threading.RateLimiting;
@@ -17,6 +18,7 @@ using Microsoft.Extensions.Logging;
 using Microsoft.IdentityModel.Tokens;
 using Microsoft.OpenApi.Models;
 using TeeNova.AdminLogs;
+using TeeNova.AiOrderImports;
 using TeeNova.Auth;
 using TeeNova.EntityFrameworkCore;
 using Volo.Abp;
@@ -174,6 +176,33 @@ public class TeeNovaHttpApiHostModule : AbpModule
             options.Map(AdminLogsErrorCodes.FileIdExpired, HttpStatusCode.Gone);
             options.Map(AdminLogsErrorCodes.FileChanged, HttpStatusCode.Conflict);
             options.Map(AdminLogsErrorCodes.FileTooLarge, HttpStatusCode.RequestEntityTooLarge);
+            options.Map(AiOrderImportErrorCodes.InvalidRequest, HttpStatusCode.BadRequest);
+            options.Map(AiOrderImportErrorCodes.IdempotencyKeyRequired, HttpStatusCode.BadRequest);
+            options.Map(AiOrderImportErrorCodes.ImportNotFound, HttpStatusCode.NotFound);
+            options.Map(AiOrderImportErrorCodes.SourceNotFound, HttpStatusCode.NotFound);
+            options.Map(AiOrderImportErrorCodes.SourceContentDeleted, HttpStatusCode.NotFound);
+            options.Map(AiOrderImportErrorCodes.IdempotencyHashConflict, HttpStatusCode.Conflict);
+            options.Map(AiOrderImportErrorCodes.UploadIdempotencyConflict, HttpStatusCode.Conflict);
+            options.Map(AiOrderImportErrorCodes.ModificationNotAllowed, HttpStatusCode.Conflict);
+            options.Map(AiOrderImportErrorCodes.InvalidDocumentOrder, HttpStatusCode.Conflict);
+            options.Map(AiOrderImportErrorCodes.EmptyFile, HttpStatusCode.BadRequest);
+            options.Map(AiOrderImportErrorCodes.FileTooLarge, HttpStatusCode.RequestEntityTooLarge);
+            options.Map(AiOrderImportErrorCodes.TooManyDocuments, HttpStatusCode.Conflict);
+            options.Map(AiOrderImportErrorCodes.TotalBytesExceeded, HttpStatusCode.RequestEntityTooLarge);
+            options.Map(AiOrderImportErrorCodes.UnsupportedFileType, HttpStatusCode.UnsupportedMediaType);
+            options.Map(AiOrderImportErrorCodes.FileTypeMismatch, HttpStatusCode.UnsupportedMediaType);
+            options.Map(AiOrderImportErrorCodes.InvalidSourceContent, HttpStatusCode.UnprocessableEntity);
+            options.Map(AiOrderImportErrorCodes.PdfPageLimitExceeded, HttpStatusCode.UnprocessableEntity);
+            options.Map(AiOrderImportErrorCodes.ImageDimensionsExceeded, HttpStatusCode.UnprocessableEntity);
+            options.Map(AiOrderImportErrorCodes.PrivateStorageFailure, HttpStatusCode.ServiceUnavailable);
+            options.Map(AiOrderImportErrorCodes.DatabaseMetadataFailure, HttpStatusCode.ServiceUnavailable);
+            options.Map(AiOrderImportErrorCodes.ReviewNotAllowed, HttpStatusCode.Conflict);
+            options.Map(AiOrderImportErrorCodes.ReviewRevisionConflict, HttpStatusCode.Conflict);
+            options.Map(AiOrderImportErrorCodes.ReviewVersionUnsupported, HttpStatusCode.UnprocessableEntity);
+            options.Map(AiOrderImportErrorCodes.ReviewDocumentInvalid, HttpStatusCode.UnprocessableEntity);
+            options.Map(AiOrderImportErrorCodes.ReviewReasonRequired, HttpStatusCode.UnprocessableEntity);
+            options.Map(AiOrderImportErrorCodes.CatalogueSelectionInvalid, HttpStatusCode.UnprocessableEntity);
+            options.Map(AiOrderImportErrorCodes.VariantSelectionInvalid, HttpStatusCode.UnprocessableEntity);
         });
     }
 
@@ -213,6 +242,8 @@ public class TeeNovaHttpApiHostModule : AbpModule
         // storefront use yet low enough to blunt anonymous spam / disk-fill / session-spam bursts.
         var publicSection  = configuration.GetSection("PublicRateLimit");
         var publicEnabled  = publicSection.GetValue<bool>("Enabled", true);
+        var aiOrderSection = configuration.GetSection("AiOrderIntakeRateLimit");
+        var aiOrderEnabled = aiOrderSection.GetValue<bool>("Enabled", true);
 
         context.Services.AddRateLimiter(options =>
         {
@@ -241,6 +272,40 @@ public class TeeNovaHttpApiHostModule : AbpModule
                             QueueLimit        = queue,
                             AutoReplenishment = true,
                         }));
+            }
+
+            void AddAdminPolicy(
+                string name,
+                string configurationKey,
+                int defaultPermit,
+                int defaultWindow)
+            {
+                if (!aiOrderEnabled)
+                {
+                    options.AddPolicy(name, _ => RateLimitPartition.GetNoLimiter<string>("disabled"));
+                    return;
+                }
+
+                var sub = aiOrderSection.GetSection(configurationKey);
+                var permit = sub.GetValue<int>("PermitLimit", defaultPermit);
+                var window = sub.GetValue<int>("WindowSeconds", defaultWindow);
+                var queue = sub.GetValue<int>("QueueLimit", 0);
+                options.AddPolicy(name, httpContext =>
+                {
+                    var actor = httpContext.User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+                    var partition = !string.IsNullOrWhiteSpace(actor)
+                        ? $"admin:{actor}"
+                        : $"ip:{httpContext.Connection.RemoteIpAddress?.ToString() ?? "unknown"}";
+                    return RateLimitPartition.GetFixedWindowLimiter(
+                        partition,
+                        _ => new FixedWindowRateLimiterOptions
+                        {
+                            PermitLimit = permit,
+                            Window = TimeSpan.FromSeconds(window),
+                            QueueLimit = queue,
+                            AutoReplenishment = true,
+                        });
+                });
             }
 
             if (enabled)
@@ -281,6 +346,21 @@ public class TeeNovaHttpApiHostModule : AbpModule
             // burst is never throttled; this exists only to cap a pathological flood, not normal delivery.
             // Signature verification + the 1 MB body cap (Jira 9805) remain the real webhook guards.
             AddPublicPolicy(PaymentWebhookPolicy, defaultPermit: 300, defaultWindow: 60);
+            AddAdminPolicy(
+                AiOrderImportRateLimitPolicies.Create,
+                "Create",
+                defaultPermit: 20,
+                defaultWindow: 60);
+            AddAdminPolicy(
+                AiOrderImportRateLimitPolicies.Upload,
+                "Upload",
+                defaultPermit: 30,
+                defaultWindow: 60);
+            AddAdminPolicy(
+                AiOrderImportRateLimitPolicies.Content,
+                "Content",
+                defaultPermit: 120,
+                defaultWindow: 60);
 
             options.OnRejected = async (ctx, ct) =>
             {
@@ -298,9 +378,8 @@ public class TeeNovaHttpApiHostModule : AbpModule
                 ctx.HttpContext.RequestServices
                     .GetRequiredService<ILogger<TeeNovaHttpApiHostModule>>()
                     .LogWarning(
-                        "Rate limit exceeded for {Path} from IP {RemoteIp}.",
-                        ctx.HttpContext.Request.Path,
-                        ctx.HttpContext.Connection.RemoteIpAddress);
+                        "Rate limit exceeded for {Path}.",
+                        ctx.HttpContext.Request.Path);
             };
         });
     }
@@ -319,9 +398,9 @@ public class TeeNovaHttpApiHostModule : AbpModule
         app.UseAbpRequestLocalization();
         app.UseStaticFiles();
         app.UseRouting();
-        app.UseRateLimiter();
         app.UseCors();
         app.UseAuthentication();
+        app.UseRateLimiter();
         app.UseAuthorization();
         app.UseSwagger();
         app.UseAbpSwaggerUI(options =>

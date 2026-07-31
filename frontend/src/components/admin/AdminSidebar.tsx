@@ -101,6 +101,17 @@ const usersNavItem = {
   ),
 }
 
+const aiImportsNavItem = {
+  href: '/admin/ai-order-imports',
+  label: 'AI Order Intake',
+  exact: false,
+  icon: (
+    <svg viewBox="0 0 20 20" fill="currentColor" className="h-4 w-4 shrink-0" aria-hidden="true">
+      <path fillRule="evenodd" d="M4 3a2 2 0 00-2 2v10a2 2 0 002 2h12a2 2 0 002-2V7.414A2 2 0 0015.414 6L12 2.586A2 2 0 0010.586 2H4zm3 6a3 3 0 116 0 3 3 0 01-6 0zm-2 5.5A4.5 4.5 0 019.5 10h1a4.5 4.5 0 014.5 4.5.5.5 0 01-.5.5h-9a.5.5 0 01-.5-.5z" clipRule="evenodd" />
+    </svg>
+  ),
+}
+
 const logsNavItem = {
   href: '/admin/system/logs',
   label: 'Logs',
@@ -123,7 +134,7 @@ export function AdminSidebar({ role }: AdminSidebarProps) {
     exact ? pathname === href : pathname.startsWith(href)
 
   return (
-    <aside className="flex w-56 shrink-0 flex-col border-r border-black/[0.08] bg-[#fcfcfc]">
+    <aside className="hidden w-56 shrink-0 flex-col border-r border-black/[0.08] bg-[#fcfcfc] md:flex">
       {/* Brand */}
       <div className="border-b border-black/[0.08] px-4 py-4">
         <Link href="/admin" className="group flex items-center gap-2.5">
@@ -146,7 +157,7 @@ export function AdminSidebar({ role }: AdminSidebarProps) {
         <p className="mb-1.5 px-2 font-mono text-[9px] uppercase tracking-[0.54px] text-black/45">
           Management
         </p>
-        {[...navItems, ...(role === 'Admin' ? [usersNavItem] : [])].map(({ href, label, icon, exact }) => {
+        {[...navItems, ...(role === 'Admin' ? [aiImportsNavItem, usersNavItem] : [])].map(({ href, label, icon, exact }) => {
           const active = isActive(href, exact)
           return (
             <Link

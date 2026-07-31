@@ -6,6 +6,10 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Options;
 using TeeNova.AdminLogs;
+using TeeNova.AiOrderImports;
+using TeeNova.AiOrderImports.PrivateStorage;
+using TeeNova.AiOrderImports.Recognition;
+using TeeNova.AiOrderImports.Validation;
 using TeeNova.Auth;
 using TeeNova.Email;
 using TeeNova.Files;
@@ -38,6 +42,39 @@ public class TeeNovaApplicationModule : AbpModule
         });
 
         var configuration = context.Services.GetConfiguration();
+
+        context.Services.Configure<PrivateObjectStorageOptions>(
+            configuration.GetSection(PrivateObjectStorageOptions.SectionName));
+        context.Services.Configure<AiOrderIntakeOptions>(
+            configuration.GetSection(AiOrderIntakeOptions.SectionName));
+        context.Services.AddSingleton<IValidateOptions<AiOrderIntakeOptions>, AiOrderIntakeOptionsValidator>();
+        context.Services.AddOptions<AiOrderIntakeOptions>().ValidateOnStart();
+        context.Services.Configure<AiOrderRecognitionOptions>(
+            configuration.GetSection(AiOrderRecognitionOptions.SectionName));
+        context.Services.AddSingleton<
+            IValidateOptions<AiOrderRecognitionOptions>,
+            AiOrderRecognitionOptionsValidator>();
+        context.Services.AddOptions<AiOrderRecognitionOptions>().ValidateOnStart();
+        context.Services.Configure<AiOrderValidationOptions>(
+            configuration.GetSection(AiOrderValidationOptions.SectionName));
+        context.Services.AddSingleton<
+            IValidateOptions<AiOrderValidationOptions>,
+            AiOrderValidationOptionsValidator>();
+        context.Services.AddOptions<AiOrderValidationOptions>().ValidateOnStart();
+        context.Services.AddHttpClient("AiOrderRecognition", client =>
+        {
+            // Per-operation linked cancellation enforces the configured provider timeout.
+            client.Timeout = System.Threading.Timeout.InfiniteTimeSpan;
+        });
+        context.Services.AddTransient<
+            IAiOrderRecognitionProvider,
+            GeminiAiOrderRecognitionProvider>();
+        context.Services.AddTransient<
+            IAiOrderRecognitionProvider,
+            OpenAiOrderRecognitionProvider>();
+        context.Services.AddTransient<
+            IAiOrderRecognitionProvider,
+            ClaudeAiOrderRecognitionProvider>();
 
         context.Services.Configure<AdminLogsOptions>(configuration.GetSection(AdminLogsOptions.SectionName));
         context.Services.AddSingleton<IValidateOptions<AdminLogsOptions>, AdminLogsOptionsValidator>();
@@ -144,5 +181,6 @@ public class TeeNovaApplicationModule : AbpModule
     public override async Task OnApplicationInitializationAsync(ApplicationInitializationContext context)
     {
         await context.AddBackgroundWorkerAsync<OrphanedAssetCleanupWorker>();
+        await context.AddBackgroundWorkerAsync<AiOrderRecognitionWorker>();
     }
 }
