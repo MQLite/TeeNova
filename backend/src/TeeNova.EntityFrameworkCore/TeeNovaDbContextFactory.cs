@@ -26,6 +26,7 @@ public class TeeNovaDbContextFactory : IDesignTimeDbContextFactory<TeeNovaDbCont
                 "../TeeNova.HttpApi.Host"))
             .AddJsonFile("appsettings.json", optional: false)
             .AddJsonFile("appsettings.Development.json", optional: true)
+            .AddEnvironmentVariables()
             .Build();
     }
 }
