@@ -107,6 +107,27 @@ public sealed class LocalPrivateObjectStorageTests : IDisposable
     }
 
     [Fact]
+    public async Task Readiness_rejects_an_existing_insecure_unix_root()
+    {
+        if (OperatingSystem.IsWindows())
+            return;
+
+        var root = Path.Combine(_contentRoot, "private", "ai-order-imports");
+        Directory.CreateDirectory(root);
+        File.SetUnixFileMode(
+            root,
+            UnixFileMode.UserRead |
+            UnixFileMode.UserWrite |
+            UnixFileMode.UserExecute |
+            UnixFileMode.GroupRead);
+        var storage = CreateStorage("private/ai-order-imports");
+
+        var result = await storage.CheckReadinessAsync();
+
+        Assert.Equal(PrivateStorageReadinessStatus.UnsafeLocation, result.Status);
+    }
+
+    [Fact]
     public void Missing_root_configuration_fails_closed()
     {
         Assert.Throws<InvalidOperationException>(() =>

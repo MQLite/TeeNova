@@ -13,6 +13,9 @@ namespace TeeNova.AiOrderImports.PrivateStorage;
 /// </summary>
 public sealed partial class LocalPrivateObjectStorage : IPrivateObjectStorage
 {
+    private const UnixFileMode PrivateDirectoryMode =
+        UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute;
+
     private readonly string _rootPath;
     private readonly long _minimumFreeSpaceBytes;
 
@@ -57,7 +60,7 @@ public sealed partial class LocalPrivateObjectStorage : IPrivateObjectStorage
                     "AI order private storage resolves inside a forbidden static mapping.");
         }
 
-        Directory.CreateDirectory(_rootPath);
+        CreatePrivateDirectory(_rootPath);
         EnsurePathHasNoReparseComponents(_rootPath);
     }
 
@@ -72,7 +75,7 @@ public sealed partial class LocalPrivateObjectStorage : IPrivateObjectStorage
 
         var categorySegment = CategorySegment(category);
         var categoryPath = ResolveCategoryPath(categorySegment);
-        Directory.CreateDirectory(categoryPath);
+        CreatePrivateDirectory(categoryPath);
         EnsurePathHasNoReparseComponents(categoryPath);
         var initialPosition = content.CanSeek ? content.Position : (long?)null;
 
@@ -177,8 +180,12 @@ public sealed partial class LocalPrivateObjectStorage : IPrivateObjectStorage
             if (!OperatingSystem.IsWindows())
             {
                 var mode = File.GetUnixFileMode(_rootPath);
-                if ((mode & (UnixFileMode.OtherRead | UnixFileMode.OtherWrite |
-                             UnixFileMode.GroupWrite)) != 0)
+                if ((mode & (UnixFileMode.GroupRead |
+                             UnixFileMode.GroupWrite |
+                             UnixFileMode.GroupExecute |
+                             UnixFileMode.OtherRead |
+                             UnixFileMode.OtherWrite |
+                             UnixFileMode.OtherExecute)) != 0)
                     return new(PrivateStorageReadinessStatus.UnsafeLocation, available);
             }
 
@@ -297,6 +304,14 @@ public sealed partial class LocalPrivateObjectStorage : IPrivateObjectStorage
         {
             // The original write/move exception is the actionable failure.
         }
+    }
+
+    private static void CreatePrivateDirectory(string path)
+    {
+        if (OperatingSystem.IsWindows() || Directory.Exists(path))
+            Directory.CreateDirectory(path);
+        else
+            Directory.CreateDirectory(path, PrivateDirectoryMode);
     }
 
     private static void EnsurePathHasNoReparseComponents(string path)
