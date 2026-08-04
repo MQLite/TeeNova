@@ -2,6 +2,7 @@ using System.Globalization;
 using System.Diagnostics.CodeAnalysis;
 using System.Text.Json;
 using System.Text.Json.Nodes;
+using Microsoft.Extensions.Options;
 using TeeNova.AiOrderImports.Dtos;
 using TeeNova.Orders;
 using Volo.Abp;
@@ -36,6 +37,26 @@ public sealed class AiOrderStaffReviewEngine : ITransientDependency
         PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
         WriteIndented = false,
     };
+
+    private const string AutoAdHocReason =
+        "No catalogue product matched the source, so this group was created as an ad-hoc product.";
+    private const string AdHocFallbackRowReason =
+        "No catalogue variant matched this size, so the row is created as an ad-hoc line.";
+    private const string ContactFallbackReason =
+        "The source document did not carry this contact detail; a placeholder was applied.";
+
+    private readonly AiOrderValidationOptions _options;
+
+    public AiOrderStaffReviewEngine()
+        : this(Options.Create(new AiOrderValidationOptions()))
+    {
+    }
+
+    public AiOrderStaffReviewEngine(IOptions<AiOrderValidationOptions> options)
+    {
+        ArgumentNullException.ThrowIfNull(options);
+        _options = options.Value;
+    }
 
     public JsonObject BuildInitialDocument(
         Guid importId,
@@ -88,11 +109,17 @@ public sealed class AiOrderStaffReviewEngine : ITransientDependency
                     ["variantCandidatesByProduct"] =
                         row["variantCandidatesByProduct"]?.DeepClone() ?? new JsonArray(),
                     ["compatibleVariants"] = new JsonArray(),
+                    ["adHocFallback"] = false,
+                    ["adHocFallbackReason"] = null,
                     ["sourceEvidence"] = row["sourceEvidence"]?.DeepClone() ?? new JsonArray(),
                 });
             }
 
             var resolution = group["productResolution"] as JsonObject ?? new JsonObject();
+            var initialAdHoc = BuildInitialAdHoc(
+                resolution["adHocProposal"] as JsonObject,
+                groupId);
+            var autoAdHoc = IsAutoAdHoc(initialAdHoc);
             reviewGroups.Add(new JsonObject
             {
                 ["groupId"] = groupId,
@@ -100,14 +127,12 @@ public sealed class AiOrderStaffReviewEngine : ITransientDependency
                     InitialField(group["writtenProductDescription"] as JsonObject),
                 ["productSelection"] = new JsonObject
                 {
-                    ["mode"] = "Unresolved",
+                    ["mode"] = autoAdHoc ? "AdHoc" : "Unresolved",
                     ["selectedCatalogueProduct"] = null,
-                    ["adHocProduct"] = BuildInitialAdHoc(
-                        resolution["adHocProposal"] as JsonObject,
-                        groupId),
+                    ["adHocProduct"] = initialAdHoc,
                     ["productCandidates"] =
                         resolution["productCandidates"]?.DeepClone() ?? new JsonArray(),
-                    ["reason"] = null,
+                    ["reason"] = autoAdHoc ? AutoAdHocReason : null,
                 },
                 ["colour"] = InitialField(group["colour"] as JsonObject),
                 ["supplySource"] = InitialField(group["supplySource"] as JsonObject),
@@ -148,9 +173,15 @@ public sealed class AiOrderStaffReviewEngine : ITransientDependency
             ["revision"] = null,
             ["customer"] = new JsonObject
             {
-                ["name"] = InitialField(customer["name"] as JsonObject),
-                ["phone"] = InitialField(customer["phone"] as JsonObject),
-                ["email"] = InitialField(customer["email"] as JsonObject),
+                ["name"] = WithContactFallback(
+                    InitialField(customer["name"] as JsonObject),
+                    _options.FallbackCustomerName),
+                ["phone"] = WithContactFallback(
+                    InitialField(customer["phone"] as JsonObject),
+                    _options.FallbackCustomerPhone),
+                ["email"] = WithContactFallback(
+                    InitialField(customer["email"] as JsonObject),
+                    _options.FallbackCustomerEmail),
                 ["organisation"] = InitialField(customer["organisation"] as JsonObject),
                 ["addressOrFulfilmentNotes"] =
                     InitialField(customer["addressOrFulfilmentNotes"] as JsonObject),
@@ -244,18 +275,24 @@ public sealed class AiOrderStaffReviewEngine : ITransientDependency
         var customerPrior = previous["customer"] as JsonObject;
         var customer = new JsonObject
         {
-            ["name"] = EditedTextField(
-                customerPrior?["name"] as JsonObject,
-                input.Customer.Name,
-                "/customer/name"),
-            ["phone"] = EditedTextField(
-                customerPrior?["phone"] as JsonObject,
-                input.Customer.Phone,
-                "/customer/phone"),
-            ["email"] = EditedTextField(
-                customerPrior?["email"] as JsonObject,
-                input.Customer.Email,
-                "/customer/email"),
+            ["name"] = WithContactFallback(
+                EditedTextField(
+                    customerPrior?["name"] as JsonObject,
+                    input.Customer.Name,
+                    "/customer/name"),
+                _options.FallbackCustomerName),
+            ["phone"] = WithContactFallback(
+                EditedTextField(
+                    customerPrior?["phone"] as JsonObject,
+                    input.Customer.Phone,
+                    "/customer/phone"),
+                _options.FallbackCustomerPhone),
+            ["email"] = WithContactFallback(
+                EditedTextField(
+                    customerPrior?["email"] as JsonObject,
+                    input.Customer.Email,
+                    "/customer/email"),
+                _options.FallbackCustomerEmail),
             ["organisation"] = EditedTextField(
                 customerPrior?["organisation"] as JsonObject,
                 input.Customer.Organisation,
@@ -382,11 +419,15 @@ public sealed class AiOrderStaffReviewEngine : ITransientDependency
         totalRows += input.SizeQuantityRows.Count;
         var basePath = $"/productGroups/{groupIndex}";
 
+        // An ad-hoc group has no catalogue vocabulary to conform to, so its free-text
+        // colour and sizes do not need a typed justification.
+        var adHocGroup = input.ProductSelection.Mode?.Trim() == "AdHoc";
         var colour = EditedControlledField(
             prior?["colour"] as JsonObject,
             input.Colour,
             $"{basePath}/colour",
-            ["Named", "NotApplicable"]);
+            ["Named", "NotApplicable"],
+            adHocGroup);
         var selection = BuildProductSelection(
             input.ProductSelection,
             prior?["productSelection"] as JsonObject,
@@ -414,7 +455,8 @@ public sealed class AiOrderStaffReviewEngine : ITransientDependency
                 priorRow?["size"] as JsonObject,
                 rowInput.Size,
                 $"{basePath}/sizeQuantityRows/{rowIndex}/size",
-                ["Catalogue", "OneSize", "Custom"]);
+                ["Catalogue", "OneSize", "Custom"],
+                adHocGroup);
             if (rowInput.Quantity is <= 0 or > OrderLimits.MaxOrderItemQuantity)
                 Invalid($"Quantity must be from 1 through {OrderLimits.MaxOrderItemQuantity}.");
             RequireReasonForSensitiveField(
@@ -437,6 +479,8 @@ public sealed class AiOrderStaffReviewEngine : ITransientDependency
                 ["variantCandidatesByProduct"] =
                     priorRow?["variantCandidatesByProduct"]?.DeepClone() ?? new JsonArray(),
                 ["compatibleVariants"] = new JsonArray(),
+                ["adHocFallback"] = false,
+                ["adHocFallbackReason"] = null,
                 ["sourceEvidence"] =
                     priorRow?["sourceEvidence"]?.DeepClone() ?? new JsonArray(),
             };
@@ -576,15 +620,15 @@ public sealed class AiOrderStaffReviewEngine : ITransientDependency
             Invalid("Ad-hoc product details are required.");
         var adHoc = input.AdHocProduct;
         var displayName = BoundedOptional(adHoc.DisplayName, 256, "ad-hoc display name");
-        if (adHoc.Confirmed &&
-            (string.IsNullOrWhiteSpace(displayName) || !adHoc.AcknowledgedOrderOnly))
+        if (adHoc.Confirmed && string.IsNullOrWhiteSpace(displayName))
         {
             throw Safe(
                 AiOrderImportErrorCodes.CatalogueSelectionInvalid,
-                "A confirmed ad-hoc product requires a display name and order-only acknowledgement.");
+                "A confirmed ad-hoc product requires a display name.");
         }
-        if (adHoc.Confirmed && string.IsNullOrWhiteSpace(adHoc.Reason))
-            ReasonRequired($"{basePath}/productSelection/adHocProduct");
+        // Ad-hoc products are always order-only; a named confirmation carries that fact
+        // rather than making the operator restate it.
+        var acknowledgedOrderOnly = adHoc.AcknowledgedOrderOnly || adHoc.Confirmed;
         return new JsonObject
         {
             ["mode"] = "AdHoc",
@@ -604,8 +648,9 @@ public sealed class AiOrderStaffReviewEngine : ITransientDependency
                     BoundedOptional(adHoc.SupplySource, 32, "ad-hoc supply source"),
                 ["inventoryBehavior"] = "NotTracked",
                 ["confirmed"] = adHoc.Confirmed,
-                ["acknowledgedOrderOnly"] = adHoc.AcknowledgedOrderOnly,
-                ["reason"] = BoundedOptional(adHoc.Reason, 1000, "ad-hoc reason"),
+                ["acknowledgedOrderOnly"] = acknowledgedOrderOnly,
+                ["reason"] = BoundedOptional(adHoc.Reason, 1000, "ad-hoc reason") ??
+                             (adHoc.Confirmed ? AutoAdHocReason : null),
             },
             ["productCandidates"] = candidates.DeepClone(),
             ["reason"] = BoundedOptional(input.Reason, 1000, "product selection reason"),
@@ -660,6 +705,15 @@ public sealed class AiOrderStaffReviewEngine : ITransientDependency
                     })
                     .ToArray();
                 row["compatibleVariants"] = new JsonArray(compatible);
+                // A size the selected catalogue product cannot supply is carried as an
+                // ad-hoc line instead of blocking the whole group.
+                if (compatible.Length == 0)
+                {
+                    row["confirmedProductVariantId"] = null;
+                    row["adHocFallback"] = true;
+                    row["adHocFallbackReason"] = AdHocFallbackRowReason;
+                    continue;
+                }
                 if (row["confirmedProductVariantId"] is not JsonValue selected ||
                     !selected.TryGetValue<Guid>(out var variantId))
                     continue;
@@ -745,7 +799,8 @@ public sealed class AiOrderStaffReviewEngine : ITransientDependency
                         ? "COLOUR_NOT_APPLICABLE_CONFIRMATION_REQUIRED"
                         : mode == "AdHoc" ? "COLOUR_CUSTOM" : "LOW_CONFIDENCE_REQUIRED_FIELD",
                     "NeedsConfirmation",
-                    true,
+                    // An ad-hoc group records the written colour verbatim, so it is advisory.
+                    colourKind == "NotApplicable" || mode != "AdHoc",
                     [$"{groupPath}/colour"],
                     colourKind == "NotApplicable"
                         ? "Confirm the controlled Not Applicable colour."
@@ -795,7 +850,7 @@ public sealed class AiOrderStaffReviewEngine : ITransientDependency
                             issues,
                             "SIZE_UNCERTAIN",
                             "NeedsConfirmation",
-                            true,
+                            mode != "AdHoc",
                             [$"{rowPath}/size"],
                             "Ambiguous sizes such as M/L must be resolved or deliberately confirmed as a custom ad-hoc size.");
                     else if (row["size"]?["decision"]?.GetValue<string>() == "Unresolved")
@@ -805,7 +860,8 @@ public sealed class AiOrderStaffReviewEngine : ITransientDependency
                                 ? "CUSTOM_SIZE_CONFIRMATION_REQUIRED"
                                 : "LOW_CONFIDENCE_REQUIRED_FIELD",
                             "NeedsConfirmation",
-                            true,
+                            // Ad-hoc sizes are recorded exactly as written.
+                            mode != "AdHoc",
                             [$"{rowPath}/size"],
                             size?["kind"]?.GetValue<string>() == "Custom"
                                 ? "Confirm the custom ad-hoc size."
@@ -831,13 +887,20 @@ public sealed class AiOrderStaffReviewEngine : ITransientDependency
                     group["productSelection"]?["selectedCatalogueProduct"]?["productKind"]?
                         .GetValue<string>() == "Garment" &&
                     row["confirmedProductVariantId"] is null)
+                {
+                    // With no compatible variant there is nothing to select, so the row
+                    // falls back to an ad-hoc line and only needs to be advertised.
+                    var fallback = row["adHocFallback"]?.GetValue<bool>() == true;
                     AddIssue(
                         issues,
-                        "VARIANT_NOT_FOUND",
-                        "MissingRequired",
-                        true,
+                        fallback ? "ROW_FALLS_BACK_TO_AD_HOC" : "VARIANT_NOT_FOUND",
+                        fallback ? "NeedsConfirmation" : "MissingRequired",
+                        !fallback,
                         [$"{rowPath}/confirmedProductVariantId"],
-                        "Select the compatible catalogue variant for this size row.");
+                        fallback
+                            ? "This size has no catalogue variant and will be created as an ad-hoc line."
+                            : "Select the compatible catalogue variant for this size row.");
+                }
             }
         }
 
@@ -1394,7 +1457,8 @@ public sealed class AiOrderStaffReviewEngine : ITransientDependency
         JsonObject? prior,
         AiOrderReviewControlledValueInput input,
         string path,
-        IReadOnlyCollection<string> allowedKinds)
+        IReadOnlyCollection<string> allowedKinds,
+        bool customValueReasonOptional = false)
     {
         JsonNode? value = null;
         if (input.Kind is not null || input.Label is not null)
@@ -1412,7 +1476,8 @@ public sealed class AiOrderStaffReviewEngine : ITransientDependency
                 ["kind"] = kind,
                 ["label"] = label,
             };
-            if ((kind is "Custom" ||
+            if (!customValueReasonOptional &&
+                (kind is "Custom" ||
                  prior?["normalizedValue"]?["kind"]?.GetValue<string>() != kind ||
                  !Same(
                      prior?["normalizedValue"]?["label"]?.GetValue<string>(),
@@ -1506,24 +1571,46 @@ public sealed class AiOrderStaffReviewEngine : ITransientDependency
         ["unresolved"] = true,
     };
 
+    // No catalogue candidate means there is nothing for staff to choose between, so the
+    // group opens as a ready-to-use ad-hoc product instead of an Unresolved blocker.
     private static JsonObject? BuildInitialAdHoc(JsonObject? proposal, string groupId)
     {
         if (proposal is null)
             return null;
+        var displayName = proposal["normalizedDisplayName"]?.DeepClone() ??
+                          proposal["writtenName"]?.DeepClone();
+        var named = !string.IsNullOrWhiteSpace(displayName?.GetValue<string>());
         return new JsonObject
         {
             ["adHocProductId"] = StableId(groupId, "ad-hoc", 0),
-            ["displayName"] = proposal["normalizedDisplayName"]?.DeepClone() ??
-                              proposal["writtenName"]?.DeepClone(),
+            ["displayName"] = displayName,
             ["brand"] = proposal["brand"]?.DeepClone(),
             ["supplierName"] = proposal["supplierName"]?.DeepClone(),
             ["supplierCode"] = proposal["supplierCode"]?.DeepClone(),
             ["supplySource"] = proposal["supplySource"]?.DeepClone(),
             ["inventoryBehavior"] = "NotTracked",
-            ["confirmed"] = false,
-            ["acknowledgedOrderOnly"] = false,
-            ["reason"] = null,
+            ["confirmed"] = named,
+            ["acknowledgedOrderOnly"] = named,
+            ["reason"] = named ? AutoAdHocReason : null,
         };
+    }
+
+    private static bool IsAutoAdHoc(JsonObject? adHoc) =>
+        adHoc?["confirmed"]?.GetValue<bool>() == true &&
+        !string.IsNullOrWhiteSpace(adHoc["displayName"]?.GetValue<string>());
+
+    // A contact detail the source never carried is filled with a placeholder rather than
+    // left blank, so Formal Order creation is never blocked on it.
+    private static JsonObject WithContactFallback(JsonObject field, string fallback)
+    {
+        if (!string.IsNullOrWhiteSpace(field["staffValue"]?.GetValue<string>()))
+            return field;
+        field["staffValue"] = fallback;
+        field["decision"] = "Accepted";
+        field["unresolved"] = false;
+        field["cleared"] = false;
+        field["reason"] = ContactFallbackReason;
+        return field;
     }
 
     private static JsonObject CloneIssueWithOpenResolution(JsonObject issue)

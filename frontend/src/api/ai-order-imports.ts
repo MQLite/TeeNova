@@ -233,6 +233,9 @@ export interface AiOrderReviewSizeRow {
   quantity: AiOrderReviewField<number>
   confirmedProductVariantId?: string | null
   compatibleVariants: AiOrderCompatibleVariant[]
+  /** Set by the server when the selected catalogue product has no variant for this size. */
+  adHocFallback?: boolean
+  adHocFallbackReason?: string | null
   variantCandidatesByProduct?: Array<{
     productId: string
     variants: AiOrderCompatibleVariant[]
@@ -313,6 +316,8 @@ export interface AiOrderMaterializationPreflight {
       size: string
       quantity: number
       catalogueVariantId?: string | null
+      /** The group is catalogue-backed but this size has no live variant. */
+      adHocFallback: boolean
     }>
   }>
   catalogueStatus: 'Current' | 'Stale'
@@ -593,6 +598,44 @@ export function materializeAiOrderImport(
   input: MaterializeAiOrderImportInput,
 ): Promise<AiOrderMaterializationResult> {
   return adminApiClient.post(`/api/admin/ai-order-imports/${id}/materialize`, input)
+}
+
+const BLOCKER_DETAIL_LINE = /^([A-Z0-9_]+): (.+?)(?: \((\/[^)]*)\))?$/
+
+// The server reports why materialization was refused as structured exception data
+// when it survives serialization, and always as one detail line per blocker.
+export function readMaterializationBlockers(
+  reason: unknown,
+): AiOrderMaterializationBlocker[] {
+  if (!(reason instanceof ApiError)) return []
+  const error = (
+    reason.details as
+      | { error?: { details?: string; data?: Record<string, unknown> } }
+      | undefined
+  )?.error
+  const structured = error?.data?.Blockers ?? error?.data?.blockers
+  if (Array.isArray(structured)) {
+    const blockers = structured.flatMap((entry) => {
+      const blocker = entry as Partial<AiOrderMaterializationBlocker> | null
+      if (!blocker?.message) return []
+      return [{
+        code: blocker.code ?? '',
+        message: blocker.message,
+        path: blocker.path ?? null,
+      }]
+    })
+    if (blockers.length > 0) return blockers
+  }
+  return (error?.details ?? '')
+    .split('\n')
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .map((line) => {
+      const match = BLOCKER_DETAIL_LINE.exec(line)
+      return match
+        ? { code: match[1], message: match[2], path: match[3] ?? null }
+        : { code: '', message: line }
+    })
 }
 
 export async function searchAiOrderCatalogue(

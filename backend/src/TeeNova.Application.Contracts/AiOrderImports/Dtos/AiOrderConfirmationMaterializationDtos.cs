@@ -49,6 +49,12 @@ public sealed class AiOrderMaterializationRowDto
     public int Quantity { get; set; }
     public Guid? CatalogueVariantId { get; set; }
     public string? AdHocUnitPrice { get; set; }
+
+    /// <summary>
+    /// True when the group is catalogue-backed but this size has no live variant, so the
+    /// row is created as an ad-hoc line instead of blocking the group.
+    /// </summary>
+    public bool AdHocFallback { get; set; }
 }
 
 public sealed class AiOrderMaterializationPreflightDto

@@ -493,7 +493,6 @@ public sealed class AiOrderExtractionNormalizer :
             }
             else
             {
-                AddProductUnresolved(issues, groupIndex, productName!, first);
                 var proposalId = first["proposalIdentity"]!.GetValue<string>()[..32];
                 adHoc = new JsonObject
                 {
@@ -507,13 +506,15 @@ public sealed class AiOrderExtractionNormalizer :
                     ["inventoryBehavior"] = "NotTracked",
                     ["confirmed"] = false,
                 };
+                // Nothing in the catalogue matches, so there is no choice for staff to
+                // make: the group is created as an ad-hoc product and only advertised.
                 AiOrderFinancialValidator.AddIssue(
                     issues,
-                    "AD_HOC_PRODUCT_CONFIRMATION_REQUIRED",
+                    "AD_HOC_PRODUCT_CREATED",
                     "NeedsConfirmation",
-                    true,
+                    false,
                     [$"/productGroups/{groupIndex}/productResolution/adHocProposal"],
-                    "No reliable catalogue match exists; confirm the ad-hoc product proposal.",
+                    "No catalogue product matched; this group was created as an ad-hoc product.",
                     [productName!],
                     EvidenceRefs(first["writtenProductDescription"] as JsonObject));
             }

@@ -254,6 +254,101 @@ public sealed class AiOrderConfirmationMaterializationTests
         Assert.Equal(20m, transaction.Amount);
     }
 
+    [Fact]
+    public void Deposit_evidence_needs_no_timestamp_or_explicit_method()
+    {
+        var blockers = ValidateDepositEvidence(
+            new AiOrderDepositEvidenceInput
+            {
+                Reference = "Counter receipt",
+                AcknowledgedByAdmin = true,
+            },
+            deposit: 20m);
+
+        Assert.Empty(blockers);
+    }
+
+    [Fact]
+    public void Deposit_evidence_still_needs_a_reference_and_acknowledgement()
+    {
+        var blockers = ValidateDepositEvidence(
+            new AiOrderDepositEvidenceInput(),
+            deposit: 20m);
+
+        Assert.Contains(blockers, x => x.Code == "PAYMENT_REFERENCE_REQUIRED");
+        Assert.Contains(blockers, x => x.Code == "PAYMENT_ACKNOWLEDGEMENT_REQUIRED");
+    }
+
+    [Fact]
+    public void Online_deposit_method_is_still_refused()
+    {
+        var blockers = ValidateDepositEvidence(
+            new AiOrderDepositEvidenceInput
+            {
+                PaymentMethod = ManualPaymentMethod.Online,
+                Reference = "Session",
+                AcknowledgedByAdmin = true,
+            },
+            deposit: 20m);
+
+        Assert.Contains(blockers, x => x.Code == "PAYMENT_METHOD_REQUIRED_FOR_DEPOSIT");
+    }
+
+    [Fact]
+    public void Unpriced_ad_hoc_lines_do_not_block_the_written_total()
+    {
+        var blockers = ValidatePricingDecision(
+            new AiOrderPricingDecisionInput { Mode = "UseWrittenTotal" },
+            written: 260m,
+            calculated: 0m,
+            deposit: 0m);
+
+        Assert.Empty(blockers);
+    }
+
+    [Fact]
+    public void A_formal_total_must_still_be_positive_and_cover_the_deposit()
+    {
+        var zeroTotal = ValidatePricingDecision(
+            new AiOrderPricingDecisionInput { Mode = "UseCalculatedTotal" },
+            written: 260m,
+            calculated: 0m,
+            deposit: 0m);
+        var belowDeposit = ValidatePricingDecision(
+            new AiOrderPricingDecisionInput { Mode = "UseWrittenTotal" },
+            written: 10m,
+            calculated: 0m,
+            deposit: 20m);
+
+        Assert.Contains(zeroTotal, x => x.Code == "ORDER_TOTAL_NOT_POSITIVE");
+        Assert.Contains(belowDeposit, x => x.Code == "TOTAL_BELOW_DEPOSIT");
+    }
+
+    private static List<AiOrderMaterializationBlockerDto> ValidateDepositEvidence(
+        AiOrderDepositEvidenceInput? evidence,
+        decimal deposit)
+    {
+        var blockers = new List<AiOrderMaterializationBlockerDto>();
+        Invoke("ValidateDepositEvidence", [evidence, deposit, blockers]);
+        return blockers;
+    }
+
+    private static List<AiOrderMaterializationBlockerDto> ValidatePricingDecision(
+        AiOrderPricingDecisionInput input,
+        decimal written,
+        decimal calculated,
+        decimal deposit)
+    {
+        var blockers = new List<AiOrderMaterializationBlockerDto>();
+        Invoke("ValidatePricingDecision", [input, written, calculated, deposit, blockers]);
+        return blockers;
+    }
+
+    private static void Invoke(string name, object?[] arguments) =>
+        typeof(AiOrderConfirmationMaterializationService)
+            .GetMethod(name, BindingFlags.Static | BindingFlags.NonPublic)!
+            .Invoke(null, arguments);
+
     private static AiOrderImport DraftImport()
     {
         var import = new AiOrderImport(

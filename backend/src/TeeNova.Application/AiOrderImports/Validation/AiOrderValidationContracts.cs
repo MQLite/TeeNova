@@ -28,6 +28,8 @@ public static class AiOrderValidationIssueCodes
         "PRODUCT_MATCH_CONFIRMATION_REQUIRED";
     public const string AdHocProductConfirmationRequired =
         "AD_HOC_PRODUCT_CONFIRMATION_REQUIRED";
+    public const string AdHocProductCreated = "AD_HOC_PRODUCT_CREATED";
+    public const string RowFallsBackToAdHoc = "ROW_FALLS_BACK_TO_AD_HOC";
     public const string ColourAmbiguous = "COLOUR_AMBIGUOUS";
     public const string ColourCustom = "COLOUR_CUSTOM";
     public const string ColourNotApplicableConfirmationRequired =
@@ -69,6 +71,13 @@ public sealed class AiOrderValidationOptions
     public const string SectionName = "AiOrderValidation";
 
     public decimal RequiredFieldConfidenceThreshold { get; set; } = 0.75m;
+
+    // Contact details the source document does not carry are filled with these
+    // placeholders so an import is never blocked on a detail Admin can fix later.
+    public string FallbackCustomerName { get; set; } = "Internal";
+    public string FallbackCustomerPhone { get; set; } = "Internal";
+    public string FallbackCustomerEmail { get; set; } = "yituoxx@gmail.com";
+
     public Dictionary<string, string> ColourAliases { get; set; } =
         new(StringComparer.OrdinalIgnoreCase)
         {
@@ -95,6 +104,14 @@ public sealed class AiOrderValidationOptionsValidator :
         if (options.RequiredFieldConfidenceThreshold is < 0 or > 1)
             return ValidateOptionsResult.Fail(
                 "AiOrderValidation:RequiredFieldConfidenceThreshold must be between 0 and 1.");
+        if (string.IsNullOrWhiteSpace(options.FallbackCustomerName) ||
+            string.IsNullOrWhiteSpace(options.FallbackCustomerPhone))
+            return ValidateOptionsResult.Fail(
+                "AiOrderValidation fallback customer name and phone must not be empty.");
+        if (string.IsNullOrWhiteSpace(options.FallbackCustomerEmail) ||
+            !options.FallbackCustomerEmail.Contains('@', StringComparison.Ordinal))
+            return ValidateOptionsResult.Fail(
+                "AiOrderValidation:FallbackCustomerEmail must be an email address.");
         if (options.ColourAliases.Any(x =>
                 string.IsNullOrWhiteSpace(x.Key) ||
                 string.IsNullOrWhiteSpace(x.Value)) ||

@@ -138,6 +138,108 @@ public sealed class AiOrderStaffReviewTests
     }
 
     [Fact]
+    public void Unmatched_product_opens_as_a_confirmed_ad_hoc_group()
+    {
+        var initial = Initial(withCandidate: false);
+        var selection = initial["productGroups"]![0]!["productSelection"]!;
+
+        Assert.Equal("AdHoc", selection["mode"]!.GetValue<string>());
+        Assert.True(selection["adHocProduct"]!["confirmed"]!.GetValue<bool>());
+        Assert.True(selection["adHocProduct"]!["acknowledgedOrderOnly"]!.GetValue<bool>());
+        Assert.Equal(
+            "Custom Pullover",
+            selection["adHocProduct"]!["displayName"]!.GetValue<string>());
+    }
+
+    [Fact]
+    public void Missing_contact_details_fall_back_to_placeholders()
+    {
+        var initial = Initial();
+        var customer = initial["customer"]!;
+
+        Assert.Equal("Internal", customer["name"]!["staffValue"]!.GetValue<string>());
+        Assert.Equal("Internal", customer["phone"]!["staffValue"]!.GetValue<string>());
+        Assert.Equal(
+            "yituoxx@gmail.com",
+            customer["email"]!["staffValue"]!.GetValue<string>());
+        Assert.False(customer["name"]!["unresolved"]!.GetValue<bool>());
+        // Unimportant details stay blank.
+        Assert.Null(customer["organisation"]!["staffValue"]);
+    }
+
+    [Fact]
+    public void Extracted_contact_details_are_never_overwritten()
+    {
+        var validation = Validation(withCandidate: true);
+        validation["customer"]!["email"] = Evidence("aroha@example.com");
+
+        var initial = _engine.BuildInitialDocument(
+            ImportId,
+            2,
+            2,
+            ValidationId,
+            new string('a', 64),
+            validation);
+
+        Assert.Equal(
+            "aroha@example.com",
+            initial["customer"]!["email"]!["staffValue"]!.GetValue<string>());
+    }
+
+    [Fact]
+    public void Size_without_a_catalogue_variant_becomes_an_ad_hoc_row_instead_of_a_blocker()
+    {
+        var previous = Initial();
+        var input = ValidCatalogueInput(previous);
+        input.ProductGroups[0].SizeQuantityRows[0].Size = Controlled("Catalogue", "5XL", "Accepted");
+        input.ProductGroups[0].SizeQuantityRows[0].ConfirmedProductVariantId = null;
+
+        var result = Build(previous, input);
+        var row = result.Document["productGroups"]![0]!["sizeQuantityRows"]![0]!;
+
+        Assert.True(result.ReadyToConfirm);
+        Assert.True(row["adHocFallback"]!.GetValue<bool>());
+        Assert.Null(row["confirmedProductVariantId"]);
+        Assert.DoesNotContain(
+            result.Document["issues"]!.AsArray().OfType<JsonObject>(),
+            x => x["code"]!.GetValue<string>() == "VARIANT_NOT_FOUND");
+        Assert.Contains(
+            result.Document["issues"]!.AsArray().OfType<JsonObject>(),
+            x => x["code"]!.GetValue<string>() == "ROW_FALLS_BACK_TO_AD_HOC" &&
+                 x["severity"]!.GetValue<string>() == "Warning");
+    }
+
+    [Fact]
+    public void Matched_sizes_keep_their_catalogue_variant_when_a_sibling_row_falls_back()
+    {
+        var previous = Initial();
+        var input = ValidCatalogueInput(previous);
+        input.ProductGroups[0].SizeQuantityRows =
+        [
+            .. input.ProductGroups[0].SizeQuantityRows,
+            new AiOrderReviewSizeRowInput
+            {
+                RowId = "row-oversize",
+                Size = Controlled("Catalogue", "5XL", "Accepted"),
+                Quantity = 1,
+                QuantityDecision = "Accepted",
+            },
+        ];
+
+        var result = Build(previous, input);
+        var rows = result.Document["productGroups"]![0]!["sizeQuantityRows"]!.AsArray();
+        var matched = rows.OfType<JsonObject>().Single(
+            x => x["size"]!["staffValue"]!["label"]!.GetValue<string>() == "M");
+        var fallback = rows.OfType<JsonObject>().Single(
+            x => x["size"]!["staffValue"]!["label"]!.GetValue<string>() == "5XL");
+
+        Assert.True(result.ReadyToConfirm);
+        Assert.Equal(VariantM, matched["confirmedProductVariantId"]!.GetValue<Guid>());
+        Assert.False(matched["adHocFallback"]!.GetValue<bool>());
+        Assert.True(fallback["adHocFallback"]!.GetValue<bool>());
+    }
+
+    [Fact]
     public void Explicit_zero_deposit_is_present_and_creates_no_blocker()
     {
         var previous = Initial();
@@ -310,41 +412,50 @@ public sealed class AiOrderStaffReviewTests
         Assert.DoesNotContain("sku", adHoc.ToJsonString(), StringComparison.OrdinalIgnoreCase);
     }
 
-    [Theory]
-    [InlineData(false, true, "reason")]
-    [InlineData(true, false, "reason")]
-    [InlineData(true, true, null)]
-    public void Ad_hoc_confirmation_requires_name_acknowledgement_and_reason(
-        bool hasName,
-        bool acknowledged,
-        string? reason)
+    [Fact]
+    public void Ad_hoc_confirmation_requires_only_a_display_name()
     {
         var previous = Initial(withCandidate: false);
-        var input = ValidAdHocInput(previous);
-        input.ProductGroups[0].ProductSelection.AdHocProduct!.DisplayName =
-            hasName ? "Custom Pullover" : " ";
-        input.ProductGroups[0].ProductSelection.AdHocProduct!.AcknowledgedOrderOnly =
-            acknowledged;
-        input.ProductGroups[0].ProductSelection.AdHocProduct!.Reason = reason;
+        var unnamed = ValidAdHocInput(previous);
+        unnamed.ProductGroups[0].ProductSelection.AdHocProduct!.DisplayName = " ";
 
-        Assert.Throws<BusinessException>(() => Build(previous, input, []));
+        Assert.Throws<BusinessException>(() => Build(previous, unnamed, []));
+
+        var bare = ValidAdHocInput(previous);
+        bare.ProductGroups[0].ProductSelection.AdHocProduct!.AcknowledgedOrderOnly = false;
+        bare.ProductGroups[0].ProductSelection.AdHocProduct!.Reason = null;
+
+        var result = Build(previous, bare, []);
+        var adHoc = result.Document["productGroups"]![0]!["productSelection"]!["adHocProduct"]!;
+
+        Assert.True(result.ReadyToConfirm);
+        Assert.True(adHoc["acknowledgedOrderOnly"]!.GetValue<bool>());
+        Assert.False(string.IsNullOrWhiteSpace(adHoc["reason"]!.GetValue<string>()));
     }
 
     [Fact]
-    public void Custom_colour_and_size_require_explicit_reason()
+    public void Custom_colour_and_size_need_no_reason_for_an_ad_hoc_product()
     {
         var previous = Initial(withCandidate: false);
         var input = ValidAdHocInput(previous);
         input.ProductGroups[0].Colour.Reason = null;
-
-        var colourError = Assert.Throws<BusinessException>(() => Build(previous, input, []));
-
-        input = ValidAdHocInput(previous);
         input.ProductGroups[0].SizeQuantityRows[0].Size.Reason = null;
-        var sizeError = Assert.Throws<BusinessException>(() => Build(previous, input, []));
 
-        Assert.Equal(AiOrderImportErrorCodes.ReviewReasonRequired, colourError.Code);
-        Assert.Equal(AiOrderImportErrorCodes.ReviewReasonRequired, sizeError.Code);
+        var result = Build(previous, input, []);
+
+        Assert.True(result.ReadyToConfirm);
+    }
+
+    [Fact]
+    public void Corrected_catalogue_colour_still_requires_an_explicit_reason()
+    {
+        var previous = Initial();
+        var input = ValidCatalogueInput(previous);
+        input.ProductGroups[0].Colour = Controlled("Named", "Charcoal", "Corrected");
+
+        var error = Assert.Throws<BusinessException>(() => Build(previous, input));
+
+        Assert.Equal(AiOrderImportErrorCodes.ReviewReasonRequired, error.Code);
     }
 
     [Fact]

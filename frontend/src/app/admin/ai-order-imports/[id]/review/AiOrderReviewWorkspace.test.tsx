@@ -468,4 +468,136 @@ describe('AI Order Review workspace', () => {
     ).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Save Draft' })).toBeDisabled()
   })
+
+  it('lists ad-hoc lines without asking for a unit price', async () => {
+    const confirmed = reviewFixture()
+    confirmed.status = 'Confirmed'
+    confirmed.currentRevision = 3
+    confirmed.hasStaffRevision = true
+    confirmed.blockingIssueCount = 0
+    confirmed.issues = []
+    confirmed.customer.email = field('aroha@example.com')
+    confirmed.confirmationReadiness = {
+      readyToConfirm: true,
+      blockingIssueCount: 0,
+      catalogueSelectionsCurrent: true,
+      message: 'Immutable confirmed review',
+      confirmationOwnedBy: 'Jira 10207',
+      confirmOrderEnabled: false,
+    }
+    api.getAiOrderReview.mockResolvedValue(confirmed)
+    api.getAiOrderImport.mockResolvedValue({
+      ...intakeFixture(),
+      status: 'Confirmed',
+      currentRevision: 3,
+    })
+    api.getAiOrderMaterializationPreflight.mockResolvedValue({
+      importId: 'import-1',
+      confirmedRevision: 3,
+      confirmedCanonicalSha256: 'a'.repeat(64),
+      productGroups: [
+        {
+          groupId: 'group-a',
+          productSource: 'AdHoc',
+          productName: 'Custom Pullover',
+          rows: [
+            { rowId: 'row-1', colour: 'Fluoro Yellow', size: '2XL', quantity: 2, adHocFallback: false },
+          ],
+        },
+        {
+          groupId: 'group-b',
+          productSource: 'Catalogue',
+          productName: 'Classic Tee',
+          rows: [
+            { rowId: 'row-2', colour: 'Black', size: 'M', quantity: 5, adHocFallback: false },
+            { rowId: 'row-3', colour: 'Black', size: '5XL', quantity: 1, adHocFallback: true },
+          ],
+        },
+      ],
+      catalogueStatus: 'Current',
+      writtenOrderTotal: '260.00',
+      depositPaid: '0.00',
+      calculatedCatalogueTotal: null,
+      pricingStatus: 'DecisionRequired',
+      paymentEvidenceRequired: false,
+      proposedInitialOrderStatus: 'Pending',
+      blockers: [],
+      canMaterialize: false,
+      alreadyMaterialized: false,
+    })
+
+    render(<AiOrderReviewWorkspace importId="import-1" />)
+
+    expect(await screen.findByRole('heading', { name: 'Ad-hoc lines' })).toBeInTheDocument()
+    expect(screen.queryByLabelText(/Unit price/)).not.toBeInTheDocument()
+    expect(screen.getByText(/Custom Pullover · Fluoro Yellow \/ 2XL · Qty 2/)).toBeInTheDocument()
+    expect(screen.getByText(/no catalogue variant for this size/)).toBeInTheDocument()
+    // The catalogue-priced sibling row is not listed as ad-hoc.
+    expect(screen.queryByText(/Classic Tee · Black \/ M/)).not.toBeInTheDocument()
+    expect(screen.getByLabelText('Pricing treatment')).toHaveValue('UseWrittenTotal')
+  })
+
+  it('lists the server blockers when Formal Order creation is refused', async () => {
+    const confirmed = reviewFixture()
+    confirmed.status = 'Confirmed'
+    confirmed.currentRevision = 3
+    confirmed.hasStaffRevision = true
+    confirmed.blockingIssueCount = 0
+    confirmed.issues = []
+    confirmed.customer.email = field('aroha@example.com')
+    confirmed.confirmationReadiness = {
+      readyToConfirm: true,
+      blockingIssueCount: 0,
+      catalogueSelectionsCurrent: true,
+      message: 'Immutable confirmed review',
+      confirmationOwnedBy: 'Jira 10207',
+      confirmOrderEnabled: false,
+    }
+    api.getAiOrderReview.mockResolvedValue(confirmed)
+    api.getAiOrderImport.mockResolvedValue({
+      ...intakeFixture(),
+      status: 'Confirmed',
+      currentRevision: 3,
+    })
+    api.getAiOrderMaterializationPreflight.mockResolvedValue({
+      importId: 'import-1',
+      confirmedRevision: 3,
+      confirmedCanonicalSha256: 'a'.repeat(64),
+      productGroups: [],
+      catalogueStatus: 'Current',
+      writtenOrderTotal: '100.00',
+      depositPaid: '0.00',
+      calculatedCatalogueTotal: null,
+      pricingStatus: 'DecisionRequired',
+      paymentEvidenceRequired: false,
+      proposedInitialOrderStatus: 'Pending',
+      blockers: [],
+      canMaterialize: false,
+      alreadyMaterialized: false,
+    })
+    api.materializeAiOrderImport.mockRejectedValue(
+      new ApiError(403, 'Formal Order creation is blocked until all operational prerequisites are complete.', {
+        error: {
+          code: 'TeeNova:AiOrderImport:MaterializationBlocked',
+          message: 'Formal Order creation is blocked until all operational prerequisites are complete.',
+          details:
+            'CALCULATED_TOTAL_NOT_POSITIVE: The calculated materialization total must be greater than zero.\n' +
+            'CUSTOMER_EMAIL_REQUIRED_FOR_ORDER: A valid customer email is required. (/customer/email)',
+        },
+      }),
+    )
+    vi.spyOn(window, 'confirm').mockReturnValue(true)
+    const user = userEvent.setup()
+
+    render(<AiOrderReviewWorkspace importId="import-1" />)
+    await user.click(await screen.findByRole('button', { name: 'Create Formal Order' }))
+
+    const alert = await screen.findByRole('alert')
+    expect(within(alert).getByText('CALCULATED_TOTAL_NOT_POSITIVE')).toBeInTheDocument()
+    expect(
+      within(alert).getByText(/The calculated materialization total must be greater than zero\./),
+    ).toBeInTheDocument()
+    expect(within(alert).getByText('CUSTOMER_EMAIL_REQUIRED_FOR_ORDER')).toBeInTheDocument()
+    expect(within(alert).getByText(/\(\/customer\/email\)/)).toBeInTheDocument()
+  })
 })

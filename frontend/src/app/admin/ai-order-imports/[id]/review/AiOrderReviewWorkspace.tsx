@@ -14,6 +14,7 @@ import {
   getAiOrderMaterializationPreflight,
   getAiOrderReview,
   materializeAiOrderImport,
+  readMaterializationBlockers,
   saveAiOrderReview,
   searchAiOrderCatalogue,
   sourceContentUrl,
@@ -22,6 +23,7 @@ import {
   type AiOrderConfirmationReadiness,
   type AiOrderControlledValue,
   type AiOrderImport,
+  type AiOrderMaterializationBlocker,
   type AiOrderMaterializationPreflight,
   type AiOrderMaterializationResult,
   type AiOrderReview,
@@ -832,22 +834,23 @@ function MaterializationPanel({
     country: 'NZ',
     phone: review.customer.phone.staffValue ?? '',
   })
+  // Ad-hoc lines are unpriced, so a calculated total would understate the Order; the
+  // written total on the source document is the default source of truth.
   const [pricingMode, setPricingMode] =
     useState<'UseCalculatedTotal' | 'UseWrittenTotal' | 'RejectAndReturnToReview'>(
-      'UseCalculatedTotal',
+      'UseWrittenTotal',
     )
   const [pricingReason, setPricingReason] = useState('')
-  const [adHocPrices, setAdHocPrices] = useState<Record<string, string>>({})
   const [printSelections, setPrintSelections] = useState<
     Record<string, { printAreaId: string; printSizeId: string }>
   >({})
   const [paymentMethod, setPaymentMethod] =
-    useState<'Cash' | 'Eftpos' | 'BankTransfer' | 'Other'>('BankTransfer')
+    useState<'Cash' | 'Eftpos' | 'BankTransfer' | 'Other'>('Eftpos')
   const [paymentReference, setPaymentReference] = useState('')
-  const [receivedAt, setReceivedAt] = useState('')
   const [paymentAcknowledged, setPaymentAcknowledged] = useState(false)
   const [creating, setCreating] = useState(false)
   const [error, setError] = useState<string>()
+  const [errorBlockers, setErrorBlockers] = useState<AiOrderMaterializationBlocker[]>([])
   const operationKey = useRef<string | undefined>(undefined)
 
   async function createFormalOrder() {
@@ -856,13 +859,6 @@ function MaterializationPanel({
     )
     if (!accepted) return
     operationKey.current ??= crypto.randomUUID()
-    const adHocPricing = preflight.productGroups
-      .filter((group) => group.productSource === 'AdHoc')
-      .flatMap((group) => group.rows.map((row) => ({
-        groupId: group.groupId,
-        rowId: row.rowId,
-        unitPrice: adHocPrices[`${group.groupId}:${row.rowId}`] ?? '',
-      })))
     const cataloguePrinting = review.productGroups
       .filter((group) => group.productSelection.mode === 'Catalogue')
       .flatMap((group) => group.printing.map((print) => ({
@@ -883,13 +879,12 @@ function MaterializationPanel({
         mode: pricingMode,
         reason: pricingReason || null,
       },
-      adHocPricing,
+      adHocPricing: [],
       cataloguePrinting,
       depositEvidence: preflight.paymentEvidenceRequired
         ? {
             paymentMethod,
             reference: paymentReference,
-            receivedAt: receivedAt ? new Date(receivedAt).toISOString() : undefined,
             acknowledgedByAdmin: paymentAcknowledged,
           }
         : null,
@@ -897,10 +892,12 @@ function MaterializationPanel({
     }
     setCreating(true)
     setError(undefined)
+    setErrorBlockers([])
     try {
       onCreated(await materializeAiOrderImport(importId, input))
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : 'Formal Order creation failed.')
+      setErrorBlockers(readMaterializationBlockers(reason))
     } finally {
       setCreating(false)
     }
@@ -921,9 +918,12 @@ function MaterializationPanel({
     )
   }
 
+  // Ad-hoc lines carry no catalogue price: they are recorded at 0.00 and the written
+  // total carries the money, so they are shown for confirmation rather than priced here.
   const adHocRows = preflight.productGroups
-    .filter((group) => group.productSource === 'AdHoc')
-    .flatMap((group) => group.rows.map((row) => ({ group, row })))
+    .flatMap((group) => group.rows
+      .filter((row) => group.productSource === 'AdHoc' || row.adHocFallback)
+      .map((row) => ({ group, row })))
   const cataloguePrints = review.productGroups
     .filter((group) => group.productSelection.mode === 'Catalogue')
     .flatMap((group) => group.printing.map((print) => ({ group, print })))
@@ -979,7 +979,7 @@ function MaterializationPanel({
 
       {pricingMode === 'UseWrittenTotal' && (
         <label className="mt-3 block text-xs text-black/60">
-          Required pricing reason
+          Pricing reason (optional)
           <textarea aria-label="Written total reason" value={pricingReason} onChange={(event) => setPricingReason(event.target.value)} className={inputClass} rows={2} />
         </label>
       )}
@@ -1010,17 +1010,21 @@ function MaterializationPanel({
       )}
 
       {adHocRows.length > 0 && (
-        <div className="mt-4 space-y-2">
-          <h3 className="text-sm text-black" style={{ fontWeight: 520 }}>Ad-hoc pricing</h3>
-          {adHocRows.map(({ group, row }) => {
-            const key = `${group.groupId}:${row.rowId}`
-            return (
-              <label key={key} className="block text-xs text-black/60">
-                {group.productName} · {row.colour} / {row.size} · Qty {row.quantity} — unit price
-                <input aria-label={`Unit price for ${group.productName} ${row.size}`} inputMode="decimal" value={adHocPrices[key] ?? ''} onChange={(event) => setAdHocPrices((current) => ({ ...current, [key]: event.target.value }))} className={inputClass} />
-              </label>
-            )
-          })}
+        <div className="mt-4 rounded-xl border border-black/[0.08] p-3">
+          <h3 className="text-sm text-black" style={{ fontWeight: 520 }}>Ad-hoc lines</h3>
+          <p className="mt-1 text-xs text-black/45">
+            Recorded at 0.00 each. The Order total comes from the written total above.
+          </p>
+          <ul className="mt-2 space-y-1 text-xs text-black/60">
+            {adHocRows.map(({ group, row }) => (
+              <li key={`${group.groupId}:${row.rowId}`}>
+                {group.productName} · {row.colour} / {row.size} · Qty {row.quantity}
+                {row.adHocFallback && (
+                  <span className="text-black/45"> — no catalogue variant for this size</span>
+                )}
+              </li>
+            ))}
+          </ul>
         </div>
       )}
 
@@ -1050,19 +1054,15 @@ function MaterializationPanel({
           <label className="text-xs text-black/60">
             Manual payment method
             <select aria-label="Deposit payment method" value={paymentMethod} onChange={(event) => setPaymentMethod(event.target.value as typeof paymentMethod)} className={inputClass}>
+              <option value="Eftpos">Eftpos</option>
               <option value="BankTransfer">Bank transfer</option>
               <option value="Cash">Cash</option>
-              <option value="Eftpos">Eftpos</option>
               <option value="Other">Other</option>
             </select>
           </label>
           <label className="text-xs text-black/60">
             Reference
             <input aria-label="Deposit payment reference" value={paymentReference} onChange={(event) => setPaymentReference(event.target.value)} className={inputClass} />
-          </label>
-          <label className="text-xs text-black/60">
-            Received at
-            <input aria-label="Deposit received at" type="datetime-local" value={receivedAt} onChange={(event) => setReceivedAt(event.target.value)} className={inputClass} />
           </label>
           <label className="flex items-center gap-2 text-xs text-black/70">
             <input type="checkbox" checked={paymentAcknowledged} onChange={(event) => setPaymentAcknowledged(event.target.checked)} />
@@ -1084,7 +1084,23 @@ function MaterializationPanel({
         </div>
       )}
 
-      {error && <div role="alert" className="mt-4 rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-700">{error}</div>}
+      {error && (
+        <div role="alert" className="mt-4 rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-700">
+          {error}
+          {errorBlockers.length > 0 && (
+            <ul className="mt-2 space-y-1 text-xs">
+              {errorBlockers.map((blocker, index) => (
+                <li key={`${blocker.code}-${index}`}>
+                  {blocker.code && <span className="font-mono text-[10px] text-red-700/70">{blocker.code}</span>}
+                  {blocker.code && ' — '}
+                  {blocker.message}
+                  {blocker.path && <span className="text-red-700/70"> ({blocker.path})</span>}
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+      )}
       <p className="mt-4 text-xs text-black/50">
         No customer or Admin email, online payment session, inventory deduction, production job, or production PDF will be triggered.
       </p>
@@ -1600,7 +1616,13 @@ function ProductGroupCard({
                       )}
                     </td>
                     <td className="px-3 py-2 align-top">
-                      {group.productSelection.mode === 'Catalogue' ? (
+                      {group.productSelection.mode !== 'Catalogue' ? (
+                        <span className="text-xs text-black/45">Not applicable</span>
+                      ) : row.adHocFallback ? (
+                        <span className="text-xs text-amber-700">
+                          No catalogue variant · ad-hoc line
+                        </span>
+                      ) : (
                         <select
                           aria-label={`Variant row ${rowIndex + 1}`}
                           value={row.confirmedProductVariantId ?? ''}
@@ -1616,8 +1638,6 @@ function ProductGroupCard({
                             </option>
                           ))}
                         </select>
-                      ) : (
-                        <span className="text-xs text-black/45">Not applicable</span>
                       )}
                     </td>
                     <td className="px-3 py-2 align-top">

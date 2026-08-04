@@ -252,7 +252,23 @@ public sealed class AiOrderValidationTests
         Assert.Equal(
             "NotTracked",
             resolution["adHocProposal"]!["inventoryBehavior"]!.GetValue<string>());
-        Assert.Contains("AD_HOC_PRODUCT_CONFIRMATION_REQUIRED", IssueCodes(result.Document));
+        Assert.Contains("AD_HOC_PRODUCT_CREATED", IssueCodes(result.Document));
+        Assert.DoesNotContain("PRODUCT_UNRESOLVED", IssueCodes(result.Document));
+    }
+
+    [Fact]
+    public void Unmatched_product_does_not_block_the_review()
+    {
+        var result = Validate(
+            Source([Group("Kauri Workwear Pullover", "Fluoro Yellow", ("2XL", 2))],
+                "90.00",
+                "20.00"),
+            Catalogue());
+
+        var adHoc = result.Document["issues"]!.AsArray().OfType<JsonObject>().Single(
+            x => x["code"]!.GetValue<string>() == "AD_HOC_PRODUCT_CREATED");
+
+        Assert.Equal("Warning", adHoc["severity"]!.GetValue<string>());
     }
 
     [Theory]

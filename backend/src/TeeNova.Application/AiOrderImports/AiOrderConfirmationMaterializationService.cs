@@ -23,6 +23,11 @@ namespace TeeNova.AiOrderImports;
 [RemoteService(false)]
 public class AiOrderConfirmationMaterializationService : ApplicationService
 {
+    private const ManualPaymentMethod DefaultDepositPaymentMethod =
+        ManualPaymentMethod.Eftpos;
+    private const string DefaultWrittenTotalReason =
+        "The written source total was kept; ad-hoc lines carry no catalogue price.";
+
     private readonly IRepository<AiOrderImport, Guid> _imports;
     private readonly IRepository<AiOrderImportRevision, Guid> _revisions;
     private readonly IRepository<AiOrderReviewEvent, Guid> _reviewEvents;
@@ -197,12 +202,6 @@ public class AiOrderConfirmationMaterializationService : ApplicationService
             "Choose whether the formal Order uses the written total or the calculated total.",
             "/pricingDecision/mode");
 
-        foreach (var group in groups.Where(x => x.Mode == "AdHoc"))
-            foreach (var row in group.Rows)
-                Add(blockers, "AD_HOC_LINE_PRICE_REQUIRED",
-                    $"A staff-approved unit price is required for {group.Name}, size {row.Size}.",
-                    $"/adHocPricing/{group.GroupId}/{row.RowId}");
-
         var deposit = Money(root, "depositPaid");
         if (deposit > 0)
             Add(blockers, "PAYMENT_METHOD_REQUIRED_FOR_DEPOSIT",
@@ -213,6 +212,7 @@ public class AiOrderConfirmationMaterializationService : ApplicationService
         decimal? catalogueTotal = null;
         if (groups.All(x => x.Mode == "Catalogue") &&
             groups.All(x => x.Printing.Count == 0) &&
+            groups.SelectMany(x => x.Rows).All(x => !x.AdHocFallback) &&
             blockers.All(x => !x.Code.StartsWith("CATALOGUE_", StringComparison.Ordinal)))
         {
             try
@@ -337,8 +337,7 @@ public class AiOrderConfirmationMaterializationService : ApplicationService
         }
 
         var adHocTotal = groups
-            .Where(x => x.Mode == "AdHoc")
-            .SelectMany(x => x.Rows)
+            .SelectMany(AdHocRows)
             .Sum(x => adHocPrices.GetValueOrDefault((x.GroupId, x.RowId)) * x.Quantity);
         var calculatedTotal = (pricedCatalogue?.TotalAmount ?? 0m) + adHocTotal;
         ValidatePricingDecision(
@@ -406,7 +405,7 @@ public class AiOrderConfirmationMaterializationService : ApplicationService
         {
             if (group.Mode == "Catalogue")
             {
-                foreach (var row in group.Rows)
+                foreach (var row in group.Rows.Where(x => !x.AdHocFallback))
                 {
                     var priced = pricedItems[pricedIndex++];
                     order.AddItem(BuildCatalogueItem(
@@ -416,10 +415,15 @@ public class AiOrderConfirmationMaterializationService : ApplicationService
                         row.Colour,
                         row.Size));
                 }
-                continue;
             }
 
-            var adHoc = group.AdHoc!;
+            // A catalogue group contributes ad-hoc lines only for the sizes its product
+            // cannot supply; an ad-hoc group contributes all of its rows.
+            var adHocRows = AdHocRows(group);
+            if (adHocRows.Count == 0)
+                continue;
+
+            var adHoc = group.AdHoc ?? new ReviewAdHoc(group.Name, null, null, null, null);
             var snapshot = new OrderAdHocProductSnapshot(
                 GuidGenerator.Create(),
                 order.Id,
@@ -435,7 +439,7 @@ public class AiOrderConfirmationMaterializationService : ApplicationService
                     ? null
                     : JsonSerializer.Serialize(group.Printing));
             order.AddAdHocProductSnapshot(snapshot);
-            foreach (var row in group.Rows)
+            foreach (var row in adHocRows)
             {
                 order.AddItem(OrderItem.CreateAdHoc(
                     GuidGenerator.Create(),
@@ -445,7 +449,7 @@ public class AiOrderConfirmationMaterializationService : ApplicationService
                     row.Colour,
                     row.Size,
                     row.Quantity,
-                    adHocPrices[(group.GroupId, row.RowId)]));
+                    adHocPrices.GetValueOrDefault((group.GroupId, row.RowId))));
             }
         }
 
@@ -460,7 +464,9 @@ public class AiOrderConfirmationMaterializationService : ApplicationService
                 order.Id,
                 calculatedTotal,
                 writtenTotal,
-                Required(input.PricingDecision.Reason, 1000, "pricing reason"),
+                string.IsNullOrWhiteSpace(input.PricingDecision.Reason)
+                    ? DefaultWrittenTotalReason
+                    : Required(input.PricingDecision.Reason, 1000, "pricing reason"),
                 actor.ToString());
         }
 
@@ -468,9 +474,13 @@ public class AiOrderConfirmationMaterializationService : ApplicationService
         if (deposit > 0)
         {
             var evidence = input.DepositEvidence!;
+            // The deposit is historical; when its exact time was not recorded, the
+            // materialization time stands in for it.
+            var method = evidence.PaymentMethod ?? DefaultDepositPaymentMethod;
+            var receivedAt = evidence.ReceivedAt?.ToUniversalTime() ?? now;
             order.ApplyPayment(
                 deposit,
-                evidence.PaymentMethod!.Value,
+                method,
                 evidence.Reference!.Trim(),
                 $"Deposit evidenced from AI Order Import {import.Id}.",
                 now);
@@ -478,11 +488,11 @@ public class AiOrderConfirmationMaterializationService : ApplicationService
                 GuidGenerator.Create(),
                 order.Id,
                 deposit,
-                evidence.PaymentMethod.Value,
+                method,
                 evidence.Reference.Trim(),
                 "Historical deposit recorded during explicit AI import materialization.",
                 import.Id,
-                evidence.ReceivedAt!.Value.ToUniversalTime());
+                receivedAt);
         }
 
         await _orders.InsertAsync(order, autoSave: false, cancellationToken);
@@ -627,7 +637,8 @@ public class AiOrderConfirmationMaterializationService : ApplicationService
             }
             foreach (var row in group.Rows)
             {
-                if (product.Kind != TeeNova.Catalog.ProductKind.Garment)
+                if (product.Kind != TeeNova.Catalog.ProductKind.Garment ||
+                    row.AdHocFallback)
                     continue;
                 var variant = product.Variants.SingleOrDefault(x => x.Id == row.VariantId);
                 if (variant is null || !variant.IsAvailable ||
@@ -666,31 +677,31 @@ public class AiOrderConfirmationMaterializationService : ApplicationService
         }
     }
 
+    // Ad-hoc lines carry no catalogue price. An operator-supplied price is honoured, and
+    // anything left unpriced is recorded at 0.00 with the written total carrying the money.
     private static Dictionary<(string GroupId, string RowId), decimal> ParseAdHocPrices(
         IReadOnlyList<AiOrderAdHocPriceInput> inputs,
         IReadOnlyList<ReviewGroup> groups,
         ICollection<AiOrderMaterializationBlockerDto> blockers)
     {
         var expected = groups
-            .Where(x => x.Mode == "AdHoc")
-            .SelectMany(g => g.Rows.Select(r => (g.GroupId, r.RowId)))
+            .SelectMany(g => AdHocRows(g).Select(r => (g.GroupId, r.RowId)))
             .ToHashSet();
         var result = new Dictionary<(string, string), decimal>();
         foreach (var input in inputs)
         {
             var key = (input.GroupId.Trim(), input.RowId.Trim());
-            if (!expected.Contains(key) || result.ContainsKey(key) ||
+            if (string.IsNullOrWhiteSpace(input.UnitPrice) || !expected.Contains(key))
+                continue;
+            if (result.ContainsKey(key) ||
                 !TryCents(input.UnitPrice, out var amount) || amount < 0)
             {
-                Add(blockers, "AD_HOC_LINE_PRICE_REQUIRED",
-                    "Each ad-hoc row requires one exact, non-negative staff-approved unit price.");
+                Add(blockers, "AD_HOC_LINE_PRICE_INVALID",
+                    "An ad-hoc unit price must be one exact, non-negative amount.");
                 continue;
             }
             result[key] = amount;
         }
-        foreach (var key in expected.Where(x => !result.ContainsKey(x)))
-            Add(blockers, "AD_HOC_LINE_PRICE_REQUIRED",
-                $"Unit price is required for ad-hoc row {key.RowId}.");
         return result;
     }
 
@@ -733,12 +744,6 @@ public class AiOrderConfirmationMaterializationService : ApplicationService
         if (input.Mode is not ("UseCalculatedTotal" or "UseWrittenTotal"))
             Add(blockers, "WRITTEN_TOTAL_DECISION_REQUIRED",
                 "Choose UseCalculatedTotal or UseWrittenTotal.");
-        if (calculated <= 0)
-            Add(blockers, "CALCULATED_TOTAL_NOT_POSITIVE",
-                "The calculated materialization total must be greater than zero.");
-        if (input.Mode == "UseWrittenTotal" && string.IsNullOrWhiteSpace(input.Reason))
-            Add(blockers, "WRITTEN_TOTAL_REASON_REQUIRED",
-                "Using the written total requires an audit reason.");
         var final = input.Mode == "UseWrittenTotal" ? written : calculated;
         if (final <= 0)
             Add(blockers, "ORDER_TOTAL_NOT_POSITIVE",
@@ -763,22 +768,23 @@ public class AiOrderConfirmationMaterializationService : ApplicationService
                     "A zero deposit must not include payment evidence.");
             return;
         }
-        if (evidence?.PaymentMethod is null)
-            Add(blockers, "PAYMENT_METHOD_REQUIRED_FOR_DEPOSIT",
-                "A supported manual payment method is required.");
-        else if (evidence.PaymentMethod == ManualPaymentMethod.Online)
+        // An absent method means the operator accepted the default; only an explicitly
+        // online method is refused, because no provider session is created here.
+        if (evidence?.PaymentMethod == ManualPaymentMethod.Online)
             Add(blockers, "PAYMENT_METHOD_REQUIRED_FOR_DEPOSIT",
                 "Online provider sessions are not created during materialization.");
         if (string.IsNullOrWhiteSpace(evidence?.Reference))
             Add(blockers, "PAYMENT_REFERENCE_REQUIRED",
                 "A payment reference is required.");
-        if (evidence?.ReceivedAt is null)
-            Add(blockers, "PAYMENT_RECEIVED_AT_REQUIRED",
-                "The historical received timestamp is required.");
         if (evidence?.AcknowledgedByAdmin != true)
             Add(blockers, "PAYMENT_ACKNOWLEDGEMENT_REQUIRED",
                 "The materializing Admin must acknowledge the deposit evidence.");
     }
+
+    private static IReadOnlyList<ReviewRow> AdHocRows(ReviewGroup group) =>
+        group.Mode == "Catalogue"
+            ? group.Rows.Where(x => x.AdHocFallback).ToArray()
+            : group.Rows;
 
     private static List<OrderDraftItem> BuildCatalogueDraft(
         IReadOnlyList<ReviewGroup> groups,
@@ -801,7 +807,7 @@ public class AiOrderConfirmationMaterializationService : ApplicationService
                     p.DesignNote,
                     p.Notes);
             }).ToArray();
-            foreach (var row in group.Rows)
+            foreach (var row in group.Rows.Where(x => !x.AdHocFallback))
             {
                 draft.Add(new OrderDraftItem(
                     null,
@@ -885,6 +891,7 @@ public class AiOrderConfirmationMaterializationService : ApplicationService
                 var size = ControlledLabel(rowNode["size"]);
                 var quantity = rowNode["quantity"]?["staffValue"]?.GetValue<int?>();
                 var variant = rowNode["confirmedProductVariantId"]?.GetValue<Guid?>();
+                var adHocFallback = rowNode["adHocFallback"]?.GetValue<bool?>() == true;
                 if (string.IsNullOrWhiteSpace(rowId) || string.IsNullOrWhiteSpace(size) ||
                     string.IsNullOrWhiteSpace(colour) || quantity is null or <= 0)
                 {
@@ -892,7 +899,14 @@ public class AiOrderConfirmationMaterializationService : ApplicationService
                         "Product, Colour, Size, and Quantity must be valid.", path);
                     continue;
                 }
-                rows.Add(new ReviewRow(groupId, rowId, colour, size, quantity.Value, variant));
+                rows.Add(new ReviewRow(
+                    groupId,
+                    rowId,
+                    colour,
+                    size,
+                    quantity.Value,
+                    adHocFallback ? null : variant,
+                    adHocFallback));
             }
 
             var selected = selection["selectedCatalogueProduct"] as JsonObject;
@@ -1104,6 +1118,7 @@ public class AiOrderConfirmationMaterializationService : ApplicationService
             Size = x.Size,
             Quantity = x.Quantity,
             CatalogueVariantId = x.VariantId,
+            AdHocFallback = x.AdHocFallback,
         }).ToArray(),
     };
 
@@ -1213,8 +1228,18 @@ public class AiOrderConfirmationMaterializationService : ApplicationService
         string code,
         string message,
         IReadOnlyCollection<AiOrderMaterializationBlockerDto> blockers) =>
-        new BusinessException(code, message)
+        new BusinessException(code, message, BlockerDetails(blockers))
             .WithData("Blockers", blockers.ToArray());
+
+    // Exception data is not guaranteed to reach the client, so the same blockers
+    // are also rendered into the transmitted details text, one per line.
+    private static string BlockerDetails(
+        IReadOnlyCollection<AiOrderMaterializationBlockerDto> blockers) =>
+        string.Join(
+            "\n",
+            blockers.Select(x => string.IsNullOrWhiteSpace(x.Path)
+                ? $"{x.Code}: {x.Message}"
+                : $"{x.Code}: {x.Message} ({x.Path})"));
 
     private static void Add(
         ICollection<AiOrderMaterializationBlockerDto>? blockers,
@@ -1239,7 +1264,8 @@ public class AiOrderConfirmationMaterializationService : ApplicationService
         string Colour,
         string Size,
         int Quantity,
-        Guid? VariantId);
+        Guid? VariantId,
+        bool AdHocFallback);
 
     private sealed record ReviewPrint(
         string PrintId,
