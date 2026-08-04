@@ -379,7 +379,9 @@ export function AiOrderImportIntakeClient({ importId }: Props) {
       </section>
 
       <div className="flex flex-col-reverse gap-3 border-t border-black/[0.08] pt-5 sm:flex-row sm:justify-between">
-        <Link href="/admin/ai-order-imports" className="rounded-full border border-black/[0.14] px-5 py-2.5 text-center text-sm">
+        {/* sm:self-start stops the pill stretching to the height of the taller right-hand
+            column, which rounded-full would otherwise render as a circle. */}
+        <Link href="/admin/ai-order-imports" className="rounded-full border border-black/[0.14] px-5 py-2.5 text-center text-sm sm:self-start">
           Save and Exit
         </Link>
         <div className="w-full space-y-3 sm:w-auto sm:min-w-96">

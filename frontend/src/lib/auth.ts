@@ -17,7 +17,8 @@ export function getAdminAuthHeaders(): Record<string, string> {
   return { Authorization: `Bearer ${token}` }
 }
 
-// Decodes the JWT payload (server-side only) and returns the username from the `sub` claim.
+// Decodes the JWT payload (server-side only) and returns the username from the name claim.
+// Not `sub` — that carries the admin user id, which ABP's ICurrentUser.Id depends on.
 // Does not verify the signature — middleware already guards access.
 export function getAdminUsername(): string | null {
   const token = getAdminToken()
@@ -26,7 +27,10 @@ export function getAdminUsername(): string | null {
     const parts = token.split('.')
     if (parts.length !== 3) return null
     const payload = JSON.parse(Buffer.from(parts[1], 'base64').toString('utf8'))
-    return typeof payload.sub === 'string' ? payload.sub : null
+    const name =
+      payload.unique_name ??
+      payload['http://schemas.xmlsoap.org/ws/2005/05/identity/claims/name']
+    return typeof name === 'string' ? name : null
   } catch {
     return null
   }

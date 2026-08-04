@@ -1,10 +1,5 @@
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
-using SixLabors.ImageSharp;
-using SixLabors.ImageSharp.Formats.Jpeg;
-using SixLabors.ImageSharp.Formats.Png;
-using SixLabors.ImageSharp.Formats.Webp;
-using SixLabors.ImageSharp.Processing;
 using TeeNova.AiOrderImports.PrivateStorage;
 using Volo.Abp;
 using Volo.Abp.DependencyInjection;
@@ -82,6 +77,7 @@ public sealed class AiOrderRecognitionSourcePreparer : ITransientDependency
 
         var expected = snapshot.OrderBy(x => x.Sequence).ToArray();
         var prepared = new List<AiOrderRecognitionSource>(sources.Count);
+        var payloadBytes = 0L;
         for (var index = 0; index < sources.Count; index++)
         {
             var source = sources[index];
@@ -101,14 +97,30 @@ public sealed class AiOrderRecognitionSourcePreparer : ITransientDependency
                 descriptor.ByteSize,
                 _options.MaximumSourceBytes,
                 cancellationToken);
-            if (source.RotationDegrees != 0 && source.ContentType.StartsWith("image/", StringComparison.Ordinal))
-                bytes = await RotateAsync(bytes, source.ContentType, source.RotationDegrees, cancellationToken);
+            var contentType = source.ContentType;
+            if (AiOrderRecognitionImageCompressor.IsSupported(contentType))
+            {
+                // Rotation, downscale, and re-encode happen in one decode pass so the
+                // provider never receives more resolution than it can use.
+                var image = await AiOrderRecognitionImageCompressor.CompressAsync(
+                    bytes,
+                    contentType,
+                    source.RotationDegrees,
+                    ImageBudget(),
+                    cancellationToken);
+                bytes = image.Content;
+                contentType = image.ContentType;
+            }
+
+            payloadBytes += bytes.LongLength;
+            if (payloadBytes > _options.MaximumRequestPayloadBytes)
+                throw new BusinessException(AiOrderImportErrorCodes.RecognitionSourceLimitExceeded);
 
             prepared.Add(new AiOrderRecognitionSource(
                 source.Id,
                 source.Sequence,
                 $"source-{source.Sequence}-{source.Id:N}",
-                source.ContentType,
+                contentType,
                 bytes,
                 source.Sha256,
                 source.RotationDegrees));
@@ -117,34 +129,12 @@ public sealed class AiOrderRecognitionSourcePreparer : ITransientDependency
         return prepared;
     }
 
-    private static async Task<byte[]> RotateAsync(
-        byte[] bytes,
-        string contentType,
-        int rotation,
-        CancellationToken cancellationToken)
-    {
-        using var image = Image.Load(bytes);
-        image.Mutate(context => context.Rotate(rotation));
-        image.Metadata.ExifProfile = null;
-        image.Metadata.IccProfile = null;
-        image.Metadata.XmpProfile = null;
-        using var output = new MemoryStream();
-        switch (contentType)
-        {
-            case "image/jpeg":
-                await image.SaveAsync(output, new JpegEncoder { Quality = 92 }, cancellationToken);
-                break;
-            case "image/png":
-                await image.SaveAsync(output, new PngEncoder(), cancellationToken);
-                break;
-            case "image/webp":
-                await image.SaveAsync(output, new WebpEncoder { Quality = 92 }, cancellationToken);
-                break;
-            default:
-                throw new BusinessException(AiOrderImportErrorCodes.RecognitionSourceUnsupported);
-        }
-        return output.ToArray();
-    }
+    private AiOrderRecognitionImageBudget ImageBudget() =>
+        new(
+            _options.MaximumImageEdgePixels,
+            _options.MaximumImageBytes,
+            _options.ImageQuality,
+            _options.MinimumImageQuality);
 
     private static async Task<byte[]> ReadBoundedAsync(
         Stream input,

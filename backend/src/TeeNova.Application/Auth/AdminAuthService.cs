@@ -66,7 +66,11 @@ public class AdminAuthService : IAdminAuthService, ITransientDependency
             audience: cfg.Audience,
             claims:
             [
-                new Claim(JwtRegisteredClaimNames.Sub, user.Username),
+                // "sub" must carry the user id, not the username: the JWT bearer handler
+                // remaps inbound "sub" onto ClaimTypes.NameIdentifier, and ABP's
+                // ICurrentUser.Id reads the FIRST NameIdentifier claim. A username there
+                // fails Guid.TryParse and leaves CurrentUser.Id null.
+                new Claim(JwtRegisteredClaimNames.Sub, user.Id.ToString()),
                 new Claim(JwtRegisteredClaimNames.Jti, Guid.NewGuid().ToString()),
                 new Claim(ClaimTypes.NameIdentifier,     user.Id.ToString()),
                 new Claim(ClaimTypes.Name,             user.Username),

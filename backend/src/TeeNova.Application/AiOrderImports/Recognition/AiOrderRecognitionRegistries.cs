@@ -82,6 +82,7 @@ public sealed class AiOrderRecognitionModelRegistry :
             model.CachedInputUsdPerMillionTokens,
             model.OutputUsdPerMillionTokens,
             model.EstimatedInputTokensPerMegabyte,
+            model.EstimatedInputTokensPerImage,
             model.EstimatedOutputTokens);
     }
 
@@ -97,11 +98,21 @@ public sealed class AiOrderRecognitionCostEstimator :
         AiOrderRecognitionModelSelection selection,
         IReadOnlyCollection<AiOrderRecognitionSourceDescriptor> sources)
     {
-        var bytes = sources.Sum(x => x.ByteSize);
+        // Images are downscaled to a fixed long edge before they are sent, so their token
+        // cost is per-image and independent of the upload size — a 15 MB camera capture and
+        // a 1 MB one arrive at the provider the same size. Only PDFs, which pass through
+        // uncompressed, still scale with bytes.
+        var imageCount = sources.Count(x =>
+            AiOrderRecognitionImageCompressor.IsSupported(x.ContentType));
+        var uncompressedBytes = sources
+            .Where(x => !AiOrderRecognitionImageCompressor.IsSupported(x.ContentType))
+            .Sum(x => x.ByteSize);
         var estimatedInput = Math.Max(
             1,
+            checked(imageCount * selection.EstimatedInputTokensPerImage) +
             (long)Math.Ceiling(
-                bytes / (1024m * 1024m) * selection.EstimatedInputTokensPerMegabyte));
+                uncompressedBytes / (1024m * 1024m) *
+                selection.EstimatedInputTokensPerMegabyte));
         var inputCost = estimatedInput / 1_000_000m * selection.InputUsdPerMillionTokens;
         var outputCost =
             selection.EstimatedOutputTokens / 1_000_000m * selection.OutputUsdPerMillionTokens;

@@ -60,13 +60,20 @@ public sealed class AiOrderRecognitionProviderException : Exception
     public string? ProviderRequestId { get; }
     public bool IsRetryable { get; }
 
+    /// <summary>
+    /// Bounded provider-supplied error detail for server-side logs only. Never surfaced to
+    /// an admin or customer response, which carry <see cref="SafeCode"/> alone.
+    /// </summary>
+    public string? Diagnostic { get; }
+
     public AiOrderRecognitionProviderException(
         string safeCode,
         bool isRetryable,
         HttpStatusCode? statusCode = null,
         TimeSpan? retryAfter = null,
         string? providerRequestId = null,
-        Exception? innerException = null)
+        Exception? innerException = null,
+        string? diagnostic = null)
         : base(safeCode, innerException)
     {
         SafeCode = safeCode;
@@ -74,6 +81,7 @@ public sealed class AiOrderRecognitionProviderException : Exception
         StatusCode = statusCode;
         RetryAfter = retryAfter;
         ProviderRequestId = providerRequestId;
+        Diagnostic = diagnostic;
     }
 }
 
@@ -83,7 +91,14 @@ public sealed record AiOrderStructuralValidationResult(
 
 public interface IAiOrderRecognitionPromptBuilder
 {
-    string Build(string currencyContext, string localeContext);
+    /// <summary>
+    /// The prompt must carry the source inventory: the model cannot cite a sourceDocumentId
+    /// it was never shown, and the structural validator rejects any it did not issue.
+    /// </summary>
+    string Build(
+        string currencyContext,
+        string localeContext,
+        IReadOnlyCollection<AiOrderRecognitionSourceDescriptor> sources);
 }
 
 public interface IAiOrderRecognitionStructuralValidator
@@ -146,6 +161,7 @@ public sealed record AiOrderRecognitionModelSelection(
     decimal CachedInputUsdPerMillionTokens,
     decimal OutputUsdPerMillionTokens,
     long EstimatedInputTokensPerMegabyte,
+    long EstimatedInputTokensPerImage,
     long EstimatedOutputTokens);
 
 public sealed record AiOrderRecognitionProviderOption(

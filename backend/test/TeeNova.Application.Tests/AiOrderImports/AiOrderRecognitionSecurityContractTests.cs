@@ -10,6 +10,38 @@ namespace TeeNova.AiOrderImports;
 public sealed class AiOrderRecognitionSecurityContractTests
 {
     [Fact]
+    public void Each_recognition_provider_is_registered_exactly_once()
+    {
+        // The providers are registered explicitly in TeeNovaApplicationModule. ABP exposes
+        // interfaces whose name matches a class-name suffix, so ITransientDependency on one
+        // of these would add a SECOND IAiOrderRecognitionProvider registration and make
+        // AiOrderRecognitionProviderRegistry's ToDictionary throw on a duplicate ProviderId.
+        var providers = typeof(IAiOrderRecognitionProvider).Assembly
+            .GetTypes()
+            .Where(type => typeof(IAiOrderRecognitionProvider).IsAssignableFrom(type) &&
+                           !type.IsInterface &&
+                           !type.IsAbstract)
+            .ToArray();
+
+        Assert.NotEmpty(providers);
+        Assert.DoesNotContain(
+            providers,
+            type => typeof(Volo.Abp.DependencyInjection.ITransientDependency)
+                        .IsAssignableFrom(type) ||
+                    typeof(Volo.Abp.DependencyInjection.IScopedDependency)
+                        .IsAssignableFrom(type) ||
+                    typeof(Volo.Abp.DependencyInjection.ISingletonDependency)
+                        .IsAssignableFrom(type));
+
+        var ids = providers
+            .Select(type => ((IAiOrderRecognitionProvider)
+                System.Runtime.CompilerServices.RuntimeHelpers.GetUninitializedObject(type))
+                    .ProviderId)
+            .ToArray();
+        Assert.Equal(ids.Length, ids.Distinct(StringComparer.OrdinalIgnoreCase).Count());
+    }
+
+    [Fact]
     public void Recognition_controller_and_application_service_are_admin_only()
     {
         Assert.NotNull(typeof(AiOrderImportsController).GetCustomAttribute<AuthorizeAttribute>());

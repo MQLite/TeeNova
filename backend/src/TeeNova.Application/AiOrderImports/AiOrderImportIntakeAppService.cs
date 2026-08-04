@@ -21,6 +21,7 @@ using Volo.Abp;
 using Volo.Abp.Application.Services;
 using Volo.Abp.Domain.Repositories;
 using Volo.Abp.Uow;
+using Volo.Abp.Validation;
 
 namespace TeeNova.AiOrderImports;
 
@@ -192,6 +193,11 @@ public class AiOrderImportIntakeAppService : ApplicationService
     }
 
     [UnitOfWork(IsDisabled = true)]
+    // ABP's validation interceptor walks every non-primitive argument with DataAnnotations,
+    // reading each property via TypeDescriptor. On a request stream that means touching
+    // Stream.ReadTimeout, which throws "Timeouts are not supported on this stream" before
+    // the upload ever begins. Every argument here is validated explicitly below instead.
+    [DisableValidation]
     public virtual async Task<AiOrderSourceUploadResultDto> UploadAsync(
         Guid importId,
         string uploadIdempotencyKey,
@@ -202,6 +208,11 @@ public class AiOrderImportIntakeAppService : ApplicationService
         long declaredLength,
         CancellationToken cancellationToken = default)
     {
+        // Replaces the framework null-argument check that [DisableValidation] turns off.
+        ArgumentNullException.ThrowIfNull(sourceStream);
+        originalFileName ??= string.Empty;
+        declaredContentType ??= string.Empty;
+
         var actorId = RequireAdminId();
         var normalizedUploadKey = uploadIdempotencyKey?.Trim() ?? string.Empty;
         if (string.IsNullOrWhiteSpace(normalizedUploadKey) ||

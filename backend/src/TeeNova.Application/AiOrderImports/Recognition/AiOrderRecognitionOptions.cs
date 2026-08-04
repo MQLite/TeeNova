@@ -13,6 +13,11 @@ public sealed class AiOrderRecognitionOptions
     public int MaximumAttemptsPerImport { get; set; } = 4;
     public int MaximumSources { get; set; } = 12;
     public long MaximumSourceBytes { get; set; } = 64 * 1024 * 1024;
+    public int MaximumImageEdgePixels { get; set; } = 1568;
+    public long MaximumImageBytes { get; set; } = 3L * 1024 * 1024;
+    public int ImageQuality { get; set; } = 80;
+    public int MinimumImageQuality { get; set; } = 50;
+    public long MaximumRequestPayloadBytes { get; set; } = 16L * 1024 * 1024;
     public int MaximumOutputCharacters { get; set; } = 1_000_000;
     public int RetryBaseSeconds { get; set; } = 2;
     public int RetryMaximumSeconds { get; set; } = 120;
@@ -60,6 +65,13 @@ public sealed class AiOrderRecognitionModelOptions
     public decimal CachedInputUsdPerMillionTokens { get; set; }
     public decimal OutputUsdPerMillionTokens { get; set; }
     public long EstimatedInputTokensPerMegabyte { get; set; } = 300_000;
+
+    /// <summary>
+    /// Input tokens billed for one image after the intake compressor caps its long edge at
+    /// <see cref="AiOrderRecognitionOptions.MaximumImageEdgePixels"/>. Raise this alongside
+    /// that ceiling — token cost scales with the sent resolution, not the uploaded bytes.
+    /// </summary>
+    public long EstimatedInputTokensPerImage { get; set; } = 3_000;
     public long EstimatedOutputTokens { get; set; } = 8_000;
 }
 
@@ -93,6 +105,13 @@ public sealed class AiOrderRecognitionOptionsValidator :
             options.MaximumAttemptsPerImport is < 1 or > 10 ||
             options.MaximumSources is < 1 or > 50 ||
             options.MaximumSourceBytes <= 0 ||
+            options.MaximumImageEdgePixels is < 256 or > 8_000 ||
+            options.MaximumImageBytes < 64 * 1024 ||
+            options.MaximumImageBytes > options.MaximumSourceBytes ||
+            options.ImageQuality is < 40 or > 100 ||
+            options.MinimumImageQuality < 20 ||
+            options.MinimumImageQuality > options.ImageQuality ||
+            options.MaximumRequestPayloadBytes < options.MaximumImageBytes ||
             options.MaximumOutputCharacters is < 1_000 or > 5_000_000 ||
             options.RetryBaseSeconds < 1 ||
             options.RetryMaximumSeconds < options.RetryBaseSeconds ||
@@ -137,6 +156,7 @@ public sealed class AiOrderRecognitionOptionsValidator :
                     model.CachedInputUsdPerMillionTokens < 0 ||
                     model.OutputUsdPerMillionTokens < 0 ||
                     model.EstimatedInputTokensPerMegabyte <= 0 ||
+                    model.EstimatedInputTokensPerImage <= 0 ||
                     model.EstimatedOutputTokens <= 0)
                 {
                     return ValidateOptionsResult.Fail(

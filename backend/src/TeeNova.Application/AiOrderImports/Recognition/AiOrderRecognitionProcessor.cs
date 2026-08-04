@@ -2,6 +2,7 @@ using System.Diagnostics;
 using System.Security.Cryptography;
 using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using TeeNova.AiOrderImports.PrivateStorage;
 using TeeNova.AiOrderImports.Validation;
@@ -34,6 +35,7 @@ public sealed class AiOrderRecognitionProcessor : ITransientDependency
     private readonly IUnitOfWorkManager _unitOfWorkManager;
     private readonly TimeProvider _timeProvider;
     private readonly AiOrderExtractionValidationProcessor _validationProcessor;
+    private readonly ILogger<AiOrderRecognitionProcessor> _logger;
 
     public AiOrderRecognitionProcessor(
         IRepository<AiOrderImport, Guid> imports,
@@ -50,7 +52,8 @@ public sealed class AiOrderRecognitionProcessor : ITransientDependency
         IGuidGenerator guidGenerator,
         IUnitOfWorkManager unitOfWorkManager,
         TimeProvider timeProvider,
-        AiOrderExtractionValidationProcessor validationProcessor)
+        AiOrderExtractionValidationProcessor validationProcessor,
+        ILogger<AiOrderRecognitionProcessor> logger)
     {
         _imports = imports;
         _attempts = attempts;
@@ -67,6 +70,7 @@ public sealed class AiOrderRecognitionProcessor : ITransientDependency
         _unitOfWorkManager = unitOfWorkManager;
         _timeProvider = timeProvider;
         _validationProcessor = validationProcessor;
+        _logger = logger;
     }
 
     public async Task<string?> TryClaimAsync(
@@ -359,10 +363,20 @@ public sealed class AiOrderRecognitionProcessor : ITransientDependency
                 attempt.SourceSnapshotJson ??
                 throw new BusinessException("TeeNova:AiOrderImport:AttemptSourceSnapshotMissing"),
                 SnapshotJsonOptions) ?? [];
-            var sources = await _sourcePreparer.PrepareAsync(
-                attempt.ImportId,
-                sourceSnapshot,
-                cancellationToken);
+            // The preparer queries source documents, so it needs its own unit of work: the
+            // one that loaded the attempt above is already completed and its DbContext
+            // disposed, and this runs on the worker rather than inside a request scope.
+            IReadOnlyList<AiOrderRecognitionSource> sources;
+            using (var preparation = _unitOfWorkManager.Begin(
+                       requiresNew: true,
+                       isTransactional: false))
+            {
+                sources = await _sourcePreparer.PrepareAsync(
+                    attempt.ImportId,
+                    sourceSnapshot,
+                    cancellationToken);
+                await preparation.CompleteAsync(cancellationToken);
+            }
             var request = new AiOrderRecognitionRequest(
                 attempt.ImportId,
                 attempt.Id,
@@ -372,7 +386,10 @@ public sealed class AiOrderRecognitionProcessor : ITransientDependency
                 attempt.ContractVersion ?? AiOrderRecognitionVersions.Contract,
                 _options.CurrencyContext,
                 _options.LocaleContext,
-                _promptBuilder.Build(_options.CurrencyContext, _options.LocaleContext),
+                _promptBuilder.Build(
+                    _options.CurrencyContext,
+                    _options.LocaleContext,
+                    sourceSnapshot),
                 _validator.JsonSchema,
                 sources);
             var provider = _providers.Resolve(selection.ProviderId);
@@ -512,6 +529,28 @@ public sealed class AiOrderRecognitionProcessor : ITransientDependency
                        (exception is BusinessException business
                            ? business.Code ?? "RecognitionProcessingFailed"
                            : "RecognitionProcessingFailed");
+        if (providerFailure is null)
+        {
+            // An untyped failure is a defect in our own pipeline, not a provider error.
+            // Only the safe code reaches the admin UI, so without this the cause is lost.
+            _logger.LogError(
+                exception,
+                "AI order recognition failed outside the provider contract; import {ImportId}; attempt {AttemptId}; reported as {SafeErrorCode}.",
+                attempt.ImportId,
+                attempt.Id,
+                safeCode);
+        }
+        else
+        {
+            _logger.LogWarning(
+                "AI order recognition provider failure {SafeErrorCode}; import {ImportId}; attempt {AttemptId}; retryable {Retryable}; status {StatusCode}; detail {ProviderDiagnostic}.",
+                safeCode,
+                attempt.ImportId,
+                attempt.Id,
+                retryable,
+                providerFailure.StatusCode,
+                providerFailure.Diagnostic ?? "(none)");
+        }
         var nextRetry = retryable
             ? UtcNow().Add(CalculateRetryDelay(
                 attempt.AttemptNumber,

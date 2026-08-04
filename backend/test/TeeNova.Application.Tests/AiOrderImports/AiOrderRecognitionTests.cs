@@ -12,16 +12,92 @@ public sealed class AiOrderRecognitionTests
 {
     private static readonly Guid SourceId = Guid.Parse("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa");
 
+    /// <summary>
+    /// JSON Schema keywords that could appear in the extraction schema. Names matching a
+    /// contract field (for example "value" or "page") are not keywords and are excluded.
+    /// </summary>
+    private static readonly HashSet<string> KnownJsonSchemaKeywords = new(StringComparer.Ordinal)
+    {
+        "type", "properties", "required", "additionalProperties", "items", "enum", "const",
+        "anyOf", "allOf", "oneOf", "not", "$ref", "$defs", "definitions", "$schema", "$id",
+        "$comment", "title", "description", "default", "examples", "deprecated", "readOnly",
+        "writeOnly", "format", "pattern", "patternProperties", "propertyNames",
+        "minimum", "maximum", "exclusiveMinimum", "exclusiveMaximum", "multipleOf",
+        "minItems", "maxItems", "uniqueItems", "contains", "minContains", "maxContains",
+        "minLength", "maxLength", "minProperties", "maxProperties",
+        "unevaluatedItems", "unevaluatedProperties", "if", "then", "else",
+    };
+
     [Fact]
     public void Prompt_treats_document_instructions_as_untrusted_content()
     {
-        var prompt = new AiOrderRecognitionPromptBuilder().Build("NZD", "en-NZ");
+        var prompt = new AiOrderRecognitionPromptBuilder().Build("NZD", "en-NZ", [Descriptor()]);
 
         Assert.Contains("untrusted document content", prompt);
         Assert.Contains("ignore previous instructions", prompt);
         Assert.Contains("Do not create or infer catalogue ProductId", prompt);
         Assert.Contains("explicitly stated zero", prompt);
     }
+
+    [Fact]
+    public void Prompt_lists_the_source_ids_the_model_is_required_to_cite()
+    {
+        var first = Guid.NewGuid();
+        var second = Guid.NewGuid();
+
+        var prompt = new AiOrderRecognitionPromptBuilder().Build(
+            "NZD",
+            "en-NZ",
+            [
+                new AiOrderRecognitionSourceDescriptor(
+                    second, 2, "application/pdf", 10, "b".PadLeft(64, 'b'), 0, 3),
+                new AiOrderRecognitionSourceDescriptor(
+                    first, 1, "image/jpeg", 10, "a".PadLeft(64, 'a'), 0, null),
+            ]);
+
+        // Listed in attachment order, not the order they were handed to the builder.
+        var firstIndex = prompt.IndexOf(first.ToString(), StringComparison.Ordinal);
+        var secondIndex = prompt.IndexOf(second.ToString(), StringComparison.Ordinal);
+        Assert.True(firstIndex >= 0 && secondIndex > firstIndex);
+        Assert.Contains("pages=3", prompt);
+        Assert.Contains("copied exactly from this list", prompt);
+    }
+
+    [Theory]
+    [InlineData("openai")]
+    [InlineData("gemini")]
+    [InlineData("claude")]
+    public async Task Every_adapter_labels_its_attachments_with_the_source_id(string providerId)
+    {
+        var handler = new RecordingHandler(HttpStatusCode.OK, ResponseFor(providerId));
+        IAiOrderRecognitionProvider provider = providerId switch
+        {
+            "openai" => new OpenAiOrderRecognitionProvider(
+                new TestHttpClientFactory(handler), Monitor(providerId)),
+            "gemini" => new GeminiAiOrderRecognitionProvider(
+                new TestHttpClientFactory(handler), Monitor(providerId)),
+            _ => new ClaudeAiOrderRecognitionProvider(
+                new TestHttpClientFactory(handler), Monitor(providerId)),
+        };
+
+        await provider.RecognizeAsync(Request(providerId, "model-1"), default);
+
+        // Without this the model has to invent an id and the extraction is rejected.
+        Assert.Contains(SourceId.ToString(), handler.Body);
+    }
+
+    private static string ResponseFor(string providerId) => providerId switch
+    {
+        "openai" =>
+            """{"id":"r","output":[{"type":"message","content":[{"type":"output_text","text":"{}"}]}]}""",
+        "gemini" =>
+            """{"candidates":[{"content":{"parts":[{"text":"{}"}]}}]}""",
+        _ =>
+            """{"id":"m","content":[{"type":"text","text":"{}"}]}""",
+    };
+
+    private static AiOrderRecognitionSourceDescriptor Descriptor() =>
+        new(SourceId, 1, "image/jpeg", 1024, "a".PadLeft(64, 'a'), 0, null);
 
     [Fact]
     public void Valid_structured_output_is_canonicalized_and_hashed()
@@ -216,14 +292,51 @@ public sealed class AiOrderRecognitionTests
             selection,
             [new AiOrderRecognitionSourceDescriptor(SourceId, 1, "image/jpeg", 1_048_576, "a".PadLeft(64, 'a'), 0, 1)]);
 
-        Assert.Equal(300_000, estimate.EstimatedInputTokens);
-        Assert.Equal(0.348m, estimate.EstimatedCostUsd);
+        Assert.Equal(3_000, estimate.EstimatedInputTokens);
+        Assert.Equal(0.051m, estimate.EstimatedCostUsd);
         Assert.Equal(
             0.0023m,
             estimator.CalculateActual(
                 selection,
                 new AiOrderRecognitionUsage(2_000, 200, 1_000)));
     }
+
+    [Fact]
+    public void Image_estimate_ignores_upload_size_because_sources_are_downscaled_first()
+    {
+        var estimator = new AiOrderRecognitionCostEstimator();
+        var selection = Selection();
+
+        var small = estimator.Estimate(
+            selection,
+            [Descriptor("image/jpeg", 512 * 1024)]);
+        var huge = estimator.Estimate(
+            selection,
+            [Descriptor("image/jpeg", 15L * 1024 * 1024)]);
+
+        Assert.Equal(3_000, small.EstimatedInputTokens);
+        Assert.Equal(small.EstimatedInputTokens, huge.EstimatedInputTokens);
+    }
+
+    [Fact]
+    public void Pdf_estimate_still_scales_with_bytes_because_pdfs_are_not_compressed()
+    {
+        var estimator = new AiOrderRecognitionCostEstimator();
+        var selection = Selection();
+
+        var estimate = estimator.Estimate(
+            selection,
+            [
+                Descriptor("application/pdf", 2 * 1024 * 1024),
+                Descriptor("image/png", 9L * 1024 * 1024),
+            ]);
+
+        // 2 MB of PDF at 300k tokens/MB, plus one flat-rate image.
+        Assert.Equal(603_000, estimate.EstimatedInputTokens);
+    }
+
+    private static AiOrderRecognitionSourceDescriptor Descriptor(string contentType, long bytes) =>
+        new(Guid.NewGuid(), 1, contentType, bytes, "a".PadLeft(64, 'a'), 0, 1);
 
     [Fact]
     public void Disabled_or_uncredentialed_providers_are_hidden()
@@ -260,6 +373,327 @@ public sealed class AiOrderRecognitionTests
         var result = new AiOrderRecognitionOptionsValidator().Validate(null, options);
 
         Assert.True(result.Failed);
+    }
+
+    [Fact]
+    public void Strict_schema_keeps_the_constraints_that_shape_the_model_output()
+    {
+        var sanitized = OpenAiStrictSchema.Sanitize(
+            """
+            {"type":"object","additionalProperties":false,
+             "required":["confidence","pattern","rows","open"],
+             "properties":{
+               "version":{"type":"string","const":"1.0"},
+               "confidence":{"type":"number","minimum":0,"maximum":1},
+               "pattern":{"type":"string","pattern":"^[a-z]{3}$","maxLength":8},
+               "rows":{"type":"array","maxItems":40,"uniqueItems":true,
+                       "items":{"type":"string","format":"uuid"}},
+               "open":{},
+               "mode":{"type":"string","enum":["A","B"]}}}
+            """).ToJsonString();
+
+        // Confirmed supported against the live API. Stripping these was the cause of
+        // InvalidMoney: without "pattern" a model may return "100" rather than "100.00".
+        Assert.Contains("\"minimum\":0", sanitized);
+        Assert.Contains("\"maximum\":1", sanitized);
+        Assert.Contains("\"maxItems\":40", sanitized);
+        Assert.Contains("\"maxLength\":8", sanitized);
+        Assert.Contains("\"format\":\"uuid\"", sanitized);
+        Assert.Contains("\"const\":\"1.0\"", sanitized);
+        Assert.Contains("\"pattern\":\"^[a-z]{3}$\"", sanitized);
+        // Confirmed rejected by the API.
+        Assert.DoesNotContain("uniqueItems", sanitized);
+        // An untyped schema is rejected with "schema must have a 'type' key".
+        Assert.Contains("\"open\":{\"type\":[\"string\",\"number\",\"boolean\",\"null\"]}", sanitized);
+        Assert.Contains("\"enum\":[\"A\",\"B\"]", sanitized);
+        Assert.Contains("\"additionalProperties\":false", sanitized);
+    }
+
+    [Fact]
+    public void Real_extraction_schema_survives_strict_sanitisation()
+    {
+        var validator = Validator();
+
+        var sanitized = OpenAiStrictSchema.Sanitize(validator.JsonSchema).ToJsonString();
+
+        // The money format must survive: the structural validator enforces the same regex,
+        // so a schema without it produces extractions we then reject ourselves.
+        Assert.Contains("^(0|[1-9][0-9]*)\\\\.[0-9]{2}$", sanitized);
+        Assert.Contains("^[A-Z]{3}$", sanitized);
+
+        // Allowlist, not denylist: a keyword we have never met must fail here rather than
+        // as an opaque "invalid_json_schema" 400 from the provider. Every entry was
+        // confirmed accepted by the live API.
+        var supported = new HashSet<string>(StringComparer.Ordinal)
+        {
+            "type", "properties", "required", "additionalProperties", "items",
+            "enum", "anyOf", "$ref", "$defs", "const", "pattern", "format",
+            "minimum", "maximum", "minItems", "maxItems", "minLength", "maxLength",
+            "description",
+        };
+        var used = System.Text.RegularExpressions.Regex
+            .Matches(sanitized, "\"(\\$?[A-Za-z][A-Za-z0-9$]*)\"\\s*:")
+            .Select(match => match.Groups[1].Value)
+            .Distinct(StringComparer.Ordinal)
+            .ToArray();
+        var keywords = used
+            .Where(name => supported.Contains(name) || KnownJsonSchemaKeywords.Contains(name))
+            .ToArray();
+        Assert.All(keywords, keyword => Assert.Contains(keyword, supported));
+        // $defs/$ref and anyOf are supported by strict mode and must be preserved.
+        Assert.Contains("$defs", sanitized);
+        Assert.Contains("$ref", sanitized);
+        Assert.Contains("\"additionalProperties\":false", sanitized);
+        // Confirmed by live bisection: the full schema is rejected when a complex nullable
+        // keeps the union spelling, and accepted once it becomes anyOf. Scalar unions are
+        // fine as written. A minimal schema accepts both, so only the real one shows this.
+        Assert.Contains("[\"string\",\"null\"]", sanitized);
+        Assert.DoesNotContain("[\"array\",\"null\"]", sanitized);
+        Assert.DoesNotContain("[\"object\",\"null\"]", sanitized);
+        // Verified against the live API: strict mode rejects an untyped schema with
+        // "schema must have a 'type' key", so no node may reach it without one.
+        Assert.Empty(UntypedNodes(JsonNode.Parse(sanitized)!, "$"));
+    }
+
+    /// <summary>Schema nodes carrying neither type, $ref, anyOf nor enum.</summary>
+    private static List<string> UntypedNodes(JsonNode? node, string path)
+    {
+        var found = new List<string>();
+        if (node is JsonArray array)
+        {
+            for (var index = 0; index < array.Count; index++)
+                found.AddRange(UntypedNodes(array[index], $"{path}[{index}]"));
+            return found;
+        }
+        if (node is not JsonObject o)
+            return found;
+
+        if (!o.ContainsKey("type") && !o.ContainsKey("$ref") &&
+            !o.ContainsKey("anyOf") && !o.ContainsKey("enum"))
+            found.Add(path);
+
+        foreach (var (key, value) in o)
+        {
+            if (key is "properties" or "$defs" && value is JsonObject map)
+            {
+                foreach (var (name, child) in map)
+                    found.AddRange(UntypedNodes(child, $"{path}.{key}.{name}"));
+                continue;
+            }
+            if (key is "required" or "enum" or "type")
+                continue;
+            found.AddRange(UntypedNodes(value, $"{path}.{key}"));
+        }
+        return found;
+    }
+
+    [Fact]
+    public void Sanitised_schema_meets_strict_modes_structural_rules()
+    {
+        // Strict Structured Outputs also demands: every object closes additionalProperties,
+        // every property is listed in required, and a $ref carries no sibling keys.
+        var schema = JsonNode.Parse(
+            OpenAiStrictSchema.Sanitize(Validator().JsonSchema).ToJsonString())!;
+        var problems = new List<string>();
+
+        Walk(schema, "$", problems);
+
+        Assert.True(problems.Count == 0, string.Join(Environment.NewLine, problems));
+
+        static void Walk(JsonNode? node, string path, List<string> problems)
+        {
+            if (node is JsonArray array)
+            {
+                for (var index = 0; index < array.Count; index++)
+                    Walk(array[index], $"{path}[{index}]", problems);
+                return;
+            }
+            if (node is not JsonObject o)
+                return;
+
+            if (o.ContainsKey("$ref") && o.Count > 1)
+                problems.Add($"{path}: $ref has sibling keys");
+
+            // Nullable fields are declared as "type":["object","null"].
+            var kinds = o["type"] switch
+            {
+                JsonValue single when single.TryGetValue<string>(out var name) => [name],
+                JsonArray many => many
+                    .Select(item => item?.GetValue<string>() ?? string.Empty)
+                    .ToArray(),
+                _ => Array.Empty<string>(),
+            };
+            if (kinds.Contains("object"))
+            {
+                if (o["additionalProperties"]?.GetValue<bool>() != false)
+                    problems.Add($"{path}: additionalProperties is not false");
+                var declared = (o["properties"] as JsonObject)?
+                    .Select(pair => pair.Key)
+                    .OrderBy(name => name, StringComparer.Ordinal)
+                    .ToArray() ?? [];
+                var required = (o["required"] as JsonArray)?
+                    .Select(item => item!.GetValue<string>())
+                    .OrderBy(name => name, StringComparer.Ordinal)
+                    .ToArray() ?? [];
+                if (!declared.SequenceEqual(required, StringComparer.Ordinal))
+                    problems.Add(
+                        $"{path}: required [{string.Join(",", required)}] " +
+                        $"does not cover properties [{string.Join(",", declared)}]");
+            }
+
+            foreach (var (key, value) in o)
+            {
+                if (key is "properties" or "$defs" or "definitions" && value is JsonObject map)
+                {
+                    foreach (var (name, child) in map)
+                        Walk(child, $"{path}.{key}.{name}", problems);
+                    continue;
+                }
+                Walk(value, $"{path}.{key}", problems);
+            }
+        }
+    }
+
+    [Fact]
+    public async Task Openai_request_carries_the_constraints_and_no_rejected_keyword()
+    {
+        var handler = new RecordingHandler(
+            HttpStatusCode.OK,
+            """{"id":"resp_1","output":[{"type":"message","content":[{"type":"output_text","text":"{}"}]}]}""");
+        var provider = new OpenAiOrderRecognitionProvider(
+            new TestHttpClientFactory(handler),
+            Monitor("openai"));
+        var request = Request("openai", "gpt-5.6-luna") with
+        {
+            JsonSchema = Validator().JsonSchema,
+        };
+
+        await provider.RecognizeAsync(request, default);
+
+        // The money pattern must reach the model, or it returns "100" for "100.00" and the
+        // structural validator rejects the extraction with InvalidMoney.
+        Assert.Contains("[0-9]{2}", handler.Body);
+        Assert.Contains("\"maxItems\"", handler.Body);
+        Assert.DoesNotContain("\"uniqueItems\"", handler.Body);
+        Assert.Contains("\"strict\":true", handler.Body);
+    }
+
+    [Fact]
+    public async Task Provider_error_body_is_captured_for_diagnosis_but_stays_out_of_the_safe_code()
+    {
+        var handler = new RecordingHandler(
+            HttpStatusCode.BadRequest,
+            """{"error":{"type":"invalid_request_error","code":null,"param":"text.format.schema","message":"Invalid schema: 'maxItems' is not permitted."}}""");
+        var provider = new OpenAiOrderRecognitionProvider(
+            new TestHttpClientFactory(handler),
+            Monitor("openai"));
+
+        var exception = await Assert.ThrowsAsync<AiOrderRecognitionProviderException>(() =>
+            provider.RecognizeAsync(Request("openai", "gpt-5.6-luna"), default));
+
+        Assert.Equal("RecognitionProviderRequestRejected", exception.SafeCode);
+        Assert.Contains("invalid_request_error", exception.Diagnostic);
+        Assert.Contains("maxItems", exception.Diagnostic);
+        Assert.DoesNotContain("maxItems", exception.SafeCode);
+    }
+
+    [Fact]
+    public async Task Openai_adapter_reads_the_message_item_past_a_leading_reasoning_item()
+    {
+        // Reasoning models put a reasoning item first; the answer is in the message item.
+        var handler = new RecordingHandler(
+            HttpStatusCode.OK,
+            """
+            {"id":"resp_1","status":"completed","output":[
+              {"id":"rs_1","type":"reasoning","summary":[]},
+              {"id":"msg_1","type":"message","role":"assistant","status":"completed",
+               "content":[{"type":"output_text","text":"{\"ok\":1}","annotations":[]}]}],
+             "usage":{"input_tokens":12,"output_tokens":5}}
+            """);
+        var provider = new OpenAiOrderRecognitionProvider(
+            new TestHttpClientFactory(handler),
+            Monitor("openai"));
+
+        var result = await provider.RecognizeAsync(Request("openai", "gpt-5.6-luna"), default);
+
+        Assert.Equal("{\"ok\":1}", result.StructuredOutputJson);
+    }
+
+    [Fact]
+    public async Task Openai_adapter_surfaces_a_refusal_as_a_safe_code()
+    {
+        var handler = new RecordingHandler(
+            HttpStatusCode.OK,
+            """
+            {"id":"resp_1","status":"completed","output":[
+              {"id":"msg_1","type":"message","role":"assistant",
+               "content":[{"type":"refusal","refusal":"I cannot help with that."}]}]}
+            """);
+        var provider = new OpenAiOrderRecognitionProvider(
+            new TestHttpClientFactory(handler),
+            Monitor("openai"));
+
+        var exception = await Assert.ThrowsAsync<AiOrderRecognitionProviderException>(() =>
+            provider.RecognizeAsync(Request("openai", "gpt-5.6-luna"), default));
+
+        Assert.Equal("RecognitionProviderOutputMissing", exception.SafeCode);
+        Assert.False(exception.IsRetryable);
+    }
+
+    [Fact]
+    public async Task Claude_adapter_reads_the_text_block_past_a_leading_thinking_block()
+    {
+        var handler = new RecordingHandler(
+            HttpStatusCode.OK,
+            """
+            {"id":"msg_1","stop_reason":"end_turn","content":[
+              {"type":"thinking","thinking":"working through the form"},
+              {"type":"text","text":"{\"ok\":1}"}]}
+            """);
+        var provider = new ClaudeAiOrderRecognitionProvider(
+            new TestHttpClientFactory(handler),
+            Monitor("claude"));
+
+        var result = await provider.RecognizeAsync(
+            Request("claude", "claude-haiku-4-5-20251001"),
+            default);
+
+        Assert.Equal("{\"ok\":1}", result.StructuredOutputJson);
+    }
+
+    [Fact]
+    public async Task Gemini_adapter_skips_thought_parts_when_reading_the_answer()
+    {
+        var handler = new RecordingHandler(
+            HttpStatusCode.OK,
+            """
+            {"candidates":[{"finishReason":"STOP","content":{"parts":[
+              {"text":"considering the layout","thought":true},
+              {"text":"{\"ok\":1}"}]}}]}
+            """);
+        var provider = new GeminiAiOrderRecognitionProvider(
+            new TestHttpClientFactory(handler),
+            Monitor("gemini"));
+
+        var result = await provider.RecognizeAsync(
+            Request("gemini", "gemini-2.5-flash-lite"),
+            default);
+
+        Assert.Equal("{\"ok\":1}", result.StructuredOutputJson);
+    }
+
+    [Fact]
+    public async Task Unexpected_response_shapes_fail_with_a_safe_code_not_a_raw_exception()
+    {
+        var handler = new RecordingHandler(HttpStatusCode.OK, """{"id":"resp_1"}""");
+        var provider = new OpenAiOrderRecognitionProvider(
+            new TestHttpClientFactory(handler),
+            Monitor("openai"));
+
+        var exception = await Assert.ThrowsAsync<AiOrderRecognitionProviderException>(() =>
+            provider.RecognizeAsync(Request("openai", "gpt-5.6-luna"), default));
+
+        Assert.Equal("RecognitionProviderOutputMissing", exception.SafeCode);
     }
 
     [Fact]
@@ -649,6 +1083,7 @@ public sealed class AiOrderRecognitionTests
             0.1m,
             6m,
             300_000,
+            3_000,
             8_000);
 
     private static AiOrderRecognitionRequest Request(

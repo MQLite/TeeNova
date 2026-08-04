@@ -2,8 +2,11 @@ using System.Reflection;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.RateLimiting;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Options;
 using TeeNova.Auth;
 using Volo.Abp.Application.Services;
+using Volo.Abp.Validation;
 
 namespace TeeNova.AiOrderImports.Tests;
 
@@ -22,6 +25,63 @@ public class AiOrderImportIntakeSecurityContractTests
         Assert.DoesNotContain(
             typeof(AiOrderImportIntakeAppService).GetMethods(),
             method => method.GetCustomAttribute<AllowAnonymousAttribute>() is not null);
+    }
+
+    [Fact]
+    public void Stream_taking_service_methods_opt_out_of_DataAnnotations_argument_validation()
+    {
+        // ABP's validation interceptor reads every property of each non-primitive argument.
+        // On a Stream that hits ReadTimeout, which throws on request streams and fails the
+        // upload before a byte is read. Any new Stream-taking method needs the same opt-out.
+        var streamMethods = typeof(AiOrderImportIntakeAppService)
+            .GetMethods(BindingFlags.Public | BindingFlags.Instance | BindingFlags.DeclaredOnly)
+            .Where(method => method.GetParameters()
+                .Any(parameter => typeof(Stream).IsAssignableFrom(parameter.ParameterType)))
+            .ToArray();
+
+        Assert.NotEmpty(streamMethods);
+        Assert.All(streamMethods, method =>
+            Assert.NotNull(method.GetCustomAttribute<DisableValidationAttribute>()));
+    }
+
+    [Fact]
+    public async Task Upload_argument_validation_does_not_touch_the_request_stream()
+    {
+        // Without the opt-out this throws "Property accessor 'ReadTimeout' ... Timeouts are
+        // not supported on this stream", failing every upload before a byte is read.
+        var contributorType = typeof(ObjectValidator).Assembly
+            .GetTypes()
+            .First(type => type.Name.Contains("DataAnnotation") &&
+                           !type.IsInterface &&
+                           !type.IsAbstract);
+        var services = new ServiceCollection();
+        services.AddTransient(contributorType);
+        var options = Options.Create(new AbpValidationOptions
+        {
+            ObjectValidationContributors = { contributorType },
+        });
+        services.AddSingleton<IOptions<AbpValidationOptions>>(options);
+        await using var provider = services.BuildServiceProvider();
+        var validator = new MethodInvocationValidator(new ObjectValidator(
+            options,
+            provider.GetRequiredService<IServiceScopeFactory>()));
+
+        var context = new MethodInvocationValidationContext(
+            typeof(AiOrderImportIntakeAppService),
+            typeof(AiOrderImportIntakeAppService).GetMethod(
+                nameof(AiOrderImportIntakeAppService.UploadAsync))!,
+            [
+                Guid.NewGuid(),
+                "upload-key",
+                AiOrderCaptureMethod.Upload,
+                new MemoryStream([1, 2, 3]),
+                "order.jpg",
+                "image/jpeg",
+                3L,
+                CancellationToken.None,
+            ]);
+
+        Assert.Null(await Record.ExceptionAsync(() => validator.ValidateAsync(context)));
     }
 
     [Fact]

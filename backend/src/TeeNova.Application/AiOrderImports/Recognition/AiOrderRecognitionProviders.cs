@@ -4,7 +4,6 @@ using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using Microsoft.Extensions.Options;
-using Volo.Abp.DependencyInjection;
 
 namespace TeeNova.AiOrderImports.Recognition;
 
@@ -51,7 +50,8 @@ public abstract class AiOrderRecognitionProviderBase
                 throw Classify(
                     response.StatusCode,
                     ReadRetryAfter(response),
-                    requestId);
+                    requestId,
+                    await ReadErrorDiagnosticAsync(response.Content, timeout.Token));
             }
 
             var maximumBytes = checked(options.MaximumOutputCharacters * 4L);
@@ -89,12 +89,42 @@ public abstract class AiOrderRecognitionProviderBase
         }
     }
 
-    protected static string RequireString(JsonElement element, string safeCode)
+    /// <summary>
+    /// Every provider may prepend items the answer does not live in — reasoning items,
+    /// thinking blocks, thought parts — and may return a refusal instead of content.
+    /// Indexing blindly into [0] throws a raw KeyNotFoundException, which the processor can
+    /// only report as an untyped permanent failure, so shape mismatches raise a safe code.
+    /// </summary>
+    protected static AiOrderRecognitionProviderException OutputMissing() =>
+        new("RecognitionProviderOutputMissing", false);
+
+    protected static bool TryArray(JsonElement parent, string name, out JsonElement array) =>
+        parent.TryGetProperty(name, out array) && array.ValueKind == JsonValueKind.Array;
+
+    /// <summary>Matches when the element has no discriminator or the expected one.</summary>
+    protected static bool IsKind(JsonElement element, string expected) =>
+        !element.TryGetProperty("type", out var type) ||
+        string.Equals(type.GetString(), expected, StringComparison.Ordinal);
+
+    /// <summary>
+    /// Names the attachment that follows it. Binding the identifier next to its own image
+    /// is what lets the model attribute evidence correctly across a multi-page import.
+    /// </summary>
+    protected static string AttachmentLabel(AiOrderRecognitionSource source) =>
+        $"Source {source.Sequence} — sourceDocumentId: {source.SourceDocumentId}. " +
+        "The attachment immediately below is this source document.";
+
+    protected static bool TryText(JsonElement element, out string text)
     {
-        if (element.ValueKind == JsonValueKind.String &&
-            !string.IsNullOrWhiteSpace(element.GetString()))
-            return element.GetString()!;
-        throw new AiOrderRecognitionProviderException(safeCode, false);
+        if (element.TryGetProperty("text", out var value) &&
+            value.ValueKind == JsonValueKind.String &&
+            !string.IsNullOrWhiteSpace(value.GetString()))
+        {
+            text = value.GetString()!;
+            return true;
+        }
+        text = string.Empty;
+        return false;
     }
 
     protected static long? LongAt(JsonElement element, string propertyName) =>
@@ -102,10 +132,71 @@ public abstract class AiOrderRecognitionProviderBase
             ? number
             : null;
 
+    /// <summary>
+    /// Reads a bounded slice of a provider error body for server-side logs. Provider errors
+    /// describe our own request (bad schema, rejected parameter) and are the only way to tell
+    /// one 400 from another. Never returned to a caller — the client sees the safe code only.
+    /// </summary>
+    private static async Task<string?> ReadErrorDiagnosticAsync(
+        HttpContent content,
+        CancellationToken cancellationToken)
+    {
+        const int maximumBytes = 4 * 1024;
+        const int maximumCharacters = 500;
+        try
+        {
+            await using var input = await content.ReadAsStreamAsync(cancellationToken);
+            var buffer = new byte[maximumBytes];
+            var read = await input.ReadAtLeastAsync(
+                buffer,
+                maximumBytes,
+                throwOnEndOfStream: false,
+                cancellationToken);
+            if (read == 0)
+                return null;
+
+            var body = Encoding.UTF8.GetString(buffer, 0, read);
+            var detail = TryReadErrorFields(body) ?? body;
+            detail = detail.ReplaceLineEndings(" ").Trim();
+            return detail.Length > maximumCharacters
+                ? detail[..maximumCharacters] + "…"
+                : detail;
+        }
+        catch
+        {
+            // Diagnostics must never replace the original provider failure.
+            return null;
+        }
+    }
+
+    private static string? TryReadErrorFields(string body)
+    {
+        try
+        {
+            using var document = JsonDocument.Parse(body);
+            if (!document.RootElement.TryGetProperty("error", out var error))
+                return null;
+            var parts = new List<string>();
+            foreach (var name in new[] { "type", "code", "param", "message" })
+            {
+                if (error.TryGetProperty(name, out var value) &&
+                    value.ValueKind == JsonValueKind.String &&
+                    !string.IsNullOrWhiteSpace(value.GetString()))
+                    parts.Add($"{name}={value.GetString()}");
+            }
+            return parts.Count == 0 ? null : string.Join("; ", parts);
+        }
+        catch (JsonException)
+        {
+            return null;
+        }
+    }
+
     private static AiOrderRecognitionProviderException Classify(
         HttpStatusCode status,
         TimeSpan? retryAfter,
-        string? requestId)
+        string? requestId,
+        string? diagnostic)
     {
         var retryable = status == HttpStatusCode.TooManyRequests ||
                         status is HttpStatusCode.InternalServerError or
@@ -127,7 +218,8 @@ public abstract class AiOrderRecognitionProviderBase
             retryable,
             status,
             retryAfter,
-            requestId);
+            requestId,
+            diagnostic: diagnostic);
     }
 
     private static async Task<byte[]> ReadBoundedAsync(
@@ -181,10 +273,13 @@ public abstract class AiOrderRecognitionProviderBase
     protected sealed record ProviderHttpResponse(byte[] Body, string? RequestId);
 }
 
+// Registered explicitly in TeeNovaApplicationModule, like the payment providers.
+// ITransientDependency here would ALSO auto-register it as IAiOrderRecognitionProvider
+// (ABP exposes interfaces matching the class-name suffix), yielding two of each in the
+// injected IEnumerable and a duplicate-key crash in AiOrderRecognitionProviderRegistry.
 public sealed class GeminiAiOrderRecognitionProvider :
     AiOrderRecognitionProviderBase,
-    IAiOrderRecognitionProvider,
-    ITransientDependency
+    IAiOrderRecognitionProvider
 {
     public string ProviderId => "gemini";
 
@@ -203,6 +298,7 @@ public sealed class GeminiAiOrderRecognitionProvider :
         var parts = new JsonArray { new JsonObject { ["text"] = request.Prompt } };
         foreach (var source in request.OrderedSourceDocuments)
         {
+            parts.Add(new JsonObject { ["text"] = AttachmentLabel(source) });
             parts.Add(new JsonObject
             {
                 ["inlineData"] = new JsonObject
@@ -238,19 +334,15 @@ public sealed class GeminiAiOrderRecognitionProvider :
         var response = await SendAsync(ProviderId, httpRequest, cancellationToken);
         using var document = Parse(response.Body);
         var root = document.RootElement;
-        var output = RequireString(
-            root.GetProperty("candidates")[0]
-                .GetProperty("content")
-                .GetProperty("parts")[0]
-                .GetProperty("text"),
-            "RecognitionProviderOutputMissing");
+        var candidate = FirstCandidate(root);
+        var output = ReadAnswer(candidate);
         var usage = root.TryGetProperty("usageMetadata", out var usageElement)
             ? new AiOrderRecognitionUsage(
                 LongAt(usageElement, "promptTokenCount"),
                 LongAt(usageElement, "candidatesTokenCount"),
                 LongAt(usageElement, "cachedContentTokenCount"))
             : new AiOrderRecognitionUsage(null, null, null);
-        var finish = root.GetProperty("candidates")[0].TryGetProperty("finishReason", out var reason)
+        var finish = candidate.TryGetProperty("finishReason", out var reason)
             ? reason.GetString()
             : null;
         return new AiOrderRecognitionResult(
@@ -261,14 +353,39 @@ public sealed class GeminiAiOrderRecognitionProvider :
             usage);
     }
 
+    private static JsonElement FirstCandidate(JsonElement root)
+    {
+        if (!TryArray(root, "candidates", out var candidates))
+            throw OutputMissing();
+        foreach (var candidate in candidates.EnumerateArray())
+            return candidate;
+        throw OutputMissing();
+    }
+
+    private static string ReadAnswer(JsonElement candidate)
+    {
+        if (!candidate.TryGetProperty("content", out var content) ||
+            !TryArray(content, "parts", out var parts))
+            throw OutputMissing();
+        foreach (var part in parts.EnumerateArray())
+        {
+            // Thinking models emit thought summaries alongside the answer.
+            if (part.TryGetProperty("thought", out var thought) &&
+                thought.ValueKind == JsonValueKind.True)
+                continue;
+            if (TryText(part, out var text))
+                return text;
+        }
+        throw OutputMissing();
+    }
+
     private static StringContent JsonContent(JsonNode body) =>
         new(body.ToJsonString(), Encoding.UTF8, "application/json");
 }
 
 public sealed class OpenAiOrderRecognitionProvider :
     AiOrderRecognitionProviderBase,
-    IAiOrderRecognitionProvider,
-    ITransientDependency
+    IAiOrderRecognitionProvider
 {
     public string ProviderId => "openai";
 
@@ -290,6 +407,11 @@ public sealed class OpenAiOrderRecognitionProvider :
         };
         foreach (var source in request.OrderedSourceDocuments)
         {
+            content.Add(new JsonObject
+            {
+                ["type"] = "input_text",
+                ["text"] = AttachmentLabel(source),
+            });
             if (source.ContentType == "application/pdf")
             {
                 content.Add(new JsonObject
@@ -326,7 +448,7 @@ public sealed class OpenAiOrderRecognitionProvider :
                     ["type"] = "json_schema",
                     ["name"] = "tee_nova_ai_order_extraction_v1",
                     ["strict"] = true,
-                    ["schema"] = JsonNode.Parse(request.JsonSchema),
+                    ["schema"] = OpenAiStrictSchema.Sanitize(request.JsonSchema),
                 },
             },
         };
@@ -338,9 +460,7 @@ public sealed class OpenAiOrderRecognitionProvider :
         var response = await SendAsync(ProviderId, httpRequest, cancellationToken);
         using var document = Parse(response.Body);
         var root = document.RootElement;
-        var output = RequireString(
-            root.GetProperty("output")[0].GetProperty("content")[0].GetProperty("text"),
-            "RecognitionProviderOutputMissing");
+        var output = ReadAnswer(root);
         var usage = root.TryGetProperty("usage", out var usageElement)
             ? new AiOrderRecognitionUsage(
                 LongAt(usageElement, "input_tokens"),
@@ -359,14 +479,32 @@ public sealed class OpenAiOrderRecognitionProvider :
             usage);
     }
 
+    private static string ReadAnswer(JsonElement root)
+    {
+        if (!TryArray(root, "output", out var output))
+            throw OutputMissing();
+        foreach (var item in output.EnumerateArray())
+        {
+            // Reasoning models emit a reasoning item before the assistant message.
+            if (!IsKind(item, "message") || !TryArray(item, "content", out var content))
+                continue;
+            foreach (var part in content.EnumerateArray())
+            {
+                // A refusal part carries "refusal", not "text", and is not an answer.
+                if (IsKind(part, "output_text") && TryText(part, out var text))
+                    return text;
+            }
+        }
+        throw OutputMissing();
+    }
+
     private static StringContent JsonContent(JsonNode body) =>
         new(body.ToJsonString(), Encoding.UTF8, "application/json");
 }
 
 public sealed class ClaudeAiOrderRecognitionProvider :
     AiOrderRecognitionProviderBase,
-    IAiOrderRecognitionProvider,
-    ITransientDependency
+    IAiOrderRecognitionProvider
 {
     public string ProviderId => "claude";
 
@@ -385,6 +523,11 @@ public sealed class ClaudeAiOrderRecognitionProvider :
         var content = new JsonArray();
         foreach (var source in request.OrderedSourceDocuments)
         {
+            content.Add(new JsonObject
+            {
+                ["type"] = "text",
+                ["text"] = AttachmentLabel(source),
+            });
             var sourceObject = new JsonObject
             {
                 ["type"] = "base64",
@@ -429,9 +572,7 @@ public sealed class ClaudeAiOrderRecognitionProvider :
         var response = await SendAsync(ProviderId, httpRequest, cancellationToken);
         using var document = Parse(response.Body);
         var root = document.RootElement;
-        var output = RequireString(
-            root.GetProperty("content")[0].GetProperty("text"),
-            "RecognitionProviderOutputMissing");
+        var output = ReadAnswer(root);
         var usage = root.TryGetProperty("usage", out var usageElement)
             ? new AiOrderRecognitionUsage(
                 LongAt(usageElement, "input_tokens"),
@@ -446,6 +587,19 @@ public sealed class ClaudeAiOrderRecognitionProvider :
             requestId,
             finish,
             usage);
+    }
+
+    private static string ReadAnswer(JsonElement root)
+    {
+        if (!TryArray(root, "content", out var content))
+            throw OutputMissing();
+        foreach (var block in content.EnumerateArray())
+        {
+            // Extended thinking emits a thinking block ahead of the answer.
+            if (IsKind(block, "text") && TryText(block, out var text))
+                return text;
+        }
+        throw OutputMissing();
     }
 
     private static StringContent JsonContent(JsonNode body) =>
