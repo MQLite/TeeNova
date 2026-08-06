@@ -93,7 +93,7 @@ export function ProductCard({ product }: ProductCardProps) {
       className="group card flex flex-col overflow-hidden transition-shadow hover:shadow-card"
     >
       {/* Image area */}
-      <div className="relative aspect-square overflow-hidden bg-black/[0.02]">
+      <div className="relative aspect-square overflow-hidden bg-surface-sunken">
         {resolveImageUrl(product.primaryImageUrl) ? (
           // eslint-disable-next-line @next/next/no-img-element
           <img
@@ -109,17 +109,17 @@ export function ProductCard({ product }: ProductCardProps) {
 
         {/* Category badge (kind-derived, Jira 9703) */}
         <div className="absolute left-3 top-3">
-          <span className="font-mono rounded-full border border-black/[0.08] bg-white/90 px-2.5 py-0.5 text-[10px] uppercase tracking-[0.54px] text-black/50 backdrop-blur-sm">
+          <span className="font-mono rounded-full border border-line bg-white/90 px-2.5 py-0.5 text-[10px] uppercase tracking-[0.54px] text-ink-muted backdrop-blur-sm">
             {categoryLabel(product)}
           </span>
         </div>
       </div>
 
       {/* Info — mirrors the product-detail hero card (Jira 9303). */}
-      <div className="flex flex-1 flex-col border-t border-black/[0.08] px-4 py-4">
+      <div className="flex flex-1 flex-col border-t border-line px-4 py-4">
         <h3
-          className="text-sm text-black line-clamp-1"
-          style={{ fontWeight: 480, letterSpacing: '-0.14px' }}
+          className="text-sm text-ink line-clamp-1"
+          style={{ fontWeight: 500 }}
         >
           {product.name}
         </h3>
@@ -128,35 +128,35 @@ export function ProductCard({ product }: ProductCardProps) {
           // Per-kind quote/pricing summary (Jira 9704) — non-garment cards never show the raw
           // basePrice fallback or garment wording.
           <div className="mt-3">
-            <p className="text-lg text-black" style={{ fontWeight: 480, letterSpacing: '-0.26px' }}>
+            <p className="text-lg text-ink font-medium">
               {summaryCopy(product).primary}
             </p>
-            <p className="mt-0.5 text-xs text-black/55" style={{ letterSpacing: '-0.14px' }}>
+            <p className="mt-0.5 text-xs text-ink-muted">
               {summaryCopy(product).secondary}
             </p>
           </div>
         ) : hero ? (
           <div className="mt-3">
-            <p className="font-mono text-[10px] uppercase tracking-[0.54px] text-black/45">
+            <p className="eyebrow text-ink-muted">
               Garment + print · from
             </p>
             <div className="mt-0.5 flex items-baseline gap-1.5">
-              <span className="text-3xl text-black" style={{ fontWeight: 400, letterSpacing: '-0.96px' }}>
+              <span className="text-3xl text-ink">
                 {formatMoneyNZD(hero.price)}
               </span>
-              <span className="text-xs text-black/55" style={{ letterSpacing: '-0.14px' }}>ea</span>
+              <span className="text-xs text-ink-muted">ea</span>
             </div>
-            <p className="mt-0.5 text-xs text-black" style={{ letterSpacing: '-0.14px', fontWeight: 480 }}>
+            <p className="mt-0.5 text-xs text-ink font-medium">
               for {hero.printSizeName} printing + garment
             </p>
-            <p className="mt-0.5 font-mono text-[10px] uppercase tracking-[0.54px] text-black/45">
+            <p className="mt-0.5 eyebrow text-ink-muted">
               {quantityCopy}
             </p>
-            <p className="mt-2 font-mono text-[10px] uppercase tracking-[0.54px] text-black/45">
+            <p className="mt-2 eyebrow text-ink-muted">
               Garment {garmentLabel} ea{hero.sizeAdjustments.length > 0 ? ' · varies by size' : ''}
             </p>
             {hero.sizeAdjustments.length > 0 && (
-              <p className="mt-0.5 font-mono text-[10px] uppercase tracking-[0.54px] text-black/40">
+              <p className="mt-0.5 eyebrow text-ink-muted">
                 {hero.sizeAdjustments.map((a) => `${a.size}: +$${a.adjustment.toFixed(2)}`).join(' | ')}
               </p>
             )}
@@ -166,19 +166,19 @@ export function ProductCard({ product }: ProductCardProps) {
             {/* Defensive (Jira 9704): a garment with no printed-from price and a zero/unset
                 basePrice would otherwise render "$0.00 ea" — defer to the detail page instead. */}
             {!showPrinted && product.basePrice <= 0 ? (
-              <p className="text-sm text-black/55" style={{ letterSpacing: '-0.14px' }}>
+              <p className="text-sm text-ink-muted">
                 See product for pricing
               </p>
             ) : (
               <>
-                <p className="font-mono text-[10px] uppercase tracking-[0.54px] text-black/45">
+                <p className="eyebrow text-ink-muted">
                   {showPrinted ? 'Garment + print · from' : 'Garment price'}
                 </p>
                 <div className="mt-0.5 flex items-baseline gap-1.5">
-                  <span className="text-3xl text-black" style={{ fontWeight: 400, letterSpacing: '-0.96px' }}>
+                  <span className="text-3xl text-ink">
                     {showPrinted ? formatMoneyNZD(product.fromPrice!) : formatMoneyNZD(product.basePrice)}
                   </span>
-                  <span className="text-xs text-black/55" style={{ letterSpacing: '-0.14px' }}>ea</span>
+                  <span className="text-xs text-ink-muted">ea</span>
                 </div>
               </>
             )}
@@ -186,8 +186,7 @@ export function ProductCard({ product }: ProductCardProps) {
         )}
 
         <span
-          className="mt-auto pt-3 text-xs text-black/55 underline underline-offset-2 transition-opacity group-hover:opacity-50"
-          style={{ letterSpacing: '-0.14px' }}
+          className="mt-auto pt-3 text-xs text-ink-muted underline underline-offset-2 transition-opacity group-hover:opacity-50"
         >
           {ctaLabel(product)}
         </span>

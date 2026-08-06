@@ -22,7 +22,7 @@ export function TierPricingStrip({ tiers, appliedMinQuantity }: Props) {
 
   return (
     <div>
-      <div className="overflow-hidden rounded-2xl border border-black/[0.08]">
+      <div className="overflow-hidden rounded-2xl border border-line">
         <table className="w-full text-sm">
           <tbody className="divide-y divide-black/[0.06]">
             {productTiers.map((tier) => {
@@ -30,23 +30,23 @@ export function TierPricingStrip({ tiers, appliedMinQuantity }: Props) {
               return (
                 <tr
                   key={tier.id}
-                  className={active ? 'bg-black/[0.04]' : undefined}
+                  className={active ? 'bg-surface-sunken' : undefined}
                 >
                   <td className="px-4 py-2.5">
                     <span
-                      className="font-mono text-[11px] uppercase tracking-[0.54px] text-black/55"
+                      className="eyebrow text-ink-muted"
                     >
                       {formatTierLabel(tier.minQuantity)}
                     </span>
                     {active && (
-                      <span className="ml-2 rounded-full bg-black px-2 py-0.5 text-[9px] uppercase tracking-[0.54px] text-white">
+                      <span className="ml-2 rounded-full bg-surface-inverse px-2 py-0.5 text-[9px] uppercase tracking-[0.54px] text-white">
                         Applied
                       </span>
                     )}
                   </td>
-                  <td className="px-4 py-2.5 text-right tabular-nums text-black" style={{ fontWeight: 480 }}>
+                  <td className="px-4 py-2.5 text-right tabular-nums text-ink" style={{ fontWeight: 500 }}>
                     {formatMoneyNZD(tier.unitPrice)}
-                    <span className="text-black/45"> ea</span>
+                    <span className="text-ink-muted"> ea</span>
                   </td>
                 </tr>
               )
@@ -55,7 +55,7 @@ export function TierPricingStrip({ tiers, appliedMinQuantity }: Props) {
         </table>
       </div>
       {hasVariantOverrides && (
-        <p className="mt-2 text-xs text-black/45" style={{ letterSpacing: '-0.14px' }}>
+        <p className="mt-2 text-xs text-ink-muted">
           Some sizes or colours have their own pricing — the exact price is shown as you select quantities.
         </p>
       )}

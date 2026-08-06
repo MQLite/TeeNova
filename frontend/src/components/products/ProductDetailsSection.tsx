@@ -27,12 +27,12 @@ export function ProductDetailsSection({ description, className }: Props) {
 
   return (
     <section className={`card p-6 ${className ?? ''}`}>
-      <h2 className="text-sm text-black" style={{ fontWeight: 480, letterSpacing: '-0.14px' }}>
+      <h2 className="text-sm text-ink" style={{ fontWeight: 500 }}>
         Product details
       </h2>
       <p
-        className={`mt-3 whitespace-pre-wrap text-sm leading-relaxed text-black/55 ${collapsed ? 'line-clamp-4' : ''}`}
-        style={{ letterSpacing: '-0.14px', fontWeight: 400 }}
+        className={`mt-3 whitespace-pre-wrap text-sm leading-relaxed text-ink-muted ${collapsed ? 'line-clamp-4' : ''}`}
+        style={{ fontWeight: 400 }}
       >
         {text}
       </p>
@@ -41,7 +41,7 @@ export function ProductDetailsSection({ description, className }: Props) {
           type="button"
           onClick={() => setExpanded((value) => !value)}
           aria-expanded={expanded}
-          className="mt-3 font-mono text-[11px] uppercase tracking-[0.54px] text-black/55 transition-colors hover:text-black"
+          className="mt-3 eyebrow text-ink-muted transition-colors hover:text-ink"
         >
           {expanded ? 'Show less' : 'Read more'}
         </button>

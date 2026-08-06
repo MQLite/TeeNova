@@ -8,6 +8,7 @@ using TeeNova.Inventory;
 using TeeNova.Notifications;
 using TeeNova.Orders;
 using TeeNova.Payments;
+using TeeNova.Portfolio;
 using TeeNova.PrintConfig;
 using TeeNova.Production;
 using Volo.Abp.Data;
@@ -76,6 +77,12 @@ public class TeeNovaDbContext : AbpDbContext<TeeNovaDbContext>
 
     // Enquiries (Jira 9512)
     public DbSet<BannerQuoteRequest>   BannerQuoteRequests   { get; set; }
+    public DbSet<QuoteRequest> QuoteRequests { get; set; }
+    public DbSet<QuoteRequestAttachment> QuoteRequestAttachments { get; set; }
+
+    // Portfolio (Jira 10302)
+    public DbSet<PortfolioItem> PortfolioItems { get; set; }
+    public DbSet<PortfolioItemImage> PortfolioItemImages { get; set; }
 
     public TeeNovaDbContext(DbContextOptions<TeeNovaDbContext> options)
         : base(options)

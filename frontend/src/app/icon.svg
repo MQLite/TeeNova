@@ -1,0 +1,20 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 180 180" width="180" height="180" role="img" aria-label="Printer mark">
+  <!--
+    Jira 10307 — technical favicon placeholder, NOT a new logo.
+
+    The silhouette is the printer glyph the site already rendered inline in the
+    header and footer (components/brand/BrandMark.tsx), simplified to solid
+    shapes so it stays legible at 16px. No wordmark, no slogan, no company
+    identity, no trademark symbol.
+
+    Replace wholesale once an approved logo asset exists (Jira 10300 A34–A35);
+    nothing else in the codebase depends on these paths.
+  -->
+  <rect width="180" height="180" rx="40" fill="#0a0a0a"/>
+  <rect x="54" y="28.8" width="72" height="32.4" fill="#ffffff"/>
+  <rect x="28.8" y="64.8" width="122.4" height="43.2" fill="#ffffff"/>
+  <rect x="42.3" y="78.3" width="16.2" height="12.6" fill="#0a0a0a"/>
+  <rect x="54" y="111.6" width="72" height="39.6" fill="#ffffff"/>
+  <rect x="65.7" y="123.3" width="48.6" height="5.4" fill="#0a0a0a"/>
+  <rect x="65.7" y="135.9" width="37.8" height="5.4" fill="#0a0a0a"/>
+</svg>

@@ -1,4 +1,4 @@
-import { apiClient, type ApiClient } from '@/lib/api-client'
+import { apiClient, type ApiClient, type ReadRequestOptions } from '@/lib/api-client'
 import type {
   BulkSaveProductVariantsPayload,
   CreateUpdatePrintPricingGroup,
@@ -106,18 +106,35 @@ export interface UpdateVariantInventoryPayload {
 
 export function makeCatalogApi(client: ApiClient) {
   return {
-    getProducts(params?: GetProductsParams): Promise<PagedResult<ProductListItem>> {
-      return client.get('/api/catalog/products', {
-        search: params?.search,
-        productType: params?.productType,
-        isActive: params?.isActive,
-        skipCount: params?.skipCount ?? 0,
-        maxResultCount: params?.maxResultCount ?? 20,
-      })
+    /**
+     * Public product list. `cacheOptions` is honoured server-side only (see `catalog-cache.ts`) and
+     * is used by the server-rendered service pages (Jira 10306) so a service page stays statically
+     * renderable; every other caller keeps the `no-store` default.
+     */
+    getProducts(
+      params?: GetProductsParams,
+      cacheOptions?: ReadRequestOptions,
+    ): Promise<PagedResult<ProductListItem>> {
+      return client.get(
+        '/api/catalog/products',
+        {
+          search: params?.search,
+          productType: params?.productType,
+          isActive: params?.isActive,
+          skipCount: params?.skipCount ?? 0,
+          maxResultCount: params?.maxResultCount ?? 20,
+        },
+        cacheOptions,
+      )
     },
 
-    getProduct(id: string): Promise<Product> {
-      return client.get(`/api/catalog/products/${id}`)
+    /**
+     * Public product detail. `cacheOptions` is honoured server-side only and is used exclusively by
+     * the server-rendered product route (Jira 10304); every other caller keeps the `no-store`
+     * default. Anonymous callers receive active products only (backend Jira 9808).
+     */
+    getProduct(id: string, cacheOptions?: ReadRequestOptions): Promise<Product> {
+      return client.get(`/api/catalog/products/${id}`, undefined, cacheOptions)
     },
 
     createProduct(payload: CreateProductPayload): Promise<Product> {

@@ -2,6 +2,11 @@ import type { Metadata } from 'next'
 import Link from 'next/link'
 import { catalogApi } from '@/api/catalog'
 import { ProductCard } from '@/components/products/ProductCard'
+import { QuoteLink } from '@/components/QuoteLink'
+import { type IconName } from '@/components/ui/Icon'
+import { ActionGroup, CardGrid, Section } from '@/components/ui/Layout'
+import { EmptyState } from '@/components/ui/Notice'
+import { PageHero } from '@/components/ui/PageHero'
 import type { ProductListItem } from '@/types'
 
 interface PageProps {
@@ -116,29 +121,24 @@ const CATEGORY_EMPTY: Record<Category['key'], { title: string; body: string }> =
   quote: { title: 'No quote-only products are listed yet', body: 'Send us your requirements and we’ll confirm pricing.' },
 }
 
-// Shared dashed empty/error box (Jira 9705) so all four states render consistently.
+// Shared empty/error box (Jira 9705), now the site-wide `EmptyState` primitive (Jira 10307) so a
+// catalogue with nothing in it, a search that matched nothing and a backend outage read as three
+// distinguishable states rather than three copies of one dashed box with a different emoji.
 function EmptyBox({
   icon,
   title,
   body,
+  variant,
   children,
 }: {
-  icon: string
+  icon: IconName
   title: string
   body: string
+  variant?: 'empty' | 'error'
   children?: React.ReactNode
 }) {
   return (
-    <div className="flex flex-col items-center justify-center rounded-lg border border-dashed border-black/[0.12] py-24 text-center">
-      <span className="text-4xl">{icon}</span>
-      <h3 className="mt-4 text-base text-black" style={{ fontWeight: 480, letterSpacing: '-0.26px' }}>
-        {title}
-      </h3>
-      <p className="mt-1 max-w-md text-sm text-black/55" style={{ letterSpacing: '-0.14px' }}>
-        {body}
-      </p>
-      {children && <div className="mt-5 flex flex-wrap justify-center gap-3">{children}</div>}
-    </div>
+    <EmptyState icon={icon} title={title} body={body} variant={variant ?? 'empty'} actions={children} />
   )
 }
 
@@ -185,43 +185,55 @@ export default async function ProductsPage({ searchParams }: PageProps) {
 
   return (
     <>
-      {/* Page header */}
-      <section className="border-b border-black/[0.08] py-14">
-        <div className="section-container">
-          <nav className="mb-4 flex items-center gap-2 font-mono text-[11px] uppercase tracking-[0.54px] text-black/50">
-            <Link href="/" className="hover:text-black transition-colors">Home</Link>
-            <span className="opacity-40">›</span>
-            <span className="text-black">Products</span>
-          </nav>
-          <h1 className="display-section mb-4">Products &amp; Print Services</h1>
-          <p className="text-base text-black/50" style={{ letterSpacing: '-0.14px', fontWeight: 400 }}>
+      {/* Working page: the `plain` hero treatment keeps attention on the product
+          images rather than on the chrome (Jira 10307 §Phase 5). */}
+      <PageHero
+        variant="plain"
+        title="Products & Print Services"
+        lead={
+          <>
             Browse online products for garments, badges and banners, or request a quote for custom
             print jobs — printed locally in Otahuhu, Auckland.
             {!hasFetchError && (
-              <span className="ml-2 rounded-full border border-black/[0.08] px-2.5 py-0.5 font-mono text-[11px] uppercase tracking-[0.54px] text-black/55">
+              <span className="mono-sm ml-2 inline-block rounded-pill border border-line-strong px-2.5 py-0.5 align-middle text-ink-muted">
                 {totalCount} product{totalCount !== 1 ? 's' : ''}
               </span>
             )}
-          </p>
-        </div>
-      </section>
+          </>
+        }
+        above={
+          <nav aria-label="Breadcrumb" className="eyebrow flex items-center gap-2">
+            <Link href="/" className="transition-colors duration-fast hover:text-ink">
+              Home
+            </Link>
+            <span aria-hidden="true">/</span>
+            <span aria-current="page" className="text-ink">
+              Products
+            </span>
+          </nav>
+        }
+      />
 
       {/* Grid */}
-      <section className="py-12">
-        <div className="section-container">
-
+      <Section spacing="tight">
+          {/* Product card titles are h3, so the page would otherwise jump h1 → h3. Hidden because
+              the h1 above already names the list. */}
+          <h2 className="sr-only">Product catalogue</h2>
           {/* Search (Jira 9705): plain GET form, no client JS. Keeps the selected category. */}
           <form action="/products" method="get" className="mb-6 flex w-full max-w-md items-center gap-2">
             {activeCategory.key !== 'all' && (
               <input type="hidden" name="category" value={activeCategory.key} />
             )}
+            <label htmlFor="product-search" className="sr-only">
+              Search products
+            </label>
             <input
+              id="product-search"
               type="search"
               name="search"
               defaultValue={params.search ?? ''}
               placeholder="Search products…"
-              className="w-full rounded-[50px] border border-black/[0.12] bg-white px-4 py-1.5 text-sm text-black outline-none transition-colors placeholder:text-black/40 focus:border-black"
-              style={{ letterSpacing: '-0.14px' }}
+              className="form-input rounded-pill"
             />
             <button type="submit" className="btn-black btn-sm shrink-0">
               Search
@@ -242,18 +254,17 @@ export default async function ProductsPage({ searchParams }: PageProps) {
                   href={categoryHref(c.key, params.search)}
                   className={`shrink-0 whitespace-nowrap rounded-[50px] border px-4 py-1.5 text-sm transition-colors ${
                     c.key === activeCategory.key
-                      ? 'border-black bg-black text-white'
-                      : 'border-black/[0.12] bg-white text-black/50 hover:border-black/30 hover:text-black'
+                      ? 'border-ink bg-surface-inverse text-white'
+                      : 'border-line-strong bg-white text-ink-muted hover:border-line-control hover:text-ink'
                   }`}
-                  style={{ letterSpacing: '-0.14px' }}
                 >
                   {c.label} ({countByKey[c.key]})
                 </Link>
               ))}
             </div>
             {!hasFetchError && (
-              <p className="text-xs text-black/55" style={{ letterSpacing: '0.02em' }}>
-                Showing <strong className="font-medium text-black">{visible.length}</strong>
+              <p className="text-xs text-ink-muted">
+                Showing <strong className="font-medium text-ink">{visible.length}</strong>
                 {activeCategory.key === 'all'
                   ? ` of ${totalCount} products`
                   : ` ${CATEGORY_NOUNS[activeCategory.key]}`}
@@ -263,24 +274,25 @@ export default async function ProductsPage({ searchParams }: PageProps) {
 
           {/* Quote-category explainer (Jira 9704) */}
           {activeCategory.key === 'quote' && (
-            <p className="-mt-4 mb-8 text-sm text-black/55" style={{ letterSpacing: '-0.14px' }}>
+            <p className="-mt-4 mb-8 text-sm text-ink-muted">
               These products are quoted individually — send us your requirements and we&apos;ll confirm pricing.
             </p>
           )}
 
           {hasFetchError ? (
             <EmptyBox
-              icon="🖨️"
+              icon="printer"
+              variant="error"
               title="Products are temporarily unavailable"
               body="Please try again shortly or contact us for help with your print job."
             >
               <Link href="/contact" className="btn-black btn-sm">Contact Us</Link>
-              <a href="mailto:quanlitycanvasltd@gmail.com" className="btn-glass btn-sm">Request a Quote</a>
+              <QuoteLink source="/products" className="btn-glass btn-sm">Request a Quote</QuoteLink>
             </EmptyBox>
           ) : items.length === 0 ? (
             params.search ? (
               <EmptyBox
-                icon="🔍"
+                icon="search"
                 title="No products matched your search"
                 body="Try a different keyword or contact us for help with a custom print job."
               >
@@ -289,56 +301,48 @@ export default async function ProductsPage({ searchParams }: PageProps) {
               </EmptyBox>
             ) : (
               <EmptyBox
-                icon="📦"
+                icon="package"
                 title="No products are available online yet"
                 body="Contact us and we can still help with custom printing."
               >
                 <Link href="/contact" className="btn-black btn-sm">Contact Us</Link>
-                <a href="mailto:quanlitycanvasltd@gmail.com" className="btn-glass btn-sm">Request a Quote</a>
+                <QuoteLink source="/products" className="btn-glass btn-sm">Request a Quote</QuoteLink>
               </EmptyBox>
             )
           ) : visible.length === 0 ? (
             <EmptyBox
-              icon="🔍"
+              icon="search"
               title={CATEGORY_EMPTY[activeCategory.key].title}
               body={CATEGORY_EMPTY[activeCategory.key].body}
             >
               <Link href={categoryHref('all', params.search)} className="btn-black btn-sm">All Products</Link>
               <Link href="/contact" className="btn-glass btn-sm">Contact Us</Link>
-              <a href="mailto:quanlitycanvasltd@gmail.com" className="btn-glass btn-sm">Request a Quote</a>
+              <QuoteLink source="/products" className="btn-glass btn-sm">Request a Quote</QuoteLink>
             </EmptyBox>
           ) : (
-            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+            <CardGrid columns={4}>
               {visible.map((product) => (
                 <ProductCard key={product.id} product={product} />
               ))}
-            </div>
+            </CardGrid>
           )}
-        </div>
-      </section>
+      </Section>
 
       {/* Bottom CTA */}
-      <section className="border-t border-black/[0.08] py-16 text-center">
-        <div className="section-container max-w-lg">
-          <h2
-            className="mb-2 text-xl text-black"
-            style={{ fontWeight: 540, letterSpacing: '-0.26px' }}
-          >
-            Can&apos;t find what you need?
-          </h2>
-          <p className="mb-6 text-sm text-black/50" style={{ letterSpacing: '-0.14px', fontWeight: 400 }}>
+      <Section spacing="tight" divided className="text-center">
+        <div className="mx-auto max-w-measure">
+          <h2 className="display-sub mb-2">Can&apos;t find what you need?</h2>
+          <p className="mb-6 text-sm text-ink-muted">
             Contact us for bulk orders, custom product types, or special requests.
           </p>
-          <div className="flex flex-wrap justify-center gap-3">
-            <a href="mailto:quanlitycanvasltd@gmail.com" className="btn-black">
-              Contact Us
-            </a>
+          <ActionGroup align="center">
+            <QuoteLink source="/products" className="btn-black">Request a Quote</QuoteLink>
             <Link href="/" className="btn-glass">
               Back to Home
             </Link>
-          </div>
+          </ActionGroup>
         </div>
-      </section>
+      </Section>
     </>
   )
 }

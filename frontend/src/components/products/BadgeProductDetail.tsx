@@ -188,14 +188,14 @@ export function BadgeProductDetail({ product }: Props) {
 
   return (
     <div className="min-h-screen bg-white">
-      <div className="border-b border-black/[0.08]">
+      <div className="border-b border-line">
         <div className="section-container py-3">
-          <nav className="flex items-center gap-1.5 font-mono text-[11px] uppercase tracking-[0.54px] text-black/50">
-            <Link href="/" className="hover:text-black transition-colors">Home</Link>
+          <nav aria-label="Breadcrumb" className="flex items-center gap-1.5 eyebrow text-ink-muted">
+            <Link href="/" className="hover:text-ink transition-colors">Home</Link>
             <span className="opacity-40">/</span>
-            <Link href="/products" className="hover:text-black transition-colors">Products</Link>
+            <Link href="/products" className="hover:text-ink transition-colors">Products</Link>
             <span className="opacity-40">/</span>
-            <span className="text-black">{product.name}</span>
+            <span className="text-ink">{product.name}</span>
           </nav>
         </div>
       </div>
@@ -209,10 +209,12 @@ export function BadgeProductDetail({ product }: Props) {
               images={displayedImages}
               onSelectImage={setSelectedImageId}
             />
-            <div className="mt-3 grid grid-cols-3 gap-2">
-              {['Custom badges', 'Bulk pricing', 'Fast ship'].map((tag) => (
+            <div className="mt-3 grid grid-cols-2 gap-2">
+              {/* Jira 10303: the third pill was an unverified delivery-speed claim and was removed;
+                  no approved turnaround or delivery rule exists to support one. */}
+              {['Custom badges', 'Bulk pricing'].map((tag) => (
                 <div key={tag} className="card flex items-center justify-center py-2.5 text-center">
-                  <span className="font-mono text-[10px] uppercase tracking-[0.54px] text-black/55">{tag}</span>
+                  <span className="eyebrow text-ink-muted">{tag}</span>
                 </div>
               ))}
             </div>
@@ -220,26 +222,26 @@ export function BadgeProductDetail({ product }: Props) {
 
           <div className="flex flex-col gap-5">
             <div className="card p-6">
-              <span className="mb-3 inline-block rounded-full border border-black/[0.08] px-3 py-0.5 font-mono text-[11px] uppercase tracking-[0.54px] text-black/55">
+              <span className="mb-3 inline-block rounded-full border border-line px-3 py-0.5 eyebrow text-ink-muted">
                 {product.productType}
               </span>
-              <h1 className="text-2xl text-black" style={{ fontWeight: 540, letterSpacing: '-0.96px' }}>
+              <h1 className="text-2xl text-ink" style={{ fontWeight: 600 }}>
                 {product.name}
               </h1>
               <div className="mt-3">
                 {heroUnit !== null ? (
-                  <p className="text-2xl text-black" style={{ fontWeight: 540, letterSpacing: '-0.72px' }}>
+                  <p className="text-2xl text-ink" style={{ fontWeight: 600, letterSpacing: '-0.72px' }}>
                     From {formatMoneyNZD(heroUnit)}{' '}
-                    <span className="text-base text-black/55" style={{ fontWeight: 480, letterSpacing: '-0.14px' }}>
+                    <span className="text-base text-ink-muted" style={{ fontWeight: 500 }}>
                       each for {minQuantity}+
                     </span>
                   </p>
                 ) : (
-                  <p className="text-sm text-black/55" style={{ letterSpacing: '-0.14px' }}>
+                  <p className="text-sm text-ink-muted">
                     Pricing available on request.
                   </p>
                 )}
-                <p className="mt-1 font-mono text-[10px] uppercase tracking-[0.54px] text-black/45">
+                <p className="mt-1 eyebrow text-ink-muted">
                   Minimum order {minQuantity} {minQuantity === 1 ? 'piece' : 'pieces'} · unit price by quantity
                 </p>
               </div>
@@ -248,35 +250,35 @@ export function BadgeProductDetail({ product }: Props) {
             {tiers.length > 0 && (
               <div className="card p-6">
                 <div className="mb-3">
-                  <p className="text-sm text-black" style={{ fontWeight: 480, letterSpacing: '-0.14px' }}>
+                  <p className="text-sm text-ink" style={{ fontWeight: 500 }}>
                     Quantity pricing
                   </p>
-                  <p className="mt-1 font-mono text-[10px] uppercase tracking-[0.54px] text-black/45">
+                  <p className="mt-1 eyebrow text-ink-muted">
                     Unit price per badge · the more you order, the lower the price
                   </p>
                 </div>
-                <div className="overflow-hidden rounded-2xl border border-black/[0.08]">
+                <div className="overflow-hidden rounded-2xl border border-line">
                   <table className="min-w-full text-sm">
                     <thead>
-                      <tr className="bg-black/[0.02]">
-                        <th className="px-4 py-2 text-left font-mono text-[10px] uppercase tracking-[0.54px] text-black/45">Quantity</th>
-                        <th className="px-4 py-2 text-right font-mono text-[10px] uppercase tracking-[0.54px] text-black/45">Unit price</th>
+                      <tr className="bg-surface-sunken">
+                        <th className="px-4 py-2 text-left eyebrow text-ink-muted">Quantity</th>
+                        <th className="px-4 py-2 text-right eyebrow text-ink-muted">Unit price</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-black/[0.06]">
                       {tiers.map((tier) => {
                         const applied = pricing?.appliedTierMinQuantity === tier.minQuantity
                         return (
-                          <tr key={tier.id} className={applied ? 'bg-black/[0.03]' : ''}>
-                            <td className="px-4 py-2.5 text-black/70" style={{ letterSpacing: '-0.14px' }}>
+                          <tr key={tier.id} className={applied ? 'bg-surface-sunken' : ''}>
+                            <td className="px-4 py-2.5 text-ink-secondary">
                               {tier.minQuantity}+
                               {applied && (
-                                <span className="ml-2 rounded-full bg-black/[0.06] px-2 py-0.5 text-[10px] uppercase tracking-[0.54px] text-black/55">
+                                <span className="ml-2 rounded-full bg-surface-sunken px-2 py-0.5 text-[10px] uppercase tracking-[0.54px] text-ink-muted">
                                   Applied
                                 </span>
                               )}
                             </td>
-                            <td className="px-4 py-2.5 text-right text-black" style={{ fontWeight: 480 }}>
+                            <td className="px-4 py-2.5 text-right text-ink" style={{ fontWeight: 500 }}>
                               {formatMoneyNZD(tier.unitPrice)}
                             </td>
                           </tr>
@@ -294,10 +296,10 @@ export function BadgeProductDetail({ product }: Props) {
           {/* Quantity */}
           <div className="card p-6">
             <div className="mb-4">
-              <p className="text-sm text-black" style={{ fontWeight: 480, letterSpacing: '-0.14px' }}>
+              <p className="text-sm text-ink" style={{ fontWeight: 500 }}>
                 Quantity
               </p>
-              <p className="mt-1 font-mono text-[10px] uppercase tracking-[0.54px] text-black/45">
+              <p className="mt-1 eyebrow text-ink-muted">
                 Minimum {minQuantity} · enter any quantity at or above the minimum
               </p>
             </div>
@@ -313,14 +315,14 @@ export function BadgeProductDetail({ product }: Props) {
                   if (!isNaN(parsed)) setQuantity(parsed)
                 }}
                 onBlur={(e) => commitQuantity(e.target.value)}
-                className="w-32 rounded-xl border border-black/[0.10] bg-white px-4 py-2.5 text-sm text-black outline-none transition-colors focus:border-black [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
+                className="w-32 rounded-xl border border-line bg-white px-4 py-2.5 text-sm text-ink outline-none transition-colors focus:border-ink [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
               />
-              <span className="font-mono text-[11px] uppercase tracking-[0.54px] text-black/45">
+              <span className="eyebrow text-ink-muted">
                 badges
               </span>
             </div>
             {!quantityValid && (
-              <p className="mt-2 text-sm text-amber-700" style={{ letterSpacing: '-0.14px' }}>
+              <p className="mt-2 text-sm text-amber-700">
                 Quantity must be at least {minQuantity}.
               </p>
             )}
@@ -329,26 +331,26 @@ export function BadgeProductDetail({ product }: Props) {
           {/* Design upload */}
           <div className="card p-6">
             <div className="mb-4">
-              <p className="text-sm text-black" style={{ fontWeight: 480, letterSpacing: '-0.14px' }}>
+              <p className="text-sm text-ink" style={{ fontWeight: 500 }}>
                 Your design {designRequired && <span className="text-red-500">*</span>}
               </p>
-              <p className="mt-1 font-mono text-[10px] uppercase tracking-[0.54px] text-black/45">
+              <p className="mt-1 eyebrow text-ink-muted">
                 {designRequired ? 'Required — upload your artwork' : 'Optional — upload your artwork'}
               </p>
             </div>
 
             {asset ? (
-              <div className="flex items-center gap-4 rounded-2xl border border-black/[0.08] bg-black/[0.02] p-4">
+              <div className="flex items-center gap-4 rounded-2xl border border-line bg-surface-sunken p-4">
                 {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img src={asset.fileUrl} alt={asset.originalFileName} className="h-16 w-16 rounded-lg border border-black/[0.08] bg-white object-contain p-1" />
+                <img src={asset.fileUrl} alt={asset.originalFileName} className="h-16 w-16 rounded-lg border border-line bg-white object-contain p-1" />
                 <div className="min-w-0 flex-1">
-                  <p className="truncate text-sm text-black" style={{ letterSpacing: '-0.14px' }}>{asset.originalFileName}</p>
-                  <p className="font-mono text-[10px] uppercase tracking-[0.54px] text-green-600">Design uploaded</p>
+                  <p className="truncate text-sm text-ink">{asset.originalFileName}</p>
+                  <p className="eyebrow text-green-600">Design uploaded</p>
                 </div>
                 <button
                   type="button"
                   onClick={removeUpload}
-                  className="rounded-full border border-black/[0.12] px-3 py-1.5 text-xs text-black/60 transition-colors hover:border-black/30 hover:text-black"
+                  className="rounded-full border border-line-strong px-3 py-1.5 text-xs text-ink-secondary transition-colors hover:border-line-control hover:text-ink"
                 >
                   Replace
                 </button>
@@ -365,7 +367,7 @@ export function BadgeProductDetail({ product }: Props) {
                 }}
                 className={[
                   'flex cursor-pointer flex-col items-center justify-center gap-2 rounded-2xl border-2 border-dashed px-4 py-8 text-center transition-colors',
-                  dragOver ? 'border-black/40 bg-black/[0.03]' : 'border-black/[0.12] hover:border-black/25',
+                  dragOver ? 'border-black/40 bg-surface-sunken' : 'border-line-strong hover:border-line-control',
                 ].join(' ')}
               >
                 <input
@@ -378,20 +380,20 @@ export function BadgeProductDetail({ product }: Props) {
                     if (file) handleUpload(file)
                   }}
                 />
-                <span className="text-sm text-black/60" style={{ letterSpacing: '-0.14px' }}>
+                <span className="text-sm text-ink-secondary">
                   {uploading ? 'Uploading…' : 'Drag & drop or click to upload your design'}
                 </span>
-                <span className="font-mono text-[10px] uppercase tracking-[0.54px] text-black/35">
-                  PNG, JPG, or PDF
+                <span className="eyebrow text-ink-muted">
+                  PNG, JPG, WebP, AI or PDF · max 20 MB
                 </span>
               </label>
             )}
             {uploadError && (
-              <p className="mt-3 rounded-lg border border-red-200 bg-red-50 px-4 py-2.5 text-sm text-red-700">{uploadError}</p>
+              <p className="mt-3 rounded-lg border border-danger-border bg-danger-surface px-4 py-2.5 text-sm text-danger">{uploadError}</p>
             )}
 
             <div className="mt-4">
-              <label className="mb-1.5 block font-mono text-[10px] uppercase tracking-[0.54px] text-black/55">
+              <label className="mb-1.5 block eyebrow text-ink-muted">
                 Design note (optional)
               </label>
               <textarea
@@ -399,7 +401,7 @@ export function BadgeProductDetail({ product }: Props) {
                 onChange={(e) => setDesignNote(e.target.value)}
                 rows={2}
                 placeholder="Any notes about colours, placement, or finish"
-                className="w-full resize-none rounded-2xl border border-black/[0.10] bg-white px-4 py-3 text-sm text-black placeholder:text-black/30 outline-none focus:border-black/30"
+                className="w-full resize-none rounded-2xl border border-line bg-white px-4 py-3 text-sm text-ink placeholder:text-ink-muted outline-none focus:border-ink"
               />
             </div>
           </div>
@@ -407,32 +409,32 @@ export function BadgeProductDetail({ product }: Props) {
           {/* Live quote */}
           <div className="card p-6">
             <div className="flex items-center justify-between">
-              <p className="text-sm text-black" style={{ fontWeight: 480, letterSpacing: '-0.14px' }}>
+              <p className="text-sm text-ink" style={{ fontWeight: 500 }}>
                 Price preview
               </p>
               {pricingLoading && (
-                <span className="font-mono text-[10px] uppercase tracking-[0.54px] text-black/40">Updating…</span>
+                <span className="eyebrow text-ink-muted">Updating…</span>
               )}
             </div>
             {pricingError ? (
-              <p className="mt-3 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{pricingError}</p>
+              <p className="mt-3 rounded-lg border border-danger-border bg-danger-surface px-4 py-3 text-sm text-danger">{pricingError}</p>
             ) : unitPrice !== null && lineTotal !== null ? (
-              <div className="mt-3 space-y-2 rounded-2xl bg-black/[0.02] px-4 py-3 text-sm">
-                <div className="flex items-center justify-between text-black/60" style={{ letterSpacing: '-0.14px' }}>
+              <div className="mt-3 space-y-2 rounded-2xl bg-surface-sunken px-4 py-3 text-sm">
+                <div className="flex items-center justify-between text-ink-secondary">
                   <span>Unit price</span>
-                  <span className="text-black/80">{formatMoneyNZD(unitPrice)}</span>
+                  <span className="text-ink-secondary">{formatMoneyNZD(unitPrice)}</span>
                 </div>
-                <div className="flex items-center justify-between text-black/60" style={{ letterSpacing: '-0.14px' }}>
+                <div className="flex items-center justify-between text-ink-secondary">
                   <span>Quantity</span>
-                  <span className="text-black/80">{quantity}</span>
+                  <span className="text-ink-secondary">{quantity}</span>
                 </div>
-                <div className="flex items-center justify-between border-t border-black/[0.06] pt-2" style={{ letterSpacing: '-0.14px' }}>
-                  <span className="text-black" style={{ fontWeight: 540 }}>Line total</span>
-                  <span className="text-black" style={{ fontWeight: 540 }}>{formatMoneyNZD(lineTotal)}</span>
+                <div className="flex items-center justify-between border-t border-line pt-2">
+                  <span className="text-ink" style={{ fontWeight: 600 }}>Line total</span>
+                  <span className="text-ink" style={{ fontWeight: 600 }}>{formatMoneyNZD(lineTotal)}</span>
                 </div>
               </div>
             ) : (
-              <p className="mt-3 text-sm text-black/55" style={{ letterSpacing: '-0.14px' }}>
+              <p className="mt-3 text-sm text-ink-muted">
                 Enter a quantity to preview pricing.
               </p>
             )}
@@ -448,16 +450,16 @@ export function BadgeProductDetail({ product }: Props) {
             >
               {addedToCart ? 'Added to Cart' : `Add ${quantity} to Cart`}
             </button>
-            <p className="mt-3 text-center text-sm text-black/55" style={{ letterSpacing: '-0.14px' }}>
+            <p className="mt-3 text-center text-sm text-ink-muted">
               Frontend prices are previews only. Final order pricing is recalculated by the backend at checkout.
             </p>
             {designRequired && !asset && (
-              <p className="mt-3 text-center text-xs text-amber-700" style={{ letterSpacing: '-0.14px' }}>
+              <p className="mt-3 text-center text-xs text-amber-700">
                 A design upload is required for this product.
               </p>
             )}
             {addToCartError && (
-              <p className="mt-3 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{addToCartError}</p>
+              <p className="mt-3 rounded-lg border border-danger-border bg-danger-surface px-4 py-3 text-sm text-danger">{addToCartError}</p>
             )}
             {addedToCart && (
               <div className="mt-3 flex gap-2">

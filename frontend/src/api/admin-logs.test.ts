@@ -53,7 +53,10 @@ describe('listAdminLogs', () => {
       sortDirection: 'desc',
       page: 1,
       pageSize: 25,
-    }, undefined)
+      // Third argument is the shared ReadRequestOptions bag (Jira 10304). No caller-supplied
+      // AbortSignal here, so it carries an undefined `signal` — behaviourally identical to the
+      // bare `undefined` this previously asserted.
+    }, { signal: undefined })
   })
 
   it.each([

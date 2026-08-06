@@ -52,6 +52,32 @@ async function handleResponse<T>(res: Response): Promise<T> {
   return res.json() as Promise<T>
 }
 
+/**
+ * Opt-in read-cache policy for a single GET (Jira 10304).
+ *
+ * The default for every request stays `cache: 'no-store'` — nothing becomes cacheable by accident,
+ * and authoritative reads (pricing, checkout quotes, stock, cart validation, admin data) are never
+ * affected. Only anonymous public catalogue reads pass this option; see `lib/catalog-cache.ts` for
+ * the durations and the reasoning behind them.
+ *
+ * The revalidation window is honoured **server-side only**: `next.revalidate` addresses the Next.js
+ * Data Cache, which exists in the Node process, not in the browser. Browser-side calls keep
+ * `no-store` so a customer's own device never replays a stale catalogue response.
+ */
+export interface ReadRequestOptions {
+  /** Seconds the Next.js server Data Cache may reuse this response before refetching. */
+  revalidate?: number
+  /** Cancels an in-flight read. */
+  signal?: AbortSignal
+}
+
+/** Resolves the fetch cache init for a GET, defaulting to `no-store`. */
+function readCacheInit(options?: ReadRequestOptions): RequestInit {
+  const isServer = typeof window === 'undefined'
+  if (options?.revalidate === undefined || !isServer) return { cache: 'no-store' }
+  return { next: { revalidate: options.revalidate } } as RequestInit
+}
+
 // Factory that creates an API client with optional default headers.
 // Used by auth.ts to create authenticated server-side clients.
 export function makeApiClient(
@@ -59,7 +85,11 @@ export function makeApiClient(
   defaultHeaders: Record<string, string> = {},
 ) {
   return {
-    async get<T>(path: string, params?: Record<string, string | number | boolean | undefined>): Promise<T> {
+    async get<T>(
+      path: string,
+      params?: Record<string, string | number | boolean | undefined>,
+      options?: ReadRequestOptions,
+    ): Promise<T> {
       const url = new URL(`${baseUrl}${path}`)
       if (params) {
         Object.entries(params).forEach(([key, value]) => {
@@ -67,8 +97,9 @@ export function makeApiClient(
         })
       }
       const res = await fetch(url.toString(), {
-        cache: 'no-store',
+        ...readCacheInit(options),
         headers: { 'Content-Type': 'application/json', ...defaultHeaders },
+        signal: options?.signal,
       })
       return handleResponse<T>(res)
     },

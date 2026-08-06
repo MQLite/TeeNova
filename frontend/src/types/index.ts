@@ -1178,6 +1178,96 @@ export interface PagedResult<T> {
   totalCount: number
 }
 
+// General enquiry-only quote workflow (Jira 10301). There are intentionally no price, order,
+// payment, inventory or production fields in these contracts.
+export type QuoteServiceType =
+  | 'GarmentPrinting' | 'BringYourOwnGarment' | 'Badges' | 'Banners'
+  | 'BusinessCards' | 'StickersLabels' | 'Signage' | 'Other'
+export type QuoteRequestStatus = 'New' | 'Reviewed' | 'Quoted' | 'Closed' | 'Cancelled' | 'Spam'
+export type QuoteFulfilmentPreference = 'Pickup' | 'Delivery' | 'NotSure'
+export type QuoteNotificationStatus = 'NotAttempted' | 'Sent' | 'Failed'
+export type QuoteDimensionUnit = 'Millimetres' | 'Centimetres' | 'Metres'
+
+export interface QuoteAttachmentToken {
+  attachmentToken: string
+  fileName: string
+  contentType: string
+  sizeBytes: number
+}
+
+export interface QuoteRequestPayload {
+  serviceType: QuoteServiceType
+  serviceTypeOther?: string
+  productId?: string
+  quantity?: number
+  width?: number
+  height?: number
+  dimensionUnit?: QuoteDimensionUnit
+  requiredDate?: string
+  fulfilmentPreference: QuoteFulfilmentPreference
+  deliverySuburb?: string
+  customerName: string
+  customerEmail: string
+  customerPhone?: string
+  organisationName?: string
+  notes?: string
+  submissionKey: string
+  sourcePath?: string
+  attachmentTokens: string[]
+  website: string
+  formStartedAtUtc: string
+}
+
+export interface QuoteRequestResult {
+  id: string
+  reference: string
+  status: QuoteRequestStatus
+  wasDuplicate: boolean
+  message: string
+}
+
+export interface QuoteRequestAttachment {
+  id: string
+  fileName: string
+  contentType: string
+  sizeBytes: number
+  sha256: string
+  scanStatus: 'NotScanned' | 'Clean' | 'Rejected'
+}
+
+export interface QuoteRequestSummary {
+  id: string
+  reference: string
+  serviceType: QuoteServiceType
+  customerName: string
+  customerEmail: string
+  quantity: number | null
+  requiredDate: string | null
+  attachmentCount: number
+  status: QuoteRequestStatus
+  internalNotificationStatus: QuoteNotificationStatus
+  customerAcknowledgementStatus: QuoteNotificationStatus
+  creationTime: string
+}
+
+export interface QuoteRequest extends QuoteRequestSummary {
+  serviceTypeOther?: string | null
+  productId?: string | null
+  productNameSnapshot?: string | null
+  quantity: number | null
+  width?: number | null
+  height?: number | null
+  dimensionUnit?: QuoteDimensionUnit | null
+  requiredDate: string | null
+  fulfilmentPreference: QuoteFulfilmentPreference
+  deliverySuburb?: string | null
+  customerPhone?: string | null
+  organisationName?: string | null
+  notes?: string | null
+  sourcePath?: string | null
+  attachments: QuoteRequestAttachment[]
+}
+
 // ── Payment provider settings (Jira 9902) ──────────────────────────────────
 // Persisted, admin-managed Stripe Test-mode configuration. Secrets are never
 // returned by the API — only configured/last-4 masked state.

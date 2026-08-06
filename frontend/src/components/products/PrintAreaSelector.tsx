@@ -21,16 +21,16 @@ export function PrintAreaSelector({ areas, selectedAreaIds, onChange }: PrintAre
   return (
     <div className="space-y-2.5">
       <div className="flex items-center justify-between">
-        <p className="text-sm text-black" style={{ fontWeight: 480, letterSpacing: '-0.14px' }}>
+        <p className="text-sm text-ink" style={{ fontWeight: 500 }}>
           Print Areas
         </p>
-        <span className="font-mono text-[11px] uppercase tracking-[0.54px] text-black/50">
+        <span className="eyebrow text-ink-muted">
           {selectedAreaIds.length === 0 ? 'Optional' : `${selectedAreaIds.length} selected`}
         </span>
       </div>
 
       {areas.length === 0 ? (
-        <p className="rounded-lg border border-dashed border-black/[0.12] py-4 text-center text-sm text-black/55">
+        <p className="rounded-lg border border-dashed border-line-strong py-4 text-center text-sm text-ink-muted">
           No print areas available right now.
         </p>
       ) : (
@@ -46,25 +46,25 @@ export function PrintAreaSelector({ areas, selectedAreaIds, onChange }: PrintAre
                 className={clsx(
                   'rounded-2xl border px-4 py-3 text-left transition-all duration-150',
                   isSelected
-                    ? 'border-black bg-black text-white'
-                    : 'border-black/[0.10] bg-white text-black/60 hover:border-black/25 hover:text-black',
+                    ? 'border-ink bg-surface-inverse text-white'
+                    : 'border-line bg-white text-ink-secondary hover:border-line-control hover:text-ink',
                 )}
               >
                 <div className="flex items-start justify-between gap-3">
                   <div>
-                    <div className="text-sm" style={{ fontWeight: 480, letterSpacing: '-0.14px' }}>
+                    <div className="text-sm" style={{ fontWeight: 500 }}>
                       {area.name}
                     </div>
                     <div className={clsx(
-                      'mt-1 font-mono text-[10px] uppercase tracking-[0.54px]',
-                      isSelected ? 'text-white/70' : 'text-black/45',
+                      'mt-1 eyebrow',
+                      isSelected ? 'text-ink-inverse-secondary' : 'text-ink-muted',
                     )}>
                       {area.code}
                     </div>
                   </div>
                   <div className={clsx(
                     'text-sm tabular-nums',
-                    isSelected ? 'text-white' : 'text-black/55',
+                    isSelected ? 'text-white' : 'text-ink-muted',
                   )}>
                     +${area.basePrice.toFixed(2)}
                   </div>

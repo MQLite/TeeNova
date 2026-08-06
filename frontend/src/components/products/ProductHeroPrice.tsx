@@ -41,13 +41,13 @@ export function ProductHeroPrice({ heroInfo, garmentFromPrice, basePrice, priceA
       : `Reference price for ${heroInfo.quantity} ${heroInfo.quantity === 1 ? 'piece' : 'pieces'}`
 
   const adjustmentsLine = priceAdjustments.length > 0 && (
-    <p className="mt-1 font-mono text-[11px] uppercase tracking-[0.54px] text-black/50">
+    <p className="mt-1 eyebrow text-ink-muted">
       {priceAdjustments.map((item) => `${item.size}: +$${item.adjustment.toFixed(2)}`).join(' | ')}
     </p>
   )
 
   const updatesNote = (
-    <p className="mt-2 text-sm text-black/55" style={{ letterSpacing: '-0.14px' }}>
+    <p className="mt-2 text-sm text-ink-muted">
       Your exact price updates below.
     </p>
   )
@@ -56,23 +56,23 @@ export function ProductHeroPrice({ heroInfo, garmentFromPrice, basePrice, priceA
   if ((heroInfo.mode === 'preferred' || heroInfo.mode === 'fallback-print-size') && heroInfo.price !== null) {
     return (
       <div className={className}>
-        <p className="mt-4 font-mono text-[11px] uppercase tracking-[0.54px] text-black/45">
+        <p className="mt-4 eyebrow text-ink-muted">
           Garment + print · from
         </p>
         <div className="mt-1 flex items-baseline gap-2">
-          <span className="text-5xl text-black" style={{ fontWeight: 400, letterSpacing: '-1.2px' }}>
+          <span className="text-5xl text-ink" style={{ fontWeight: 400, letterSpacing: '-1.2px' }}>
             {formatMoneyNZD(heroInfo.price)}
           </span>
-          <span className="text-sm text-black/55" style={{ letterSpacing: '-0.14px' }}>ea</span>
+          <span className="text-sm text-ink-muted">ea</span>
         </div>
-        <p className="mt-1 text-sm text-black" style={{ letterSpacing: '-0.14px', fontWeight: 480 }}>
+        <p className="mt-1 text-sm text-ink" style={{ fontWeight: 500 }}>
           {heroInfo.label}
         </p>
-        <p className="mt-0.5 font-mono text-[11px] uppercase tracking-[0.54px] text-black/45">
+        <p className="mt-0.5 eyebrow text-ink-muted">
           {quantityCopy}
         </p>
         {updatesNote}
-        <p className="mt-2 font-mono text-[11px] uppercase tracking-[0.54px] text-black/45">
+        <p className="mt-2 eyebrow text-ink-muted">
           Garment {garmentLabel} ea{priceAdjustments.length > 0 ? ' · varies by size' : ''}
         </p>
         {adjustmentsLine}
@@ -84,20 +84,20 @@ export function ProductHeroPrice({ heroInfo, garmentFromPrice, basePrice, priceA
   if (heroInfo.mode === 'printed-from' && heroInfo.price !== null) {
     return (
       <div className={className}>
-        <p className="mt-4 font-mono text-[11px] uppercase tracking-[0.54px] text-black/45">
+        <p className="mt-4 eyebrow text-ink-muted">
           Printed from
         </p>
         <div className="mt-1 flex items-baseline gap-2">
-          <span className="text-5xl text-black" style={{ fontWeight: 400, letterSpacing: '-1.2px' }}>
+          <span className="text-5xl text-ink" style={{ fontWeight: 400, letterSpacing: '-1.2px' }}>
             {formatMoneyNZD(heroInfo.price)}
           </span>
-          <span className="text-sm text-black/55" style={{ letterSpacing: '-0.14px' }}>ea</span>
+          <span className="text-sm text-ink-muted">ea</span>
         </div>
-        <p className="mt-1 text-sm text-black" style={{ letterSpacing: '-0.14px', fontWeight: 480 }}>
+        <p className="mt-1 text-sm text-ink" style={{ fontWeight: 500 }}>
           {heroInfo.label}
         </p>
         {updatesNote}
-        <p className="mt-2 font-mono text-[11px] uppercase tracking-[0.54px] text-black/45">
+        <p className="mt-2 eyebrow text-ink-muted">
           Garment {garmentLabel} ea{priceAdjustments.length > 0 ? ' · varies by size' : ''}
         </p>
         {adjustmentsLine}
@@ -108,18 +108,18 @@ export function ProductHeroPrice({ heroInfo, garmentFromPrice, basePrice, priceA
   // Garment-only / unavailable: no print-tier data — show the garment "from" price, never a print price.
   return (
     <div className={className}>
-      <p className="mt-4 font-mono text-[11px] uppercase tracking-[0.54px] text-black/45">
+      <p className="mt-4 eyebrow text-ink-muted">
         Garment price
       </p>
       <div className="mt-1 flex items-baseline gap-2">
-        <span className="text-5xl text-black" style={{ fontWeight: 400, letterSpacing: '-1.2px' }}>
+        <span className="text-5xl text-ink" style={{ fontWeight: 400, letterSpacing: '-1.2px' }}>
           {garmentLabel}
         </span>
-        <span className="text-sm text-black/55" style={{ letterSpacing: '-0.14px' }}>
+        <span className="text-sm text-ink-muted">
           {priceAdjustments.length > 0 ? 'ea · varies by size' : 'ea'}
         </span>
       </div>
-      <p className="mt-1 text-sm text-black/55" style={{ letterSpacing: '-0.14px' }}>
+      <p className="mt-1 text-sm text-ink-muted">
         Garment price only. Print price updates when options are selected.
       </p>
       {adjustmentsLine}

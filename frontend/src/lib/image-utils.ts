@@ -16,6 +16,45 @@ export function resolveImageUrl(url: string | null | undefined): string | null {
   return url
 }
 
+/** Origin of the public API base, or null when it is not a parseable absolute URL. */
+function apiOrigin(): string | null {
+  try {
+    return new URL(API_BASE).origin
+  } catch {
+    return null
+  }
+}
+
+/**
+ * Path prefix of catalogue product images (`LocalFileStorageService`: wwwroot/uploads/products).
+ * Deliberately narrower than `/uploads/`: customer design artwork lives under `/uploads/designs/`
+ * and is never routed through the public image optimizer.
+ */
+const CATALOG_IMAGE_PATH_PREFIX = '/uploads/products/'
+
+/**
+ * True when a resolved image URL may be handed to `next/image` (Jira 10304).
+ *
+ * `next/image` throws at request time for any URL missing from `images.remotePatterns`, which would
+ * turn a misconfigured deployment into a broken product page. `next.config.mjs` derives its single
+ * remote pattern from `NEXT_PUBLIC_API_BASE_URL` + this same path prefix, and this check reads the
+ * *same* values, so the optimizer is used only for URLs the build is known to allow. Anything else —
+ * an absolute URL an Admin stored pointing at a third-party host, a design-artwork path, or an
+ * unparseable value — falls back to a plain `<img>` rather than erroring. No wildcard host is ever
+ * permitted.
+ */
+export function isOptimizableImageUrl(url: string | null | undefined): boolean {
+  if (!url) return false
+  const origin = apiOrigin()
+  if (!origin) return false
+  try {
+    const parsed = new URL(url)
+    return parsed.origin === origin && parsed.pathname.startsWith(CATALOG_IMAGE_PATH_PREFIX)
+  } catch {
+    return false
+  }
+}
+
 export function normalizeColor(color: string | null | undefined): string {
   return (color ?? '').trim().toLowerCase()
 }

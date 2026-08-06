@@ -142,17 +142,13 @@ export default function CartPage() {
                   <span className="text-black/50">Subtotal ({items.length} item{items.length !== 1 ? 's' : ''})</span>
                   <span className="text-black" style={{ fontWeight: 480 }}>${subtotal.toFixed(2)}</span>
                 </div>
-                <div className="flex justify-between text-sm" style={{ letterSpacing: '-0.14px' }}>
-                  <span className="text-black/50">Shipping</span>
-                  <span className="text-green-600" style={{ fontWeight: 480 }}>
-                    {subtotal >= 100 ? 'FREE' : 'Calculated at checkout'}
-                  </span>
-                </div>
-                {subtotal < 100 && (
-                  <div className="rounded-lg bg-black/[0.03] px-3 py-2 font-mono text-[11px] uppercase tracking-[0.54px] text-black/50">
-                    Add <strong>${(100 - subtotal).toFixed(2)}</strong> more for free shipping
-                  </div>
-                )}
+                {/* Jira 10303: the shipping row previously showed "FREE" above a NZ$100 subtotal and
+                    invited the customer to spend more to reach it. No free-shipping threshold has been
+                    approved and no shipping charge is calculated anywhere — the order total equals the
+                    subtotal — so both the row and the threshold prompt asserted a delivery rule that
+                    does not exist. Removed rather than reworded; delivery terms are unapproved
+                    (see frontend/src/content/help/delivery-and-pickup.ts). No cart, pricing or
+                    checkout behaviour changed: this block was presentation only. */}
                 <div className="border-t border-black/[0.08] pt-3">
                   <div className="flex justify-between">
                     <span className="text-black" style={{ fontWeight: 540, letterSpacing: '-0.26px' }}>Total</span>
@@ -177,10 +173,9 @@ export default function CartPage() {
                     {pricingLoading ? 'Refreshing prices…' : 'Pricing unavailable'}
                   </button>
                 )}
+                {/* Jira 10303: the shipping-coverage badge was removed — no delivery area is approved. */}
                 <div className="mt-4 flex items-center justify-center gap-2 font-mono text-[11px] uppercase tracking-[0.54px] text-black/45">
                   <span>Secure checkout</span>
-                  <span>-</span>
-                  <span>NZ wide shipping</span>
                 </div>
               </div>
             </div>

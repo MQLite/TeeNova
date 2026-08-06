@@ -1,128 +1,161 @@
 import Link from 'next/link'
+import { BrandMark } from '@/components/brand/BrandMark'
+import { publicContentHref, publishedDocuments } from '@/lib/public-content/registry'
+import { publishedServices, serviceHref } from '@/lib/service-content/registry'
+import { brandFullName } from '@/lib/site-brand'
+import { quoteFormEnabled, quoteHref } from '@/lib/site-contact'
 
 // Footer link lists (Jira 9604). `external: true` renders a plain <a> for the shop mailto quote/contact
-// pattern; everything else is an existing internal route or homepage anchor. No dead "#" links, and no
-// links to /contact, /location, or /quote (those pages don't exist yet — deferred to Jira 9605).
+// pattern; everything else is an existing internal route or homepage anchor. No dead "#" links.
 type FooterLink = { href: string; label: string; external?: boolean }
 
+// Service links are derived from the published-service registry (Jira 10306). Before that, four of
+// these were `mailto:` links and one pointed at the unfinished `/customize` Design Studio
+// placeholder. Deriving them means a Draft service cannot be linked from here by being forgotten in
+// a second list, and there is no service link that does not resolve to a real published page.
 const SERVICE_LINKS: FooterLink[] = [
-  { href: '/products', label: 'T-Shirt & Garment Printing' },
-  { href: '/customize', label: 'Bring Your Own Garment' },
-  { href: '/products', label: 'Custom Badges' },
-  { href: 'mailto:quanlitycanvasltd@gmail.com', label: 'Banners & Pull-Ups', external: true },
-  { href: 'mailto:quanlitycanvasltd@gmail.com', label: 'Business Cards', external: true },
-  { href: 'mailto:quanlitycanvasltd@gmail.com', label: 'Stickers & Labels', external: true },
-  { href: 'mailto:quanlitycanvasltd@gmail.com', label: 'Signs & Corflute', external: true },
+  ...publishedServices().map((service) => ({
+    href: serviceHref(service),
+    label: service.name,
+  })),
+  { href: '/services', label: 'All services' },
 ]
 
 const SUPPORT_LINKS: FooterLink[] = [
   { href: '/products', label: 'Browse Products' },
   { href: '/#how-it-works', label: 'How It Works' },
-  { href: 'mailto:quanlitycanvasltd@gmail.com', label: 'Request a Quote', external: true },
+  { href: quoteHref(), label: 'Request a Quote', external: !quoteFormEnabled },
   { href: '/contact', label: 'Contact Us' },
 ]
 
+const HELP_AND_POLICY_LINKS: FooterLink[] = publishedDocuments().map((document) => ({
+  href: publicContentHref(document),
+  label: document.title,
+}))
+
 function FooterLinkItem({ href, label, external }: FooterLink) {
+  const className =
+    'inline-flex min-h-9 items-center text-ink-inverse-secondary transition-colors duration-fast hover:text-ink-inverse hover:underline'
   return (
     <li>
       {external ? (
-        <a href={href} className="hover:text-white transition-colors">{label}</a>
+        <a href={href} className={className}>
+          {label}
+        </a>
       ) : (
-        <Link href={href} className="hover:text-white transition-colors">{label}</Link>
+        <Link href={href} className={className}>
+          {label}
+        </Link>
       )}
     </li>
   )
 }
 
+function FooterColumn({ title, children }: { title: string; children: React.ReactNode }) {
+  return (
+    <div>
+      {/* h2 keeps the footer's heading order below any page h1 without competing
+          with page section headings. */}
+      <h2 className="eyebrow eyebrow-inverse mb-4">{title}</h2>
+      {children}
+    </div>
+  )
+}
+
+/**
+ * Public footer (Jira 10307 presentation pass).
+ *
+ * Content rules from earlier tasks are unchanged and must stay that way: no
+ * payment-method badges (Jira 10303 removed "Bank Transfer / Cash / Eftpos"), no
+ * shipping or turnaround claim, no Draft policy link, no customer logos, and
+ * published-registry-derived service and help links only.
+ *
+ * Contrast note: footer link text moved from `text-white/55` — roughly 3.9:1 on
+ * the black band, below AA at body size — to `--ink-inverse-secondary` at 0.86,
+ * measured in `design-tokens.test.ts`.
+ */
 export function Footer() {
   return (
-    <footer className="bg-black text-white/55">
-      <div className="mx-auto max-w-6xl px-4 py-16 sm:px-6 lg:px-8">
-        <div className="grid grid-cols-1 gap-12 sm:grid-cols-2 lg:grid-cols-5">
-
+    <footer className="surface-inverse">
+      <div className="section-container py-14 sm:py-16">
+        <div className="grid grid-cols-1 gap-10 sm:grid-cols-2 lg:grid-cols-5 lg:gap-12">
           {/* Brand */}
           <div className="lg:col-span-2">
-            <div className="flex items-center gap-2.5">
-              <div className="flex h-8 w-8 items-center justify-center rounded-full bg-white/10">
-                <svg viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth={1.75} className="h-4 w-4">
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M6 9V3h12v6M6 18H4a1 1 0 01-1-1v-5a2 2 0 012-2h14a2 2 0 012 2v5a1 1 0 01-1 1h-2M8 14h8v7H8v-7z" />
-                </svg>
-              </div>
-              <span
-                className="text-sm text-white"
-                style={{ fontWeight: 540, letterSpacing: '-0.26px' }}
-              >
-                Otahuhu Printing
-              </span>
-            </div>
-            <p className="mt-5 max-w-xs text-sm leading-relaxed" style={{ letterSpacing: '-0.14px' }}>
+            <BrandMark tone="light" />
+            <p className="mt-5 max-w-xs text-sm leading-relaxed text-ink-inverse-secondary">
               Auckland&apos;s local custom print shop — T-shirts, badges, banners, business cards,
               stickers, signage and more. Perfect for events, businesses, churches, clubs and teams.
             </p>
-            <div className="mt-5 flex gap-2">
-              {['Facebook', 'Instagram'].map((s) => (
-                <span key={s}
-                  className="rounded-full border border-white/10 px-4 py-1.5 text-xs text-white/50"
-                  style={{ letterSpacing: '0.02em' }}
-                >
-                  {s}
-                </span>
-              ))}
-            </div>
+            {/* Inert labels, not links: no verified social profile URL exists. Styled as plain
+                text so they cannot read as broken links. */}
+            <p className="mt-5 text-xs text-ink-inverse-muted">Find us on Facebook and Instagram</p>
           </div>
 
-          {/* Services */}
-          <div>
-            <h3 className="mb-4 font-mono text-[11px] font-normal uppercase tracking-[0.54px] text-white/30">
-              Services
-            </h3>
-            <ul className="space-y-2.5 text-sm" style={{ letterSpacing: '-0.14px' }}>
-              {SERVICE_LINKS.map((link) => (
-                <FooterLinkItem key={link.label} {...link} />
-              ))}
-            </ul>
-          </div>
+          {/* Services — omitted entirely rather than rendered empty when nothing is published. */}
+          {SERVICE_LINKS.length > 1 && (
+            <FooterColumn title="Services">
+              <ul className="space-y-1 text-sm">
+                {SERVICE_LINKS.map((link) => (
+                  <FooterLinkItem key={link.label} {...link} />
+                ))}
+              </ul>
+            </FooterColumn>
+          )}
 
           {/* Support */}
-          <div>
-            <h3 className="mb-4 font-mono text-[11px] font-normal uppercase tracking-[0.54px] text-white/30">
-              Support
-            </h3>
-            <ul className="space-y-2.5 text-sm" style={{ letterSpacing: '-0.14px' }}>
+          <FooterColumn title="Support">
+            <ul className="space-y-1 text-sm">
               {SUPPORT_LINKS.map((link) => (
                 <FooterLinkItem key={link.label} {...link} />
               ))}
             </ul>
-          </div>
+          </FooterColumn>
 
-          {/* Local info */}
-          <div>
-            <h3 className="mb-4 font-mono text-[11px] font-normal uppercase tracking-[0.54px] text-white/30">
-              Visit Us
-            </h3>
-            <div className="rounded-lg border border-white/[0.08] p-4">
-              <p className="text-xs font-medium text-white">483 Great South Road, Otahuhu, Auckland 1062</p>
-              <p className="mt-1 text-xs" style={{ letterSpacing: '-0.14px' }}>Mon–Fri 9am–5pm</p>
-              <p className="text-xs" style={{ letterSpacing: '-0.14px' }}>Sat 10am–4pm</p>
-              <p className="mt-2 text-xs" style={{ letterSpacing: '-0.14px' }}>
-                Pickup in Otahuhu or NZ-wide delivery.
+          {/* Local info. Address and opening hours remain pending owner approval (Jira 10300
+              A05/A08), so they are presented as the shop's own details to check, not as a
+              guaranteed service commitment — and no pickup, delivery or turnaround promise is
+              attached to them. */}
+          <FooterColumn title="Visit Us">
+            <div className="card-inverse p-4">
+              <p className="text-xs font-medium text-ink-inverse">
+                483 Great South Road, Otahuhu, Auckland 1062
+              </p>
+              <p className="mt-1 text-xs text-ink-inverse-secondary">Mon–Fri 9am–5pm</p>
+              <p className="text-xs text-ink-inverse-secondary">Sat 10am–4pm</p>
+              <p className="mt-2 text-xs text-ink-inverse-secondary">
+                Ask us which pickup or delivery options are available for your job.
               </p>
             </div>
-          </div>
+          </FooterColumn>
         </div>
       </div>
 
       {/* Bottom bar */}
-      <div className="border-t border-white/[0.06]">
-        <div className="mx-auto flex max-w-6xl flex-col items-center justify-between gap-3 px-4 py-5 text-xs sm:flex-row sm:px-6 lg:px-8">
-          <p style={{ letterSpacing: '-0.14px' }}>
-            © {new Date().getFullYear()} Otahuhu Printing Shop. All rights reserved.
+      <div className="border-t border-line-inverse">
+        <div className="section-container flex flex-col items-center justify-between gap-3 py-5 text-xs sm:flex-row">
+          <p className="text-ink-inverse-muted">
+            © {new Date().getFullYear()} {brandFullName}. All rights reserved.
           </p>
-          <div className="flex items-center gap-1.5">
-            {['Bank Transfer', 'Cash', 'Eftpos'].map((p) => (
-              <span key={p} className="rounded border border-white/10 px-2 py-1 text-[10px] text-white/40 tracking-wide">{p}</span>
-            ))}
-          </div>
+          {/* Help and policy links (Jira 10303). Published documents only — the registry is the
+              authority, so an unapproved policy page can never be linked from here. This replaced
+              the "Bank Transfer / Cash / Eftpos" badges, which asserted an unverified set of
+              accepted payment methods and contradicted the online card payment checkout offers. */}
+          {HELP_AND_POLICY_LINKS.length > 0 && (
+            <nav aria-label="Help and policies">
+              <ul className="flex flex-wrap items-center justify-center gap-x-5 gap-y-1">
+                {HELP_AND_POLICY_LINKS.map((link) => (
+                  <li key={link.href}>
+                    <Link
+                      href={link.href}
+                      className="inline-flex min-h-9 items-center text-ink-inverse-secondary transition-colors duration-fast hover:text-ink-inverse hover:underline"
+                    >
+                      {link.label}
+                    </Link>
+                  </li>
+                ))}
+              </ul>
+            </nav>
+          )}
         </div>
       </div>
     </footer>

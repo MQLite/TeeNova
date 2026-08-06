@@ -39,10 +39,10 @@ const PRESET_LABELS = ['Pull-up 850×2000 mm', 'Pull-up 1000×2000 mm', 'Banner 
 const PRESET_OTHER = '__other__'
 
 const FIELD = [
-  'w-full rounded-2xl border border-black/[0.10] bg-white px-4 py-3 text-sm text-black',
-  'placeholder:text-black/30 focus:border-black/30 focus:outline-none focus:ring-2 focus:ring-black/[0.06]',
+  'w-full rounded-2xl border border-line bg-white px-4 py-3 text-sm text-ink',
+  'placeholder:text-ink-muted focus:border-ink focus:outline-none focus:ring-2 focus:ring-black/[0.06]',
 ].join(' ')
-const LABEL = 'mb-1.5 block font-mono text-[10px] uppercase tracking-[0.54px] text-black/55'
+const LABEL = 'mb-1.5 block eyebrow text-ink-muted'
 
 /**
  * Banner storefront detail (Jira 9512). Banner is CustomQuoteOnly / enquiry-first: there is NO live
@@ -196,16 +196,16 @@ export function BannerProductDetail({ product }: Props) {
             <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-full bg-green-50 text-green-600">
               <span className="text-2xl">✓</span>
             </div>
-            <h1 className="text-xl text-black" style={{ fontWeight: 540, letterSpacing: '-0.42px' }}>
+            <h1 className="text-xl text-ink" style={{ fontWeight: 600 }}>
               Quote request received
             </h1>
-            <p className="mt-3 text-sm text-black/60" style={{ letterSpacing: '-0.14px' }}>
+            <p className="mt-3 text-sm text-ink-secondary">
               {result.message}
             </p>
-            <p className="mt-2 text-sm text-black/55" style={{ letterSpacing: '-0.14px' }}>
+            <p className="mt-2 text-sm text-ink-muted">
               If email confirmations are enabled, a copy of your request will arrive in your inbox shortly.
             </p>
-            <p className="mt-2 font-mono text-[11px] uppercase tracking-[0.54px] text-black/45">
+            <p className="mt-2 eyebrow text-ink-muted">
               {result.productName} · {result.quantity} pcs · Ref {result.id.slice(0, 8).toUpperCase()}
             </p>
             <div className="mt-6 flex justify-center gap-2">
@@ -220,14 +220,14 @@ export function BannerProductDetail({ product }: Props) {
 
   return (
     <div className="min-h-screen bg-white">
-      <div className="border-b border-black/[0.08]">
+      <div className="border-b border-line">
         <div className="section-container py-3">
-          <nav className="flex items-center gap-1.5 font-mono text-[11px] uppercase tracking-[0.54px] text-black/50">
-            <Link href="/" className="hover:text-black transition-colors">Home</Link>
+          <nav aria-label="Breadcrumb" className="flex items-center gap-1.5 eyebrow text-ink-muted">
+            <Link href="/" className="hover:text-ink transition-colors">Home</Link>
             <span className="opacity-40">/</span>
-            <Link href="/products" className="hover:text-black transition-colors">Products</Link>
+            <Link href="/products" className="hover:text-ink transition-colors">Products</Link>
             <span className="opacity-40">/</span>
-            <span className="text-black">{product.name}</span>
+            <span className="text-ink">{product.name}</span>
           </nav>
         </div>
       </div>
@@ -245,17 +245,17 @@ export function BannerProductDetail({ product }: Props) {
 
           <div className="flex flex-col gap-5">
             <div className="card p-6">
-              <span className="mb-3 inline-block rounded-full border border-black/[0.08] px-3 py-0.5 font-mono text-[11px] uppercase tracking-[0.54px] text-black/55">
+              <span className="mb-3 inline-block rounded-full border border-line px-3 py-0.5 eyebrow text-ink-muted">
                 {product.productType}
               </span>
-              <h1 className="text-2xl text-black" style={{ fontWeight: 540, letterSpacing: '-0.96px' }}>
+              <h1 className="text-2xl text-ink" style={{ fontWeight: 600 }}>
                 {product.name}
               </h1>
-              <div className="mt-3 rounded-2xl border border-black/[0.08] bg-black/[0.02] px-4 py-3">
-                <p className="text-sm text-black" style={{ fontWeight: 480, letterSpacing: '-0.14px' }}>
+              <div className="mt-3 rounded-2xl border border-line bg-surface-sunken px-4 py-3">
+                <p className="text-sm text-ink" style={{ fontWeight: 500 }}>
                   Quote-only product
                 </p>
-                <p className="mt-1 text-sm text-black/60" style={{ letterSpacing: '-0.14px' }}>
+                <p className="mt-1 text-sm text-ink-secondary">
                   Tell us your size, material and finishing and upload your design. We’ll confirm the
                   price before any payment — no online checkout for banners.
                 </p>
@@ -279,7 +279,7 @@ export function BannerProductDetail({ product }: Props) {
                 onChange={(e) => setQuantity(e.target.value)}
                 className={`${FIELD} w-32`}
               />
-              <span className="font-mono text-[11px] uppercase tracking-[0.54px] text-black/45">
+              <span className="eyebrow text-ink-muted">
                 min {minQuantity}
               </span>
             </div>
@@ -287,7 +287,7 @@ export function BannerProductDetail({ product }: Props) {
 
           {/* Size */}
           <div className="card p-6">
-            <p className="mb-4 text-sm text-black" style={{ fontWeight: 480, letterSpacing: '-0.14px' }}>Size</p>
+            <p className="mb-4 text-sm text-ink" style={{ fontWeight: 500 }}>Size</p>
             <div className="mb-4 flex gap-2">
               {(['Custom', 'Preset'] as BannerSizeMode[]).map((mode) => (
                 <button
@@ -296,8 +296,8 @@ export function BannerProductDetail({ product }: Props) {
                   onClick={() => setSizeMode(mode)}
                   className={`rounded-full border px-4 py-1.5 text-xs transition-colors ${
                     sizeMode === mode
-                      ? 'border-black bg-black text-white'
-                      : 'border-black/[0.12] bg-white text-black/55 hover:border-black/30 hover:text-black'
+                      ? 'border-ink bg-surface-inverse text-white'
+                      : 'border-line-strong bg-white text-ink-muted hover:border-line-control hover:text-ink'
                   }`}
                 >
                   {mode === 'Custom' ? 'Custom size' : 'Preset size'}
@@ -363,7 +363,7 @@ export function BannerProductDetail({ product }: Props) {
 
           {/* Finishing + stand */}
           <div className="card p-6">
-            <p className="mb-4 text-sm text-black" style={{ fontWeight: 480, letterSpacing: '-0.14px' }}>Finishing &amp; stand</p>
+            <p className="mb-4 text-sm text-ink" style={{ fontWeight: 500 }}>Finishing &amp; stand</p>
             <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
               {[
                 { label: 'Eyelets', checked: finishingEyelets, set: setFinishingEyelets },
@@ -372,8 +372,8 @@ export function BannerProductDetail({ product }: Props) {
                 { label: 'Stand included', checked: standIncluded, set: setStandIncluded },
                 { label: 'Stand replacement only', checked: standReplacementOnly, set: setStandReplacementOnly },
               ].map((opt) => (
-                <label key={opt.label} className="flex cursor-pointer items-center gap-2.5 rounded-2xl border border-black/[0.08] bg-black/[0.01] px-4 py-3 text-sm text-black/70" style={{ letterSpacing: '-0.14px' }}>
-                  <input type="checkbox" checked={opt.checked} onChange={(e) => opt.set(e.target.checked)} className="h-4 w-4 rounded border-black/20" />
+                <label key={opt.label} className="flex cursor-pointer items-center gap-2.5 rounded-2xl border border-line bg-surface-sunken px-4 py-3 text-sm text-ink-secondary">
+                  <input type="checkbox" checked={opt.checked} onChange={(e) => opt.set(e.target.checked)} className="h-4 w-4 rounded border-line-control" />
                   {opt.label}
                 </label>
               ))}
@@ -386,21 +386,21 @@ export function BannerProductDetail({ product }: Props) {
 
           {/* Design upload */}
           <div className="card p-6">
-            <p className="mb-1 text-sm text-black" style={{ fontWeight: 480, letterSpacing: '-0.14px' }}>
+            <p className="mb-1 text-sm text-ink" style={{ fontWeight: 500 }}>
               Your design {designRequired && <span className="text-red-500">*</span>}
             </p>
-            <p className="mb-4 font-mono text-[10px] uppercase tracking-[0.54px] text-black/45">
+            <p className="mb-4 eyebrow text-ink-muted">
               {designRequired ? 'Required — upload your artwork' : 'Optional — upload your artwork'}
             </p>
             {asset ? (
-              <div className="flex items-center gap-4 rounded-2xl border border-black/[0.08] bg-black/[0.02] p-4">
+              <div className="flex items-center gap-4 rounded-2xl border border-line bg-surface-sunken p-4">
                 {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img src={asset.fileUrl} alt={asset.originalFileName} className="h-16 w-16 rounded-lg border border-black/[0.08] bg-white object-contain p-1" />
+                <img src={asset.fileUrl} alt={asset.originalFileName} className="h-16 w-16 rounded-lg border border-line bg-white object-contain p-1" />
                 <div className="min-w-0 flex-1">
-                  <p className="truncate text-sm text-black" style={{ letterSpacing: '-0.14px' }}>{asset.originalFileName}</p>
-                  <p className="font-mono text-[10px] uppercase tracking-[0.54px] text-green-600">Design uploaded</p>
+                  <p className="truncate text-sm text-ink">{asset.originalFileName}</p>
+                  <p className="eyebrow text-green-600">Design uploaded</p>
                 </div>
-                <button type="button" onClick={removeUpload} className="rounded-full border border-black/[0.12] px-3 py-1.5 text-xs text-black/60 transition-colors hover:border-black/30 hover:text-black">Replace</button>
+                <button type="button" onClick={removeUpload} className="rounded-full border border-line-strong px-3 py-1.5 text-xs text-ink-secondary transition-colors hover:border-line-control hover:text-ink">Replace</button>
               </div>
             ) : (
               <label
@@ -409,15 +409,15 @@ export function BannerProductDetail({ product }: Props) {
                 onDrop={(e) => { e.preventDefault(); setDragOver(false); const file = e.dataTransfer.files?.[0]; if (file) handleUpload(file) }}
                 className={[
                   'flex cursor-pointer flex-col items-center justify-center gap-2 rounded-2xl border-2 border-dashed px-4 py-8 text-center transition-colors',
-                  dragOver ? 'border-black/40 bg-black/[0.03]' : 'border-black/[0.12] hover:border-black/25',
+                  dragOver ? 'border-black/40 bg-surface-sunken' : 'border-line-strong hover:border-line-control',
                 ].join(' ')}
               >
                 <input ref={fileInputRef} type="file" accept="image/*,application/pdf" className="sr-only" onChange={(e) => { const file = e.target.files?.[0]; if (file) handleUpload(file) }} />
-                <span className="text-sm text-black/60" style={{ letterSpacing: '-0.14px' }}>{uploading ? 'Uploading…' : 'Drag & drop or click to upload your design'}</span>
-                <span className="font-mono text-[10px] uppercase tracking-[0.54px] text-black/35">PNG, JPG, or PDF</span>
+                <span className="text-sm text-ink-secondary">{uploading ? 'Uploading…' : 'Drag & drop or click to upload your design'}</span>
+                <span className="eyebrow text-ink-muted">PNG, JPG, WebP, AI or PDF · max 20 MB</span>
               </label>
             )}
-            {uploadError && <p className="mt-3 rounded-lg border border-red-200 bg-red-50 px-4 py-2.5 text-sm text-red-700">{uploadError}</p>}
+            {uploadError && <p className="mt-3 rounded-lg border border-danger-border bg-danger-surface px-4 py-2.5 text-sm text-danger">{uploadError}</p>}
             <div className="mt-4">
               <label className={LABEL}>Design note (optional)</label>
               <textarea value={designNote} onChange={(e) => setDesignNote(e.target.value)} rows={2} placeholder="Any notes about colours, placement, or finish" className={`${FIELD} resize-none`} />
@@ -432,7 +432,7 @@ export function BannerProductDetail({ product }: Props) {
 
           {/* Contact */}
           <div className="card p-6">
-            <p className="mb-4 text-sm text-black" style={{ fontWeight: 480, letterSpacing: '-0.14px' }}>Your contact details</p>
+            <p className="mb-4 text-sm text-ink" style={{ fontWeight: 500 }}>Your contact details</p>
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
               <div>
                 <label className={LABEL}>Name <span className="text-red-500">*</span></label>
@@ -463,15 +463,15 @@ export function BannerProductDetail({ product }: Props) {
             >
               {submitting ? 'Submitting…' : 'Request a quote'}
             </button>
-            <p className="mt-3 text-center text-sm text-black/55" style={{ letterSpacing: '-0.14px' }}>
+            <p className="mt-3 text-center text-sm text-ink-muted">
               No payment is taken now. We’ll confirm your price before any payment.
             </p>
             {designRequired && !asset && (
-              <p className="mt-3 text-center text-xs text-amber-700" style={{ letterSpacing: '-0.14px' }}>
+              <p className="mt-3 text-center text-xs text-amber-700">
                 A design upload is required for this banner.
               </p>
             )}
-            {submitError && <p className="mt-3 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{submitError}</p>}
+            {submitError && <p className="mt-3 rounded-lg border border-danger-border bg-danger-surface px-4 py-3 text-sm text-danger">{submitError}</p>}
           </div>
         </div>
       </div>

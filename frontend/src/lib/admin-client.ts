@@ -3,7 +3,7 @@
 // reads the HttpOnly admin_token cookie server-side and forwards the Bearer token.
 // Never call this from a server component; use makeAdminApiClient() from auth.ts instead.
 
-import { ApiError } from './api-client'
+import { ApiError, type ReadRequestOptions } from './api-client'
 
 const PROXY_BASE = '/api/proxy'
 
@@ -35,15 +35,20 @@ function buildUrl(path: string, params?: Record<string, string | number | boolea
 }
 
 export const adminApiClient = {
+  /**
+   * Admin reads share the public client's `ReadRequestOptions` shape so the two clients stay
+   * interchangeable (several admin screens pass this client into `makeCatalogApi`). `revalidate` is
+   * deliberately ignored here — admin data is always `no-store`; only `signal` is honoured.
+   */
   async get<T>(
     path: string,
     params?: Record<string, string | number | boolean | undefined>,
-    signal?: AbortSignal,
+    options?: ReadRequestOptions,
   ): Promise<T> {
     const res = await fetch(buildUrl(path, params), {
       cache: 'no-store',
       headers: { 'Content-Type': 'application/json' },
-      signal,
+      signal: options?.signal,
     })
     return handleResponse<T>(res)
   },

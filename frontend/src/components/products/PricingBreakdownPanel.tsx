@@ -41,22 +41,22 @@ export function PricingBreakdownPanel({
     <div className="card p-6">
       <div className="flex items-center justify-between gap-3">
         <div>
-          <p className="text-sm text-black" style={{ fontWeight: 480, letterSpacing: '-0.14px' }}>
+          <p className="text-sm text-ink" style={{ fontWeight: 500 }}>
             Pricing Preview
           </p>
-          <p className="mt-1 font-mono text-[10px] uppercase tracking-[0.54px] text-black/45">
+          <p className="mt-1 eyebrow text-ink-muted">
             Fixed garment price + print price per selected line
           </p>
         </div>
-        {loading && <div className="h-5 w-5 animate-spin rounded-full border-2 border-black/10 border-t-black" />}
+        {loading && <div className="h-5 w-5 animate-spin rounded-full border-2 border-line-control border-t-black" />}
       </div>
 
       {selectedLines.length === 0 ? (
-        <p className="mt-4 rounded-lg border border-dashed border-black/[0.12] py-6 text-center text-sm text-black/55">
+        <p className="mt-4 rounded-lg border border-dashed border-line-strong py-6 text-center text-sm text-ink-muted">
           Enter quantities to see pricing.
         </p>
       ) : validationMessage ? (
-        <p className="mt-4 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+        <p className="mt-4 rounded-lg border border-warning-border bg-warning-surface px-4 py-3 text-sm text-amber-800">
           {validationMessage}
         </p>
       ) : (
@@ -66,71 +66,71 @@ export function PricingBreakdownPanel({
             const lineError = pricingErrorsByVariantId[line.variantId]
 
             return (
-              <div key={line.variantId} className="rounded-2xl border border-black/[0.08] p-4">
+              <div key={line.variantId} className="rounded-2xl border border-line p-4">
                 <div className="flex items-start justify-between gap-3">
                   <div>
-                    <p className="text-sm text-black" style={{ fontWeight: 480, letterSpacing: '-0.14px' }}>
+                    <p className="text-sm text-ink" style={{ fontWeight: 500 }}>
                       {line.color} / {line.size}
                     </p>
-                    <p className="mt-1 text-xs text-black/55" style={{ letterSpacing: '-0.14px' }}>
+                    <p className="mt-1 text-xs text-ink-muted">
                       Qty {line.quantity}
                     </p>
                   </div>
                   {pricing ? (
                     <div className="text-right">
-                      <p className="text-sm text-black tabular-nums" style={{ fontWeight: 480 }}>
+                      <p className="text-sm text-ink tabular-nums" style={{ fontWeight: 500 }}>
                         {pricing.currency} ${pricing.lineTotal.toFixed(2)}
                       </p>
-                      <p className="mt-1 text-xs text-black/50 tabular-nums">
+                      <p className="mt-1 text-xs text-ink-muted tabular-nums">
                         {pricing.currency} ${pricing.unitPrice.toFixed(2)} each
                       </p>
                     </div>
                   ) : lineError ? (
-                    <span className="text-xs text-red-600">Pricing failed</span>
+                    <span className="text-xs text-danger">Pricing failed</span>
                   ) : (
-                    <span className="text-xs text-black/45">Waiting for pricing</span>
+                    <span className="text-xs text-ink-muted">Waiting for pricing</span>
                   )}
                 </div>
 
                 {pricing && (
-                  <div className="mt-3 space-y-1.5 rounded-xl bg-black/[0.02] px-3 py-2">
+                  <div className="mt-3 space-y-1.5 rounded-xl bg-surface-sunken px-3 py-2">
                     {/* Garment (fixed) */}
                     <div className="flex items-center justify-between gap-3 text-xs">
-                      <span className="text-black/60" style={{ letterSpacing: '-0.14px' }}>Garment</span>
-                      <span className="tabular-nums text-black/55">${pricing.garmentUnitPrice.toFixed(2)}</span>
+                      <span className="text-ink-secondary">Garment</span>
+                      <span className="tabular-nums text-ink-muted">${pricing.garmentUnitPrice.toFixed(2)}</span>
                     </div>
 
                     {/* Prints (resolved print prices) */}
                     {pricing.printAddOns.length > 0 && (
                       <>
-                        <p className="font-mono text-[10px] uppercase tracking-[0.54px] text-black/45">Prints</p>
+                        <p className="eyebrow text-ink-muted">Prints</p>
                         {pricing.printAddOns.map((addOn) => (
                           <div
                             key={`${addOn.printAreaId}:${addOn.printSizeId}`}
                             className="flex items-center justify-between gap-3 text-xs"
                           >
-                            <span className="text-black/60" style={{ letterSpacing: '-0.14px' }}>
+                            <span className="text-ink-secondary">
                               {addOn.printAreaName} · {addOn.printSizeName}
                               {addOn.appliedTierMinQuantity != null && (
-                                <span className="ml-1 text-black/40">({formatTierLabel(addOn.appliedTierMinQuantity)})</span>
+                                <span className="ml-1 text-ink-muted">({formatTierLabel(addOn.appliedTierMinQuantity)})</span>
                               )}
                             </span>
-                            <span className="tabular-nums text-black/55">+${addOn.resolvedUnitPrintPrice.toFixed(2)}</span>
+                            <span className="tabular-nums text-ink-muted">+${addOn.resolvedUnitPrintPrice.toFixed(2)}</span>
                           </div>
                         ))}
                       </>
                     )}
 
                     {/* Unit total */}
-                    <div className="flex items-center justify-between gap-3 border-t border-black/[0.06] pt-1.5 text-xs">
-                      <span className="text-black/70" style={{ fontWeight: 480, letterSpacing: '-0.14px' }}>Unit total</span>
-                      <span className="tabular-nums text-black" style={{ fontWeight: 480 }}>${pricing.unitPrice.toFixed(2)}</span>
+                    <div className="flex items-center justify-between gap-3 border-t border-line pt-1.5 text-xs">
+                      <span className="text-ink-secondary" style={{ fontWeight: 500 }}>Unit total</span>
+                      <span className="tabular-nums text-ink" style={{ fontWeight: 500 }}>${pricing.unitPrice.toFixed(2)}</span>
                     </div>
                   </div>
                 )}
 
                 {lineError && (
-                  <p className="mt-3 text-sm text-red-600" style={{ letterSpacing: '-0.14px' }}>
+                  <p className="mt-3 text-sm text-danger">
                     {lineError}
                   </p>
                 )}
@@ -141,22 +141,22 @@ export function PricingBreakdownPanel({
       )}
 
       {error && (
-        <p className="mt-4 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+        <p className="mt-4 rounded-lg border border-danger-border bg-danger-surface px-4 py-3 text-sm text-danger">
           {error}
         </p>
       )}
 
-      <div className="mt-4 border-t border-black/[0.08] pt-4">
+      <div className="mt-4 border-t border-line pt-4">
         <div className="flex items-center justify-between gap-3">
-          <span className="text-black" style={{ fontWeight: 540, letterSpacing: '-0.26px' }}>
+          <span className="text-ink" style={{ fontWeight: 600 }}>
             Grand Total
           </span>
-          <span className="text-xl text-black tabular-nums" style={{ fontWeight: 540, letterSpacing: '-0.96px' }}>
+          <span className="text-xl text-ink tabular-nums" style={{ fontWeight: 600 }}>
             {currency} ${grandTotal.toFixed(2)}
           </span>
         </div>
         {!isComplete && selectedLines.length > 0 && !validationMessage && (
-          <p className="mt-2 text-sm text-black/50" style={{ letterSpacing: '-0.14px' }}>
+          <p className="mt-2 text-sm text-ink-muted">
             Complete pricing for every selected line to unlock the next step.
           </p>
         )}

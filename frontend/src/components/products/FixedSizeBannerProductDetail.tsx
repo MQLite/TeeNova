@@ -34,10 +34,10 @@ const MATERIAL_OPTIONS: { value: BannerMaterial; label: string }[] = [
 const UNIT_LABEL: Record<BannerDimensionUnit, string> = { Mm: 'mm', Cm: 'cm', M: 'm' }
 
 const FIELD = [
-  'w-full rounded-2xl border border-black/[0.10] bg-white px-4 py-3 text-sm text-black',
-  'placeholder:text-black/30 focus:border-black/30 focus:outline-none focus:ring-2 focus:ring-black/[0.06]',
+  'w-full rounded-2xl border border-line bg-white px-4 py-3 text-sm text-ink',
+  'placeholder:text-ink-muted focus:border-ink focus:outline-none focus:ring-2 focus:ring-black/[0.06]',
 ].join(' ')
-const LABEL = 'mb-1.5 block font-mono text-[10px] uppercase tracking-[0.54px] text-black/55'
+const LABEL = 'mb-1.5 block eyebrow text-ink-muted'
 
 /** Active fixed-size options, lowest sortOrder first. Inactive rows never reach the public GET, but filter defensively. */
 function activeOptionsSorted(options: ProductFixedSizePriceOption[]): ProductFixedSizePriceOption[] {
@@ -301,14 +301,14 @@ export function FixedSizeBannerProductDetail({ product }: Props) {
 
   return (
     <div className="min-h-screen bg-white">
-      <div className="border-b border-black/[0.08]">
+      <div className="border-b border-line">
         <div className="section-container py-3">
-          <nav className="flex items-center gap-1.5 font-mono text-[11px] uppercase tracking-[0.54px] text-black/50">
-            <Link href="/" className="hover:text-black transition-colors">Home</Link>
+          <nav aria-label="Breadcrumb" className="flex items-center gap-1.5 eyebrow text-ink-muted">
+            <Link href="/" className="hover:text-ink transition-colors">Home</Link>
             <span className="opacity-40">/</span>
-            <Link href="/products" className="hover:text-black transition-colors">Products</Link>
+            <Link href="/products" className="hover:text-ink transition-colors">Products</Link>
             <span className="opacity-40">/</span>
-            <span className="text-black">{product.name}</span>
+            <span className="text-ink">{product.name}</span>
           </nav>
         </div>
       </div>
@@ -326,26 +326,26 @@ export function FixedSizeBannerProductDetail({ product }: Props) {
 
           <div className="flex flex-col gap-5">
             <div className="card p-6">
-              <span className="mb-3 inline-block rounded-full border border-black/[0.08] px-3 py-0.5 font-mono text-[11px] uppercase tracking-[0.54px] text-black/55">
+              <span className="mb-3 inline-block rounded-full border border-line px-3 py-0.5 eyebrow text-ink-muted">
                 {product.productType}
               </span>
-              <h1 className="text-2xl text-black" style={{ fontWeight: 540, letterSpacing: '-0.96px' }}>
+              <h1 className="text-2xl text-ink" style={{ fontWeight: 600 }}>
                 {product.name}
               </h1>
               <div className="mt-3">
                 {heroFrom !== null ? (
-                  <p className="text-2xl text-black" style={{ fontWeight: 540, letterSpacing: '-0.72px' }}>
+                  <p className="text-2xl text-ink" style={{ fontWeight: 600, letterSpacing: '-0.72px' }}>
                     From {formatMoneyNZD(heroFrom)}{' '}
-                    <span className="text-base text-black/55" style={{ fontWeight: 480, letterSpacing: '-0.14px' }}>
+                    <span className="text-base text-ink-muted" style={{ fontWeight: 500 }}>
                       each
                     </span>
                   </p>
                 ) : (
-                  <p className="text-sm text-black/55" style={{ letterSpacing: '-0.14px' }}>
+                  <p className="text-sm text-ink-muted">
                     Pricing available on request.
                   </p>
                 )}
-                <p className="mt-1 font-mono text-[10px] uppercase tracking-[0.54px] text-black/45">
+                <p className="mt-1 eyebrow text-ink-muted">
                   Banner · Fixed size · minimum order {minQuantity} {minQuantity === 1 ? 'piece' : 'pieces'}
                 </p>
               </div>
@@ -357,7 +357,7 @@ export function FixedSizeBannerProductDetail({ product }: Props) {
 
         {options.length === 0 ? (
           <div className="mt-8 card p-6">
-            <p className="text-sm text-black/60" style={{ letterSpacing: '-0.14px' }}>
+            <p className="text-sm text-ink-secondary">
               This banner has no sizes available to order online yet. Please contact the shop for a quote.
             </p>
           </div>
@@ -365,10 +365,10 @@ export function FixedSizeBannerProductDetail({ product }: Props) {
         <div className="mt-8 flex flex-col gap-5">
           {/* Size */}
           <div className="card p-6">
-            <p className="mb-1 text-sm text-black" style={{ fontWeight: 480, letterSpacing: '-0.14px' }}>
+            <p className="mb-1 text-sm text-ink" style={{ fontWeight: 500 }}>
               Size <span className="text-red-500">*</span>
             </p>
-            <p className="mb-4 font-mono text-[10px] uppercase tracking-[0.54px] text-black/45">
+            <p className="mb-4 eyebrow text-ink-muted">
               Choose one standard size
             </p>
             <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
@@ -381,18 +381,18 @@ export function FixedSizeBannerProductDetail({ product }: Props) {
                     onClick={() => setSizePresetId(option.id)}
                     className={[
                       'flex items-center justify-between gap-3 rounded-2xl border px-4 py-3 text-left transition-colors',
-                      selected ? 'border-black bg-black/[0.03]' : 'border-black/[0.10] bg-white hover:border-black/30',
+                      selected ? 'border-ink bg-surface-sunken' : 'border-line bg-white hover:border-line-control',
                     ].join(' ')}
                   >
                     <span className="min-w-0">
-                      <span className="block truncate text-sm text-black" style={{ letterSpacing: '-0.14px', fontWeight: selected ? 540 : 480 }}>
+                      <span className={`block truncate text-sm text-ink ${selected ? 'font-semibold' : 'font-medium'}`}>
                         {option.label}
                       </span>
-                      <span className="block font-mono text-[10px] uppercase tracking-[0.54px] text-black/45">
+                      <span className="block eyebrow text-ink-muted">
                         {optionDimensions(option)}
                       </span>
                     </span>
-                    <span className="shrink-0 text-sm text-black" style={{ fontWeight: 540 }}>
+                    <span className="shrink-0 text-sm text-ink" style={{ fontWeight: 600 }}>
                       {formatMoneyNZD(option.unitPrice)}
                     </span>
                   </button>
@@ -403,8 +403,8 @@ export function FixedSizeBannerProductDetail({ product }: Props) {
 
           {/* Quantity */}
           <div className="card p-6">
-            <p className="mb-1 text-sm text-black" style={{ fontWeight: 480, letterSpacing: '-0.14px' }}>Quantity</p>
-            <p className="mb-4 font-mono text-[10px] uppercase tracking-[0.54px] text-black/45">
+            <p className="mb-1 text-sm text-ink" style={{ fontWeight: 500 }}>Quantity</p>
+            <p className="mb-4 eyebrow text-ink-muted">
               Minimum {minQuantity}
             </p>
             <div className="flex items-center gap-3">
@@ -421,12 +421,12 @@ export function FixedSizeBannerProductDetail({ product }: Props) {
                 onBlur={(e) => commitQuantity(e.target.value)}
                 className={`${FIELD} w-32`}
               />
-              <span className="font-mono text-[11px] uppercase tracking-[0.54px] text-black/45">
+              <span className="eyebrow text-ink-muted">
                 banners
               </span>
             </div>
             {!quantityValid && (
-              <p className="mt-2 text-sm text-amber-700" style={{ letterSpacing: '-0.14px' }}>
+              <p className="mt-2 text-sm text-amber-700">
                 Quantity must be at least {minQuantity}.
               </p>
             )}
@@ -452,7 +452,7 @@ export function FixedSizeBannerProductDetail({ product }: Props) {
 
           {/* Finishing + stand */}
           <div className="card p-6">
-            <p className="mb-4 text-sm text-black" style={{ fontWeight: 480, letterSpacing: '-0.14px' }}>Finishing &amp; stand</p>
+            <p className="mb-4 text-sm text-ink" style={{ fontWeight: 500 }}>Finishing &amp; stand</p>
             <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
               {[
                 { label: 'Eyelets', checked: finishingEyelets, set: setFinishingEyelets },
@@ -461,8 +461,8 @@ export function FixedSizeBannerProductDetail({ product }: Props) {
                 { label: 'Stand included', checked: standIncluded, set: setStandIncluded },
                 { label: 'Stand replacement only', checked: standReplacementOnly, set: setStandReplacementOnly },
               ].map((opt) => (
-                <label key={opt.label} className="flex cursor-pointer items-center gap-2.5 rounded-2xl border border-black/[0.08] bg-black/[0.01] px-4 py-3 text-sm text-black/70" style={{ letterSpacing: '-0.14px' }}>
-                  <input type="checkbox" checked={opt.checked} onChange={(e) => opt.set(e.target.checked)} className="h-4 w-4 rounded border-black/20" />
+                <label key={opt.label} className="flex cursor-pointer items-center gap-2.5 rounded-2xl border border-line bg-surface-sunken px-4 py-3 text-sm text-ink-secondary">
+                  <input type="checkbox" checked={opt.checked} onChange={(e) => opt.set(e.target.checked)} className="h-4 w-4 rounded border-line-control" />
                   {opt.label}
                 </label>
               ))}
@@ -475,21 +475,21 @@ export function FixedSizeBannerProductDetail({ product }: Props) {
 
           {/* Design upload */}
           <div className="card p-6">
-            <p className="mb-1 text-sm text-black" style={{ fontWeight: 480, letterSpacing: '-0.14px' }}>
+            <p className="mb-1 text-sm text-ink" style={{ fontWeight: 500 }}>
               Your design {designRequired && <span className="text-red-500">*</span>}
             </p>
-            <p className="mb-4 font-mono text-[10px] uppercase tracking-[0.54px] text-black/45">
+            <p className="mb-4 eyebrow text-ink-muted">
               {designRequired ? 'Required — upload your artwork' : 'Optional — upload your artwork'}
             </p>
             {asset ? (
-              <div className="flex items-center gap-4 rounded-2xl border border-black/[0.08] bg-black/[0.02] p-4">
+              <div className="flex items-center gap-4 rounded-2xl border border-line bg-surface-sunken p-4">
                 {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img src={asset.fileUrl} alt={asset.originalFileName} className="h-16 w-16 rounded-lg border border-black/[0.08] bg-white object-contain p-1" />
+                <img src={asset.fileUrl} alt={asset.originalFileName} className="h-16 w-16 rounded-lg border border-line bg-white object-contain p-1" />
                 <div className="min-w-0 flex-1">
-                  <p className="truncate text-sm text-black" style={{ letterSpacing: '-0.14px' }}>{asset.originalFileName}</p>
-                  <p className="font-mono text-[10px] uppercase tracking-[0.54px] text-green-600">Design uploaded</p>
+                  <p className="truncate text-sm text-ink">{asset.originalFileName}</p>
+                  <p className="eyebrow text-green-600">Design uploaded</p>
                 </div>
-                <button type="button" onClick={removeUpload} className="rounded-full border border-black/[0.12] px-3 py-1.5 text-xs text-black/60 transition-colors hover:border-black/30 hover:text-black">Replace</button>
+                <button type="button" onClick={removeUpload} className="rounded-full border border-line-strong px-3 py-1.5 text-xs text-ink-secondary transition-colors hover:border-line-control hover:text-ink">Replace</button>
               </div>
             ) : (
               <label
@@ -498,15 +498,15 @@ export function FixedSizeBannerProductDetail({ product }: Props) {
                 onDrop={(e) => { e.preventDefault(); setDragOver(false); const file = e.dataTransfer.files?.[0]; if (file) handleUpload(file) }}
                 className={[
                   'flex cursor-pointer flex-col items-center justify-center gap-2 rounded-2xl border-2 border-dashed px-4 py-8 text-center transition-colors',
-                  dragOver ? 'border-black/40 bg-black/[0.03]' : 'border-black/[0.12] hover:border-black/25',
+                  dragOver ? 'border-black/40 bg-surface-sunken' : 'border-line-strong hover:border-line-control',
                 ].join(' ')}
               >
                 <input ref={fileInputRef} type="file" accept="image/*,application/pdf" className="sr-only" onChange={(e) => { const file = e.target.files?.[0]; if (file) handleUpload(file) }} />
-                <span className="text-sm text-black/60" style={{ letterSpacing: '-0.14px' }}>{uploading ? 'Uploading…' : 'Drag & drop or click to upload your design'}</span>
-                <span className="font-mono text-[10px] uppercase tracking-[0.54px] text-black/35">PNG, JPG, or PDF</span>
+                <span className="text-sm text-ink-secondary">{uploading ? 'Uploading…' : 'Drag & drop or click to upload your design'}</span>
+                <span className="eyebrow text-ink-muted">PNG, JPG, WebP, AI or PDF · max 20 MB</span>
               </label>
             )}
-            {uploadError && <p className="mt-3 rounded-lg border border-red-200 bg-red-50 px-4 py-2.5 text-sm text-red-700">{uploadError}</p>}
+            {uploadError && <p className="mt-3 rounded-lg border border-danger-border bg-danger-surface px-4 py-2.5 text-sm text-danger">{uploadError}</p>}
             <div className="mt-4">
               <label className={LABEL}>Design note (optional)</label>
               <textarea value={designNote} onChange={(e) => setDesignNote(e.target.value)} rows={2} placeholder="Any notes about colours, placement, or finish" className={`${FIELD} resize-none`} />
@@ -522,38 +522,38 @@ export function FixedSizeBannerProductDetail({ product }: Props) {
           {/* Live quote */}
           <div className="card p-6">
             <div className="flex items-center justify-between">
-              <p className="text-sm text-black" style={{ fontWeight: 480, letterSpacing: '-0.14px' }}>
+              <p className="text-sm text-ink" style={{ fontWeight: 500 }}>
                 Price preview
               </p>
               {pricingLoading && (
-                <span className="font-mono text-[10px] uppercase tracking-[0.54px] text-black/40">Updating…</span>
+                <span className="eyebrow text-ink-muted">Updating…</span>
               )}
             </div>
             {pricingError ? (
-              <p className="mt-3 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{pricingError}</p>
+              <p className="mt-3 rounded-lg border border-danger-border bg-danger-surface px-4 py-3 text-sm text-danger">{pricingError}</p>
             ) : unitPrice !== null && lineTotal !== null ? (
-              <div className="mt-3 space-y-2 rounded-2xl bg-black/[0.02] px-4 py-3 text-sm">
+              <div className="mt-3 space-y-2 rounded-2xl bg-surface-sunken px-4 py-3 text-sm">
                 {selectedOption && (
-                  <div className="flex items-center justify-between text-black/60" style={{ letterSpacing: '-0.14px' }}>
+                  <div className="flex items-center justify-between text-ink-secondary">
                     <span>Size</span>
-                    <span className="text-black/80">{selectedOption.label} · {optionDimensions(selectedOption)}</span>
+                    <span className="text-ink-secondary">{selectedOption.label} · {optionDimensions(selectedOption)}</span>
                   </div>
                 )}
-                <div className="flex items-center justify-between text-black/60" style={{ letterSpacing: '-0.14px' }}>
+                <div className="flex items-center justify-between text-ink-secondary">
                   <span>Unit price</span>
-                  <span className="text-black/80">{formatMoneyNZD(unitPrice)}</span>
+                  <span className="text-ink-secondary">{formatMoneyNZD(unitPrice)}</span>
                 </div>
-                <div className="flex items-center justify-between text-black/60" style={{ letterSpacing: '-0.14px' }}>
+                <div className="flex items-center justify-between text-ink-secondary">
                   <span>Quantity</span>
-                  <span className="text-black/80">{quantity}</span>
+                  <span className="text-ink-secondary">{quantity}</span>
                 </div>
-                <div className="flex items-center justify-between border-t border-black/[0.06] pt-2" style={{ letterSpacing: '-0.14px' }}>
-                  <span className="text-black" style={{ fontWeight: 540 }}>Line total</span>
-                  <span className="text-black" style={{ fontWeight: 540 }}>{formatMoneyNZD(lineTotal)}</span>
+                <div className="flex items-center justify-between border-t border-line pt-2">
+                  <span className="text-ink" style={{ fontWeight: 600 }}>Line total</span>
+                  <span className="text-ink" style={{ fontWeight: 600 }}>{formatMoneyNZD(lineTotal)}</span>
                 </div>
               </div>
             ) : (
-              <p className="mt-3 text-sm text-black/55" style={{ letterSpacing: '-0.14px' }}>
+              <p className="mt-3 text-sm text-ink-muted">
                 Choose a size and quantity to preview pricing.
               </p>
             )}
@@ -569,16 +569,16 @@ export function FixedSizeBannerProductDetail({ product }: Props) {
             >
               {addedToCart ? 'Added to Cart' : `Add ${quantity} to Cart`}
             </button>
-            <p className="mt-3 text-center text-sm text-black/55" style={{ letterSpacing: '-0.14px' }}>
+            <p className="mt-3 text-center text-sm text-ink-muted">
               Frontend prices are previews only. Final order pricing is recalculated by the backend at checkout.
             </p>
             {designRequired && !asset && (
-              <p className="mt-3 text-center text-xs text-amber-700" style={{ letterSpacing: '-0.14px' }}>
+              <p className="mt-3 text-center text-xs text-amber-700">
                 A design upload is required for this banner.
               </p>
             )}
             {addToCartError && (
-              <p className="mt-3 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{addToCartError}</p>
+              <p className="mt-3 rounded-lg border border-danger-border bg-danger-surface px-4 py-3 text-sm text-danger">{addToCartError}</p>
             )}
             {addedToCart && (
               <div className="mt-3 flex gap-2">

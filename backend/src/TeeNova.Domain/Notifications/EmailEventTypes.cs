@@ -12,4 +12,6 @@ public static class EmailEventTypes
     // EmailNotificationLog.OrderId column as the related-entity key).
     public const string AdminNewBannerEnquiry              = "AdminNewBannerEnquiry";
     public const string CustomerBannerEnquiryAcknowledgement = "CustomerBannerEnquiryAcknowledgement";
+    public const string AdminNewQuoteRequest = "AdminNewQuoteRequest";
+    public const string CustomerQuoteRequestAcknowledgement = "CustomerQuoteRequestAcknowledgement";
 }

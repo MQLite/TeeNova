@@ -14,9 +14,11 @@ using TeeNova.AiOrderImports.Validation;
 using TeeNova.Auth;
 using TeeNova.Email;
 using TeeNova.Files;
+using TeeNova.Enquiries;
 using TeeNova.Inventory;
 using TeeNova.Payments;
 using TeeNova.Payments.Mock;
+using TeeNova.Portfolio;
 using TeeNova.Payments.Stripe;
 using Volo.Abp;
 using Volo.Abp.Application;
@@ -46,6 +48,12 @@ public class TeeNovaApplicationModule : AbpModule
 
         context.Services.Configure<PrivateObjectStorageOptions>(
             configuration.GetSection(PrivateObjectStorageOptions.SectionName));
+        context.Services.Configure<QuoteRequestOptions>(configuration.GetSection(QuoteRequestOptions.SectionName));
+        context.Services.Configure<QuotePrivateStorageOptions>(configuration.GetSection(QuotePrivateStorageOptions.SectionName));
+        context.Services.Configure<PortfolioOptions>(configuration.GetSection(PortfolioOptions.SectionName));
+        context.Services.AddTransient<PortfolioImageProcessor>();
+        context.Services.AddTransient<IPortfolioAppService, PortfolioAppService>();
+        context.Services.AddHostedService<QuoteRequestReadinessValidator>();
         context.Services.Configure<AiOrderIntakeOptions>(
             configuration.GetSection(AiOrderIntakeOptions.SectionName));
         context.Services.AddSingleton<IValidateOptions<AiOrderIntakeOptions>, AiOrderIntakeOptionsValidator>();
@@ -119,6 +127,7 @@ public class TeeNovaApplicationModule : AbpModule
 
         context.Services.AddTransient<IEmailSettingsProvider, EmailSettingsProvider>();
         context.Services.AddTransient<IOrderEmailNotificationService, OrderEmailNotificationService>();
+        context.Services.AddTransient<IQuoteRequestEmailService, QuoteRequestEmailService>();
 
         context.Services.Configure<OnlinePaymentOptions>(configuration.GetSection("OnlinePayments"));
 
@@ -202,5 +211,6 @@ public class TeeNovaApplicationModule : AbpModule
         await context.AddBackgroundWorkerAsync<OrphanedAssetCleanupWorker>();
         await context.AddBackgroundWorkerAsync<AiOrderRecognitionWorker>();
         await context.AddBackgroundWorkerAsync<AiOrderRetentionWorker>();
+        await context.AddBackgroundWorkerAsync<StagedQuoteAttachmentCleanupWorker>();
     }
 }

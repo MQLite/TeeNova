@@ -70,11 +70,11 @@ export function PrintPriceTierTable({
 
   return (
     <div className="space-y-3">
-      <div className="overflow-x-auto rounded-2xl border border-black/[0.08]">
+      <div className="overflow-x-auto rounded-2xl border border-line">
         <table className="w-full text-sm">
           <thead>
-            <tr className="border-b border-black/[0.06] bg-black/[0.02]">
-              <th className="px-4 py-2 text-left font-mono text-[11px] font-normal uppercase tracking-[0.54px] text-black/55">
+            <tr className="border-b border-line bg-surface-sunken">
+              <th className="px-4 py-2 text-left font-mono text-[11px] font-normal uppercase tracking-[0.54px] text-ink-muted">
                 Print size
               </th>
               {breaks.map((minQuantity) => {
@@ -83,12 +83,12 @@ export function PrintPriceTierTable({
                   <th
                     key={minQuantity}
                     className={`px-4 py-2 text-right font-mono text-[11px] font-normal uppercase tracking-[0.54px] ${
-                      active ? 'text-black' : 'text-black/55'
+                      active ? 'text-ink' : 'text-ink-muted'
                     }`}
                   >
                     {formatTierLabel(minQuantity)}
                     {active && (
-                      <span className="ml-1.5 rounded-full bg-black px-1.5 py-0.5 text-[9px] uppercase tracking-[0.54px] text-white">
+                      <span className="ml-1.5 rounded-full bg-surface-inverse px-1.5 py-0.5 text-[9px] uppercase tracking-[0.54px] text-white">
                         Applied
                       </span>
                     )}
@@ -102,7 +102,7 @@ export function PrintPriceTierTable({
               const priceByBreak = new Map(ladder.rows.map((row) => [row.minQuantity, row.unitPrintPrice]))
               return (
                 <tr key={ladder.printSizeId}>
-                  <th className="px-4 py-2.5 text-left font-mono text-[11px] font-normal uppercase tracking-[0.54px] text-black/55">
+                  <th className="px-4 py-2.5 text-left font-mono text-[11px] font-normal uppercase tracking-[0.54px] text-ink-muted">
                     {printSizeNames[ladder.printSizeId] ?? 'Print size'}
                   </th>
                   {breaks.map((minQuantity) => {
@@ -111,10 +111,10 @@ export function PrintPriceTierTable({
                     return (
                       <td
                         key={minQuantity}
-                        className={`px-4 py-2.5 text-right tabular-nums text-black ${active ? 'bg-black/[0.04]' : ''}`}
-                        style={{ fontWeight: 480 }}
+                        className={`px-4 py-2.5 text-right tabular-nums text-ink ${active ? 'bg-surface-sunken' : ''}`}
+                        style={{ fontWeight: 500 }}
                       >
-                        {price != null ? formatMoneyNZD(price) : <span className="text-black/30">—</span>}
+                        {price != null ? formatMoneyNZD(price) : <span className="text-ink-muted">—</span>}
                       </td>
                     )
                   })}
@@ -130,19 +130,19 @@ export function PrintPriceTierTable({
           type="button"
           onClick={() => setExpanded((value) => !value)}
           aria-expanded={expanded}
-          className="font-mono text-[11px] uppercase tracking-[0.54px] text-black/55 transition-colors hover:text-black"
+          className="eyebrow text-ink-muted transition-colors hover:text-ink"
         >
           {expanded ? 'Show fewer print sizes' : `Show all print sizes (${ladders.length})`}
         </button>
       )}
 
-      <p className="text-xs text-black/45" style={{ letterSpacing: '-0.14px' }}>
+      <p className="text-xs text-ink-muted">
         Print price only — added to the fixed garment price. Quantity breaks combine across products in
         the same print pricing group.
       </p>
 
       {hasSizeOverridePrintTiers(tiers) && (
-        <p className="text-xs text-black/45" style={{ letterSpacing: '-0.14px' }}>
+        <p className="text-xs text-ink-muted">
           Some garment sizes have their own print prices. The exact price is shown after you select a size.
         </p>
       )}

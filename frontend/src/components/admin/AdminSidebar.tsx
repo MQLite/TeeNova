@@ -33,6 +33,24 @@ const navItems = [
     ),
   },
   {
+    href: '/admin/quote-requests',
+    label: 'Quote Requests',
+    icon: (
+      <svg viewBox="0 0 20 20" fill="currentColor" className="h-4 w-4 shrink-0" aria-hidden="true">
+        <path d="M4 3h12a2 2 0 012 2v8a2 2 0 01-2 2h-5l-4 3v-3H4a2 2 0 01-2-2V5a2 2 0 012-2zm2 4h8V5H6v2zm0 4h6V9H6v2z" />
+      </svg>
+    ),
+  },
+  {
+    href: '/admin/portfolio',
+    label: 'Portfolio',
+    icon: (
+      <svg viewBox="0 0 20 20" fill="currentColor" className="h-4 w-4 shrink-0" aria-hidden="true">
+        <path d="M3 4a2 2 0 012-2h10a2 2 0 012 2v12H3V4zm2 9h10l-3-4-2 3-2-2-3 3zm2-7a1.5 1.5 0 103 0 1.5 1.5 0 00-3 0z" />
+      </svg>
+    ),
+  },
+  {
     href: '/admin/banner-enquiries',
     label: 'Banner Quotes',
     icon: (

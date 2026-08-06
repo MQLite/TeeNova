@@ -12,6 +12,8 @@ public class EmailSettingsSnapshot
     public string SenderName                            { get; init; } = string.Empty;
     public string ReplyToAddress                        { get; init; } = string.Empty;
     public string AdminNotificationEmail                { get; init; } = string.Empty;
+    public string QuoteNotificationEmail                { get; init; } = string.Empty;
+    public string QuoteReplyToAddress                    { get; init; } = string.Empty;
     public string ShopContactInfo                       { get; init; } = string.Empty;
     public string ReadyPickupMessage                    { get; init; } = string.Empty;
     public string ReadyShippingMessage                  { get; init; } = string.Empty;

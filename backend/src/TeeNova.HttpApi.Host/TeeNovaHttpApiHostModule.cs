@@ -21,6 +21,7 @@ using TeeNova.AdminLogs;
 using TeeNova.AiOrderImports;
 using TeeNova.Auth;
 using TeeNova.EntityFrameworkCore;
+using TeeNova.Enquiries;
 using Volo.Abp;
 using Volo.Abp.AspNetCore.ExceptionHandling;
 using Volo.Abp.AspNetCore.Mvc;
@@ -176,6 +177,15 @@ public class TeeNovaHttpApiHostModule : AbpModule
             options.Map(AdminLogsErrorCodes.FileIdExpired, HttpStatusCode.Gone);
             options.Map(AdminLogsErrorCodes.FileChanged, HttpStatusCode.Conflict);
             options.Map(AdminLogsErrorCodes.FileTooLarge, HttpStatusCode.RequestEntityTooLarge);
+            options.Map(QuoteRequestErrorCodes.Disabled, HttpStatusCode.ServiceUnavailable);
+            options.Map(QuoteRequestErrorCodes.InvalidRequest, HttpStatusCode.BadRequest);
+            options.Map(QuoteRequestErrorCodes.SpamRejected, HttpStatusCode.BadRequest);
+            options.Map(QuoteRequestErrorCodes.SubmittedTooQuickly, HttpStatusCode.BadRequest);
+            options.Map(QuoteRequestErrorCodes.AttachmentInvalid, HttpStatusCode.UnprocessableEntity);
+            options.Map(QuoteRequestErrorCodes.AttachmentExpired, HttpStatusCode.Gone);
+            options.Map(QuoteRequestErrorCodes.AttachmentConflict, HttpStatusCode.Conflict);
+            options.Map(QuoteRequestErrorCodes.IdempotencyConflict, HttpStatusCode.Conflict);
+            options.Map(QuoteRequestErrorCodes.InvalidTransition, HttpStatusCode.Conflict);
             options.Map(AiOrderImportErrorCodes.InvalidRequest, HttpStatusCode.BadRequest);
             options.Map(AiOrderImportErrorCodes.IdempotencyKeyRequired, HttpStatusCode.BadRequest);
             options.Map(AiOrderImportErrorCodes.ImportNotFound, HttpStatusCode.NotFound);
@@ -247,6 +257,8 @@ public class TeeNovaHttpApiHostModule : AbpModule
     private const string PublicPricingPolicy   = "PublicPricingPolicy";
     private const string PublicUploadPolicy    = "PublicUploadPolicy";
     private const string PublicEnquiryPolicy   = "PublicEnquiryPolicy";
+    private const string PublicQuotePolicy     = "PublicQuotePolicy";
+    private const string PublicQuoteUploadPolicy = "PublicQuoteUploadPolicy";
     private const string PaymentWebhookPolicy  = "PaymentWebhookPolicy";
 
     private static void ConfigureRateLimiting(
@@ -362,6 +374,8 @@ public class TeeNovaHttpApiHostModule : AbpModule
 
             // Banner enquiry: anonymous + triggers admin/customer emails — kept low like checkout.
             AddPublicPolicy(PublicEnquiryPolicy, defaultPermit: 8, defaultWindow: 60);
+            AddPublicPolicy(PublicQuotePolicy, defaultPermit: 5, defaultWindow: 60);
+            AddPublicPolicy(PublicQuoteUploadPolicy, defaultPermit: 10, defaultWindow: 60);
 
             // Payment webhook: server-to-server. Deliberately VERY generous so a legitimate Stripe retry
             // burst is never throttled; this exists only to cap a pathological flood, not normal delivery.

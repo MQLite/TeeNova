@@ -1,40 +1,35 @@
-import Link from 'next/link'
-import { Button } from '@/components/ui/Button'
-
-export const metadata = { title: 'Design Studio' }
+import { notFound, permanentRedirect } from 'next/navigation'
+import { findService, isServicePublished, serviceHref } from '@/lib/service-content/registry'
 
 /**
- * Customize page — MVP entry point for the design flow.
- * In the full Design Studio build, this will host the canvas editor
- * (Fabric.js / Konva / custom WebGL). For now it guides users to
- * pick a product first.
+ * `/customize` resolution (Jira 10306).
  *
- * Future: mount <DesignStudioCanvas> with layer panel, template picker,
- * AI generation sidebar, and crop-frame tools.
+ * This route used to render a "Design Studio … coming soon" placeholder with a dashed
+ * "Canvas Editor Placeholder" box, and the homepage and footer linked to it as **Bring Your Own
+ * Garment**. That presented an unbuilt feature as a service a customer could use.
+ *
+ * The Design Studio is not built here, and the placeholder is not kept: the route now permanently
+ * redirects to the real Bring Your Own Garment service page. The redirect target is resolved
+ * through the publication gate rather than hard-coded, so if that service is ever unpublished the
+ * route returns a real 404 instead of redirecting to one. The old public links are gone either way
+ * — the homepage and footer are now derived from the published-service registry.
  */
+
+const TARGET_SLUG = 'bring-your-own-garment'
+
+/**
+ * Rendered per request rather than prerendered. A `permanentRedirect` inside a statically generated
+ * route is emitted as a 308 whose body carries the router payload but which has **no `Location`
+ * header** — fine for in-app navigation, useless to a crawler or a plain HTTP client. Rendering on
+ * demand makes it a real HTTP 308 with a `Location`. The route does no I/O, so the cost is nil.
+ */
+export const dynamic = 'force-dynamic'
+
+/** Not indexable: this is a legacy path, and the service page is the canonical destination. */
+export const metadata = { robots: { index: false, follow: false } }
+
 export default function CustomizePage() {
-  return (
-    <div className="mx-auto max-w-4xl px-4 py-16 text-center sm:px-6 lg:px-8">
-      <p className="text-6xl">🎨</p>
-      <h1 className="mt-4 text-4xl font-bold text-gray-900">Design Studio</h1>
-      <p className="mx-auto mt-4 max-w-xl text-lg text-gray-600">
-        The full Design Studio — with a multi-layer canvas, template library, crop frames,
-        and AI-assisted generation — is coming soon.
-      </p>
-
-      <div className="mt-8 rounded-2xl border-2 border-dashed border-gray-300 bg-gray-50 py-20 text-gray-400">
-        <p className="text-lg font-medium">Canvas Editor Placeholder</p>
-        <p className="mt-2 text-sm">
-          Fabric.js / Konva canvas will render here.<br />
-          Layers panel · Template picker · AI sidebar
-        </p>
-      </div>
-
-      <div className="mt-10 flex flex-col items-center gap-4 sm:flex-row sm:justify-center">
-        <Button size="lg" asChild>
-          <Link href="/products">Start from a Product</Link>
-        </Button>
-      </div>
-    </div>
-  )
+  const target = findService(TARGET_SLUG)
+  if (target && isServicePublished(target)) permanentRedirect(serviceHref(target))
+  notFound()
 }

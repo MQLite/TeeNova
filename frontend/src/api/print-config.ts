@@ -1,4 +1,4 @@
-import { apiClient, type ApiClient } from '@/lib/api-client'
+import { apiClient, type ApiClient, type ReadRequestOptions } from '@/lib/api-client'
 import type {
   PrintArea,
   PrintSize,
@@ -10,14 +10,15 @@ import type {
 
 export function makePrintConfigApi(client: ApiClient) {
   return {
-    // Storefront (active-only, unchanged)
+    // Storefront (active-only, unchanged). `cacheOptions` is honoured server-side only and is used
+    // by the server-rendered product route (Jira 10304); admin readers below never pass it.
 
-    getAreas(): Promise<PrintArea[]> {
-      return client.get('/api/print-config/areas', { isActive: true })
+    getAreas(cacheOptions?: ReadRequestOptions): Promise<PrintArea[]> {
+      return client.get('/api/print-config/areas', { isActive: true }, cacheOptions)
     },
 
-    getSizes(): Promise<PrintSize[]> {
-      return client.get('/api/print-config/sizes', { isActive: true })
+    getSizes(cacheOptions?: ReadRequestOptions): Promise<PrintSize[]> {
+      return client.get('/api/print-config/sizes', { isActive: true }, cacheOptions)
     },
 
     // Admin: PrintArea

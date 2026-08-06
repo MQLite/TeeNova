@@ -7,6 +7,8 @@ public class EmailOptions
     public string SenderAddress { get; set; } = string.Empty;
     public string ReplyToAddress { get; set; } = string.Empty;
     public string AdminNotificationEmail { get; set; } = string.Empty;
+    public string QuoteNotificationEmail { get; set; } = string.Empty;
+    public string QuoteReplyToAddress { get; set; } = string.Empty;
     public string ShopContactInfo { get; set; } = string.Empty;
 
     /// <summary>Base URL for admin order detail links, e.g. https://admin.example.com/admin/orders</summary>

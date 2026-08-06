@@ -21,7 +21,7 @@ interface Props {
 export function BannerDetailSummary({ detail, className }: Props) {
   if (!detail) {
     return (
-      <p className={`text-xs text-black/45 ${className ?? ''}`} style={{ letterSpacing: '-0.14px' }}>
+      <p className={`text-xs text-ink-muted ${className ?? ''}`}>
         Banner details unavailable
       </p>
     )
@@ -35,11 +35,11 @@ export function BannerDetailSummary({ detail, className }: Props) {
   if (detail.notes?.trim()) rows.push({ label: 'Notes', value: detail.notes.trim() })
 
   return (
-    <dl className={`grid grid-cols-[auto_1fr] gap-x-3 gap-y-1 text-xs ${className ?? ''}`} style={{ letterSpacing: '-0.14px' }}>
+    <dl className={`grid grid-cols-[auto_1fr] gap-x-3 gap-y-1 text-xs ${className ?? ''}`}>
       {rows.map((r) => (
         <div key={r.label} className="contents">
-          <dt className="font-mono uppercase tracking-[0.4px] text-black/40">{r.label}</dt>
-          <dd className="text-black/70">{r.value}</dd>
+          <dt className="font-mono uppercase tracking-[0.4px] text-ink-muted">{r.label}</dt>
+          <dd className="text-ink-secondary">{r.value}</dd>
         </div>
       ))}
     </dl>

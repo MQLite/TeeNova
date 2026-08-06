@@ -102,7 +102,7 @@ export async function listAdminLogs(
         page: Math.max(1, Math.trunc(input.page ?? 1)),
         pageSize,
       },
-      signal,
+      { signal },
     )
   } catch (error) {
     if (error instanceof AdminLogsClientError) throw error

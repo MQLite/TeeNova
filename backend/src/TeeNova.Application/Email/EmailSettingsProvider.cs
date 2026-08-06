@@ -49,6 +49,12 @@ public class EmailSettingsProvider : IEmailSettingsProvider
             SenderName             = db?.SenderName             ?? opts.SenderName             ?? string.Empty,
             ReplyToAddress         = db?.ReplyToAddress         ?? opts.ReplyToAddress         ?? string.Empty,
             AdminNotificationEmail = db?.AdminNotificationEmail ?? opts.AdminNotificationEmail ?? string.Empty,
+            QuoteNotificationEmail = string.IsNullOrWhiteSpace(opts.QuoteNotificationEmail)
+                ? db?.AdminNotificationEmail ?? opts.AdminNotificationEmail ?? string.Empty
+                : opts.QuoteNotificationEmail,
+            QuoteReplyToAddress = string.IsNullOrWhiteSpace(opts.QuoteReplyToAddress)
+                ? db?.ReplyToAddress ?? opts.ReplyToAddress ?? string.Empty
+                : opts.QuoteReplyToAddress,
             ShopContactInfo        = db?.ShopContactInfo        ?? opts.ShopContactInfo        ?? string.Empty,
             ReadyPickupMessage     = db?.ReadyPickupMessage     ?? DefaultReadyPickupMessage,
             ReadyShippingMessage   = db?.ReadyShippingMessage   ?? DefaultReadyShippingMessage,
