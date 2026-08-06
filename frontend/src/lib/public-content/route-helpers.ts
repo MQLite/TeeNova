@@ -1,4 +1,5 @@
 import type { Metadata } from 'next'
+import { buildPageMetadata } from '@/lib/seo/metadata'
 import {
   draftPreviewAllowed,
   publicContentHref,
@@ -21,16 +22,24 @@ export const publishedParams = (group: PublicContentGroup): { slug: string }[] =
 export const resolveForRequest = (group: PublicContentGroup, slug: string) =>
   resolvePublicDocument(group, slug, { allowDraftPreview: draftPreviewAllowed() })
 
+/**
+ * Metadata for one help or policy document.
+ *
+ * Titles and descriptions come from the document definition, so they are unique per document. The
+ * canonical, Open Graph block and robots decision come from the shared builder (Jira 10308).
+ *
+ * A draft preview is reachable only outside production and is marked `noindex, nofollow` regardless,
+ * so an accidentally exposed preview environment cannot be crawled. Draft wording never reaches a
+ * description: an unpublished document resolves to `{}` in production and 404s.
+ */
 export function contentMetadata(group: PublicContentGroup, slug: string): Metadata {
   const resolved = resolveForRequest(group, slug)
   if (!resolved) return {}
   const { document, isDraftPreview } = resolved
-  return {
+  return buildPageMetadata({
     title: document.title,
     description: document.description,
-    alternates: { canonical: publicContentHref(document) },
-    // A draft preview is only reachable outside production, but it is marked non-indexable anyway
-    // so an accidentally exposed preview environment cannot be crawled.
-    ...(isDraftPreview ? { robots: { index: false, follow: false } } : {}),
-  }
+    path: publicContentHref(document),
+    policy: isDraftPreview ? 'noindex-nofollow' : 'index',
+  })
 }

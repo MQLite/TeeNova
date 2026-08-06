@@ -2,7 +2,20 @@ import type { Metadata } from 'next'
 import './globals.css'
 import { Header } from '@/components/layout/Header'
 import { Footer } from '@/components/layout/Footer'
-import { brandFullName } from '@/lib/site-brand'
+import { JsonLd } from '@/components/seo/JsonLd'
+import {
+  defaultDescription,
+  defaultSocialDescription,
+  defaultSocialImage,
+  defaultTitle,
+  openGraphSiteName,
+  siteLanguage,
+  siteLocale,
+  titleTemplate,
+  verificationTokens,
+} from '@/lib/seo/identity'
+import { metadataBase } from '@/lib/seo/metadata'
+import { siteGraph } from '@/lib/seo/structured-data/organization'
 
 /**
  * Root layout.
@@ -19,32 +32,55 @@ import { brandFullName } from '@/lib/site-brand'
  * Icons come from the `app/icon.svg`, `app/apple-icon.png` and `app/favicon.ico`
  * file conventions; Next emits the `<link>` tags. Both raster assets are
  * documented placeholders derived from the mark already in the repository — see
- * `components/brand/BrandMark.tsx`.
+ * `components/brand/BrandMark.tsx`. They are a browser-tab icon and are never
+ * published as the business's logo (Jira 10300 A34 remains open).
+ *
+ * SEO note (Jira 10308): `metadataBase` comes from the validated public origin
+ * (`lib/seo/site-url.ts`) and is `undefined` when production is misconfigured —
+ * which suppresses canonicals and absolute Open Graph URLs rather than resolving
+ * them against whatever host answered the request. The default social card is
+ * `public/og-default.png`, referenced explicitly here and by every route through
+ * `buildPageMetadata`. No verification token, social handle or analytics script
+ * is emitted; the first two are blank until real values exist, and the third is
+ * deliberately absent while the privacy policy is Draft.
  */
 
 export const metadata: Metadata = {
+  metadataBase: metadataBase(),
   title: {
-    default: 'Otahuhu Printing Shop | Custom Printing Auckland',
-    template: '%s | Otahuhu Printing',
+    default: defaultTitle,
+    template: titleTemplate,
   },
-  description:
-    'Local Otahuhu print shop for T-shirt printing, badges, banners, business cards, stickers, signs and custom print jobs in Auckland.',
-  // OpenGraph is intentionally image-less and URL-less: no confirmed OG image asset or canonical
-  // domain exists yet (so no metadataBase). Add an image + metadataBase once those are confirmed.
-  // Jira 10307 deliberately stops at the favicon/app-icon set and leaves the social card to 10308.
+  description: defaultDescription,
+  applicationName: openGraphSiteName,
+  // Referrer is trimmed to the origin on cross-origin navigations: outbound links (the Google Maps
+  // search link on /contact) should not carry the full path a visitor was reading.
+  referrer: 'strict-origin-when-cross-origin',
+  // Safari otherwise auto-links number-like strings — order references and dimensions such as
+  // "2000 x 800" — as telephone numbers.
+  formatDetection: { telephone: false, address: false, email: false },
   openGraph: {
-    title: 'Otahuhu Printing Shop | Custom Printing Auckland',
-    description:
-      'T-shirts, badges, banners, business cards, stickers, signs and custom print jobs from a local Otahuhu print shop.',
+    title: defaultTitle,
+    description: defaultSocialDescription,
     type: 'website',
-    locale: 'en_NZ',
-    siteName: brandFullName,
+    locale: siteLocale,
+    siteName: openGraphSiteName,
+    images: [defaultSocialImage],
   },
+  twitter: {
+    // No `site`/`creator` handle: none has been verified, and an unverified handle attributes the
+    // page to an account that may belong to someone else.
+    card: 'summary_large_image',
+    title: defaultTitle,
+    description: defaultSocialDescription,
+  },
+  robots: { index: true, follow: true },
+  verification: verificationTokens(),
 }
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="en">
+    <html lang={siteLanguage}>
       <body>
         {/* First focusable element in the document — a keyboard user can reach
             page content without stepping through the whole navigation. */}
@@ -58,6 +94,9 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
           </main>
           <Footer />
         </div>
+        {/* Site-level graph. Today this is the WebSite node only: the business identity and NAP
+            approvals are open, so no Organization or LocalBusiness node is published. */}
+        <JsonLd graph={siteGraph()} />
       </body>
     </html>
   )

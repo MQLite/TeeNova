@@ -328,10 +328,31 @@ describe('help and policy pages', () => {
     expect(blocks).toMatch(/<caption/)
   })
 
+  /**
+   * One file is allowed to use `dangerouslySetInnerHTML`, and only one: the JSON-LD renderer added
+   * in Jira 10308. A `<script>` element's content is raw text, so React cannot set it through
+   * children without escaping it into invalid JSON. The exception is listed by name here — a second
+   * file appearing in this list is a review event, not a passing test — and the escaping that makes
+   * it safe is asserted below rather than taken on trust.
+   */
+  const RAW_HTML_EXCEPTIONS = ['src/components/seo/JsonLd.tsx']
+
   it('renders content as children, never as raw HTML', () => {
-    for (const { path, text } of publicSources()) {
-      expect(stripComments(text), path).not.toMatch(/dangerouslySetInnerHTML/)
-    }
+    const offenders = publicSources()
+      .filter(({ text }) => /dangerouslySetInnerHTML/.test(stripComments(text)))
+      .map(({ path }) => path.replace(/\\/g, '/'))
+    expect(offenders.sort()).toEqual(RAW_HTML_EXCEPTIONS)
+  })
+
+  it('escapes the sequences that could break out of the JSON-LD script element', () => {
+    const renderer = src('components', 'seo', 'JsonLd.tsx')
+    // `</script` is matched case-insensitively by the HTML parser regardless of JSON string
+    // quoting, and JSON.stringify does not escape these characters.
+    expect(renderer).toMatch(/replace\(\/<\/g, '\\\\u003c'\)/)
+    expect(renderer).toMatch(/replace\(\/>\/g, '\\\\u003e'\)/)
+    // U+2028/U+2029 are legal in JSON strings but terminate a line to a JavaScript parser.
+    expect(renderer).toMatch(/\\u2028/)
+    expect(renderer).toMatch(/\\u2029/)
   })
 
   it('keeps the Draft banner visible in preview mode', () => {

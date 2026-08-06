@@ -4,6 +4,7 @@ import { QuoteLink } from '@/components/QuoteLink'
 import { Section } from '@/components/ui/Layout'
 import { EmptyState } from '@/components/ui/Notice'
 import { PageHero } from '@/components/ui/PageHero'
+import { buildPageMetadata } from '@/lib/seo/metadata'
 import { publishedServices } from '@/lib/service-content/registry'
 
 /**
@@ -14,20 +15,15 @@ import { publishedServices } from '@/lib/service-content/registry'
  * a title.
  */
 
-export const metadata: Metadata = {
+export const metadata: Metadata = buildPageMetadata({
   title: 'Printing Services',
   description:
     'Garment printing, button badges, banners, business cards, stickers and signage from Otahuhu Printing Shop in Auckland. Order online where you can, or ask us for a quote.',
-  alternates: { canonical: '/services' },
-  openGraph: {
-    title: 'Printing Services | Otahuhu Printing',
-    description:
-      'Garment printing, button badges, banners, business cards, stickers and signage from a local Otahuhu print shop.',
-    type: 'website',
-    locale: 'en_NZ',
-    siteName: 'Otahuhu Printing Shop',
-  },
-}
+  socialDescription:
+    'Garment printing, button badges, banners, business cards, stickers and signage from a local Otahuhu print shop.',
+  path: '/services',
+  policy: 'index',
+})
 
 export default function ServicesIndexPage() {
   const services = publishedServices()

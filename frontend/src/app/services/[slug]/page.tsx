@@ -1,9 +1,13 @@
 import type { Metadata } from 'next'
 import { notFound } from 'next/navigation'
+import { JsonLd } from '@/components/seo/JsonLd'
 import { ServiceIntro, ServiceHelpLinks, OtherServicesLinks } from '@/components/services/ServicePageLayout'
 import { ServicePortfolio } from '@/components/services/ServicePortfolio'
 import { ServiceProducts } from '@/components/services/ServiceProducts'
 import { ServiceQuoteCta } from '@/components/services/ServiceQuoteCta'
+import { buildBreadcrumbList } from '@/lib/seo/structured-data/breadcrumb'
+import { buildFaqPage } from '@/lib/seo/structured-data/faq'
+import { buildService } from '@/lib/seo/structured-data/service'
 import { publishedHelpLinks, publishedServices, serviceHref } from '@/lib/service-content/registry'
 import {
   publishedServiceParams,
@@ -37,10 +41,29 @@ export default function ServiceDetailPage({ params }: { params: { slug: string }
   const { service, sections, facts, faqs, isDraftPreview } = resolved
   const sourcePath = serviceHref(service)
 
+  // Structured data mirrors what this render actually shows: the same breadcrumb trail
+  // `ServiceIntro` draws, and only the FAQ entries `ServiceFaqView` renders. A draft preview is
+  // `noindex` and emits nothing at all (Jira 10308 Phases 10–12).
+  const indexable = !isDraftPreview
+  const graph = [
+    buildBreadcrumbList(sourcePath, [
+      { name: 'Home', path: '/' },
+      { name: 'Services', path: '/services' },
+      { name: service.name },
+    ]),
+    buildService(service, { indexable }),
+    buildFaqPage(
+      sourcePath,
+      faqs.map((entry) => ({ question: entry.question, answer: entry.answer })),
+      { indexable },
+    ),
+  ]
+
   return (
     // No `<main>` here: the root layout owns the single `main` landmark. Nesting a second one
     // (Jira 10307) gave assistive technology two main regions on every service page.
     <div className="section-container py-10 sm:py-14">
+      {indexable && <JsonLd graph={graph} />}
       {/* The content measure keeps the reading column near 70 characters; the product and portfolio
           grids below deliberately sit outside it so cards are not squeezed into a text column. */}
       <div className="content-measure">

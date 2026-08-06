@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { render, screen } from '@testing-library/react'
 import { ApiError } from '@/lib/api-client'
+import { DEVELOPMENT_FALLBACK_ORIGIN } from '@/lib/seo/site-url'
 import { PRODUCT_ID, productFixture } from '@/test/product-fixtures'
 import type { Product } from '@/types'
 
@@ -174,8 +175,12 @@ describe('product detail metadata', () => {
 
     expect(metadata.title).toBe('Gildan Heavy Cotton Tee')
     expect(metadata.description).toBe('Mid-weight cotton crew neck, printed in Otahuhu.')
-    expect(metadata.alternates?.canonical).toBe(`/products/${PRODUCT_ID}`)
+    // Absolute since Jira 10308, and still the GUID path — the catalogue exposes no public slug.
+    expect(metadata.alternates?.canonical).toBe(
+      `${DEVELOPMENT_FALLBACK_ORIGIN}/products/${PRODUCT_ID}`,
+    )
     expect(metadata.openGraph?.title).toBe('Gildan Heavy Cotton Tee | Otahuhu Printing')
+    expect(metadata.robots).toEqual({ index: true, follow: true })
   })
 
   it('truncates a long description rather than emitting it whole', async () => {
@@ -204,11 +209,15 @@ describe('product detail metadata', () => {
     expect(getProduct).toHaveBeenCalledWith(PRODUCT_ID, { revalidate: 60 })
   })
 
-  it('never breaks the page when the product cannot be read', async () => {
+  it('never breaks the page when the product cannot be read, and stays out of the index', async () => {
     getProduct.mockRejectedValue(new ApiError(500, 'boom'))
 
     const metadata = await generateMetadata({ params: Promise.resolve({ id: PRODUCT_ID }) })
 
-    expect(metadata).toEqual({ title: 'Product' })
+    // Generic, canonical-free and noindex (Jira 10308): a backend blip must not produce indexable
+    // metadata for a page whose body is about to render the retryable error boundary, and it must
+    // not assert that the product is missing either.
+    expect(metadata).toEqual({ title: 'Product', robots: { index: false, follow: true } })
+    expect(metadata.alternates).toBeUndefined()
   })
 })

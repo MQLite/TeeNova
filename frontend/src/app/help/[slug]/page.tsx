@@ -1,6 +1,7 @@
 import type { Metadata } from 'next'
 import { notFound } from 'next/navigation'
 import { ContentPageLayout } from '@/components/content/ContentPageLayout'
+import { ContentStructuredData } from '@/components/content/ContentStructuredData'
 import { publishedRelatedLinks } from '@/lib/public-content/registry'
 import { contentMetadata, publishedParams, resolveForRequest } from '@/lib/public-content/route-helpers'
 
@@ -24,11 +25,18 @@ export default function HelpContentPage({ params }: { params: { slug: string } }
   if (!resolved) notFound()
 
   return (
-    <ContentPageLayout
-      document={resolved.document}
-      sections={resolved.sections}
-      isDraftPreview={resolved.isDraftPreview}
-      related={publishedRelatedLinks(resolved.document)}
-    />
+    <>
+      <ContentStructuredData
+        document={resolved.document}
+        sections={resolved.sections}
+        isDraftPreview={resolved.isDraftPreview}
+      />
+      <ContentPageLayout
+        document={resolved.document}
+        sections={resolved.sections}
+        isDraftPreview={resolved.isDraftPreview}
+        related={publishedRelatedLinks(resolved.document)}
+      />
+    </>
   )
 }

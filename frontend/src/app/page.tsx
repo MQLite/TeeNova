@@ -1,3 +1,4 @@
+import type { Metadata } from 'next'
 import Link from 'next/link'
 import { QuoteLink } from '@/components/QuoteLink'
 import { portfolioApi, portfolioEnabled } from '@/api/portfolio'
@@ -5,7 +6,10 @@ import { PortfolioGrid } from '@/components/portfolio/PortfolioGrid'
 import { ServiceCardGrid } from '@/components/services/ServiceCard'
 import { Icon, type IconName } from '@/components/ui/Icon'
 import { ActionGroup, PageContainer, Section, SectionHeading } from '@/components/ui/Layout'
+import { defaultDescription, defaultSocialDescription, defaultTitle } from '@/lib/seo/identity'
+import { buildPageMetadata } from '@/lib/seo/metadata'
 import { publishedServices } from '@/lib/service-content/registry'
+import { openingHoursSentence, shopAddress } from '@/lib/site-business'
 
 /**
  * Homepage (Jira 10307 presentation pass).
@@ -21,6 +25,19 @@ import { publishedServices } from '@/lib/service-content/registry'
  * CTA (Jira 10300 §14.4) — and is now scrimmed inside the `.hero-gradient`
  * token so white type on it is not sitting at ~1.1:1 over the yellow stop.
  */
+
+/**
+ * Homepage metadata (Jira 10308). The title is used verbatim rather than templated — it already
+ * carries the brand name. The canonical is the bare origin: the homepage has no query variants.
+ */
+export const metadata: Metadata = buildPageMetadata({
+  title: defaultTitle,
+  absoluteTitle: true,
+  description: defaultDescription,
+  socialDescription: defaultSocialDescription,
+  path: '/',
+  policy: 'index',
+})
 
 async function RecentWork() {
   const items = await portfolioApi.list(6).then(result => result.items.slice(0, 6)).catch(() => [])
@@ -183,11 +200,14 @@ export default function HomePage() {
       <Section spacing="tight" divided>
         <div className="card flex flex-col items-center gap-6 p-6 text-center sm:flex-row sm:justify-between sm:p-8 sm:text-left">
           <div className="min-w-0">
-            <p className="eyebrow mb-2">483 Great South Road, Otahuhu, Auckland 1062</p>
+            {/* Address and hours read from the one NAP module (Jira 10308) rather than being
+                written out here, so the homepage, the footer, the contact page and any structured
+                data cannot disagree about them. The strings are unchanged. */}
+            <p className="eyebrow mb-2">{shopAddress.singleLine}</p>
             <h2 className="display-sub">Visit or Contact Our Otahuhu Print Shop</h2>
             <p className="mt-2 max-w-measure text-sm leading-relaxed text-ink-muted">
               Need help with a print job? Contact us about T-shirts, badges, banners,
-              signs and custom jobs. Open Mon–Fri 9am–5pm and Sat 10am–4pm.
+              signs and custom jobs. Open {openingHoursSentence}.
             </p>
           </div>
           <ActionGroup align="center" className="shrink-0 sm:justify-end">

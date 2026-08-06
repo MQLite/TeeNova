@@ -1,9 +1,28 @@
+import type { Metadata } from 'next'
 import { PortfolioGrid } from '@/components/portfolio/PortfolioGrid'
 import { portfolioApi, portfolioEnabled } from '@/api/portfolio'
 import { QuoteLink } from '@/components/QuoteLink'
 import { Section } from '@/components/ui/Layout'
 import { EmptyState } from '@/components/ui/Notice'
 import { PageHero } from '@/components/ui/PageHero'
+import { buildPageMetadata } from '@/lib/seo/metadata'
+
+/**
+ * Portfolio-index metadata (Jira 10308).
+ *
+ * Indexable only while the feature is on. Switched off, the page is an operational notice — there
+ * is nothing on it a searcher could want — so it is `noindex, follow` and absent from the sitemap.
+ *
+ * No `ItemList` structured data is emitted. There is no approved Published portfolio media yet, and
+ * describing a list of nothing, or inventing entries to fill it, is exactly what this task forbids.
+ */
+export const metadata: Metadata = buildPageMetadata({
+  title: 'Recent Work',
+  description:
+    'Printed jobs from Otahuhu Printing Shop that we have the customer’s permission to show, including garments, badges, banners and signage.',
+  path: '/portfolio',
+  policy: portfolioEnabled ? 'index' : 'noindex-follow',
+})
 
 /**
  * Public portfolio index (Jira 10302, restyled in 10307).

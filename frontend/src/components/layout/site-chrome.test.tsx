@@ -151,11 +151,19 @@ describe('footer', () => {
     }
   })
 
-  it('presents social channels as text, not as links to unverified profiles', async () => {
+  /**
+   * Jira 10307 rendered the sentence "Find us on Facebook and Instagram" as inert text, because no
+   * verified profile URL existed and a `#` link would have been worse. Jira 10308 replaced that with
+   * configuration: with nothing configured — the state today, approvals A39/A40 — the block renders
+   * nothing at all, which is a stronger result than an unactionable sentence. The name of a platform
+   * the site cannot link to must not appear either.
+   */
+  it('renders no social profile link, and no unactionable social label, without verified URLs', async () => {
     const { container } = await renderFooter()
     const hrefs = [...container.querySelectorAll('a')].map((a) => a.getAttribute('href') ?? '')
-    expect(hrefs.filter((h) => /facebook|instagram/i.test(h))).toEqual([])
-    expect(container.textContent).toContain('Facebook')
+    expect(hrefs.filter((h) => /facebook|instagram|linkedin|youtube/i.test(h))).toEqual([])
+    expect(hrefs.filter((h) => h === '' || h === '#')).toEqual([])
+    expect(container.textContent).not.toMatch(/Facebook|Instagram/i)
   })
 
   it('uses the inverse ink tokens rather than an unmeasured white opacity', async () => {

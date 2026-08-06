@@ -7,6 +7,7 @@ import { type IconName } from '@/components/ui/Icon'
 import { ActionGroup, CardGrid, Section } from '@/components/ui/Layout'
 import { EmptyState } from '@/components/ui/Notice'
 import { PageHero } from '@/components/ui/PageHero'
+import { buildPageMetadata } from '@/lib/seo/metadata'
 import type { ProductListItem } from '@/types'
 
 interface PageProps {
@@ -50,7 +51,6 @@ type Category = (typeof CATEGORIES)[number]
 
 // Category-aware SEO metadata (Jira 9706). Titles are template-suffixed by the root layout
 // ("%s | Otahuhu Printing"); OpenGraph titles carry the full string because OG ignores the template.
-// Like the root layout, OG stays image-less and URL-less until an OG asset / canonical domain exists.
 const CATEGORY_META: Record<Category['key'], { title: string; description: string }> = {
   all: {
     title: 'Products & Print Services',
@@ -79,6 +79,16 @@ const CATEGORY_META: Record<Category['key'], { title: string; description: strin
   },
 }
 
+/**
+ * Products-index metadata.
+ *
+ * The category chips and the search box are *views* of one listing, not separate pages, so every
+ * variant — `?category=badges`, `?search=tee`, both together, and any unrecognised value — points
+ * its canonical at the bare `/products` (Jira 10308 Phase 24). The category-aware title and
+ * description from Jira 9706 are kept, because they describe what the visitor is looking at, but
+ * they do not create a second indexable URL. The query parameters keep working exactly as before;
+ * this changes metadata only.
+ */
 export async function generateMetadata({ searchParams }: PageProps): Promise<Metadata> {
   const params = await searchParams
   // Same fallback rule as the page body: unknown/missing ?category= reads as All.
@@ -86,20 +96,16 @@ export async function generateMetadata({ searchParams }: PageProps): Promise<Met
     ? (params.category as Category['key'])
     : 'all'
   const meta = CATEGORY_META[key]
-  return {
+  return buildPageMetadata({
     title: meta.title,
     description: meta.description,
-    openGraph: {
-      title: `${meta.title} | Otahuhu Printing`,
-      description:
-        key === 'all'
-          ? 'Explore garments, badges, banners and quote-based print services from a local Otahuhu print shop.'
-          : meta.description,
-      type: 'website',
-      locale: 'en_NZ',
-      siteName: 'Otahuhu Printing Shop',
-    },
-  }
+    socialDescription:
+      key === 'all'
+        ? 'Explore garments, badges, banners and quote-based print services from a local Otahuhu print shop.'
+        : meta.description,
+    path: '/products',
+    policy: 'index',
+  })
 }
 
 // "Showing N …" copy per category. Kept separate from label to read naturally in a sentence.

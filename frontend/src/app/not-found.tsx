@@ -1,3 +1,4 @@
+import type { Metadata } from 'next'
 import Link from 'next/link'
 import { Icon } from '@/components/ui/Icon'
 import { QuoteLink } from '@/components/QuoteLink'
@@ -10,10 +11,18 @@ import { QuoteLink } from '@/components/QuoteLink'
  * and the shared `EmptyState`: a neutral "we could not find this" treatment,
  * clearly distinct from the red error treatment used when something failed.
  *
- * No metadata, canonical, robots directive or structured data is added here —
- * Next already serves this with a real HTTP 404, and the SEO layer is Jira
- * 10308's.
+ * SEO (Jira 10308): the primary and sufficient control is the response itself —
+ * Next serves this page with a real HTTP 404, which no search engine indexes. No
+ * canonical is emitted (a 404 has no canonical URL) and no structured data of any
+ * kind: describing a missing page as a Product, Service or FAQ would be a claim
+ * about content that is not there. The `robots` export below is belt-and-braces
+ * for any consumer that reads the document without checking the status line.
  */
+export const metadata: Metadata = {
+  title: 'Page not found',
+  robots: { index: false, follow: true },
+}
+
 export default function NotFound() {
   return (
     <div className="section-container flex min-h-[60vh] flex-col items-center justify-center gap-4 py-16 text-center">

@@ -4,41 +4,52 @@ import { QuoteLink } from '@/components/QuoteLink'
 import { Icon } from '@/components/ui/Icon'
 import { ActionGroup, CardGrid, Section, SectionHeading } from '@/components/ui/Layout'
 import { PageHero } from '@/components/ui/PageHero'
-import { contactEmail, emailHref } from '@/lib/site-contact'
+import { buildPageMetadata } from '@/lib/seo/metadata'
+import { mapsSearchUrl, openingHours, shopAddress } from '@/lib/site-business'
+import { businessPhone, contactEmail, emailHref, phoneHref } from '@/lib/site-contact'
 
 // Contact / Location page (Jira 9605). Frontend-only, no backend form and no email-sending: the quote
 // and contact actions all use the existing storefront mailto pattern. Business details shown (street
 // address, suburb, hours, email) are the owner-provided shop details — no invented phone, parking
-// notes, or social URLs. LocalBusiness JSON-LD is intentionally deferred to 9606/10308.
+// notes, or social URLs.
+//
+// Jira 10308: no LocalBusiness JSON-LD is emitted here or anywhere else. The public business name
+// (A01/A02), opening hours (A09) and telephone (A05) are unresolved approvals, and a machine-readable
+// business node is a stronger claim than page copy — see `lib/site-business.ts`. The facts on this
+// page are now read from that module so the visible page and any future graph share one source.
 //
 // Jira 10307: the two full-bleed rainbow bands on this page are gone. The accent gradient is now
 // bounded to the homepage hero and the homepage closing CTA (Jira 10300 §14.4); every other page
 // uses the black `inverse` or the warm `plain` treatment, so the gradient means "home" again.
 
 const CONTACT_EMAIL = contactEmail
-const SHOP_ADDRESS = '483 Great South Road, Otahuhu, Auckland 1062'
-// Google Maps search for the shop's street address (no Maps API dependency/key).
-const MAPS_SEARCH_URL =
-  'https://www.google.com/maps/search/?api=1&query=483+Great+South+Road%2C+Otahuhu%2C+Auckland+1062'
+// Address, hours and the Maps search link now come from the one NAP module (Jira 10308) instead of
+// being written out again here. The rendered strings are unchanged.
+const SHOP_ADDRESS = shopAddress.singleLine
+const MAPS_SEARCH_URL = mapsSearchUrl
 
-export const metadata: Metadata = {
-  title: 'Contact Otahuhu Printing Shop | Custom Printing Auckland',
+export const metadata: Metadata = buildPageMetadata({
+  title: 'Contact Otahuhu Printing Shop',
   description:
     'Contact Otahuhu Printing Shop for T-shirt printing, badges, banners, business cards, stickers, signs and local Auckland print jobs.',
-  openGraph: {
-    title: 'Contact Otahuhu Printing Shop | Custom Printing Auckland',
-    description:
-      'Contact Otahuhu Printing Shop for T-shirt printing, badges, banners, business cards, stickers, signs and local Auckland print jobs.',
-    type: 'website',
-    locale: 'en_NZ',
-    siteName: 'Otahuhu Printing Shop',
-  },
-}
+  path: '/contact',
+  policy: 'index',
+})
 
 const CONTACT_CARDS: { label: string; value: string; note?: string; href?: string }[] = [
   { label: 'Email', value: CONTACT_EMAIL, note: 'Best way to reach us', href: emailHref },
   { label: 'Location', value: SHOP_ADDRESS, note: 'Local print shop' },
-  { label: 'Hours', value: 'Mon–Fri 9am–5pm', note: 'Sat 10am–4pm' },
+  {
+    label: 'Hours',
+    value: `${openingHours[0].label} ${openingHours[0].display}`,
+    note: `${openingHours[1].label} ${openingHours[1].display}`,
+  },
+  // Rendered only when a number is configured. No telephone exists today (Jira 10300 A05), so the
+  // card is absent rather than showing a placeholder — and when one is supplied it appears here,
+  // visibly, before it can appear in structured data.
+  ...(businessPhone && phoneHref
+    ? [{ label: 'Phone', value: businessPhone, note: 'Call the shop', href: phoneHref }]
+    : []),
   { label: 'Pickup / delivery', value: 'Ask which options are available for your job' },
 ]
 

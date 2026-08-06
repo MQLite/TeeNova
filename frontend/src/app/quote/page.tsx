@@ -5,6 +5,7 @@ import { serviceFromSlug } from './quote-form-validation'
 import { Section } from '@/components/ui/Layout'
 import { Notice } from '@/components/ui/Notice'
 import { PageHero } from '@/components/ui/PageHero'
+import { buildPageMetadata } from '@/lib/seo/metadata'
 import { businessPhone, contactEmail, emailHref, phoneHref, quoteFormEnabled, whatsappHref } from '@/lib/site-contact'
 
 /**
@@ -20,11 +21,25 @@ import { businessPhone, contactEmail, emailHref, phoneHref, quoteFormEnabled, wh
  * page, and four different page types previously shared one identical band.
  */
 
-export const metadata: Metadata = {
+/**
+ * Quote metadata (Jira 10308).
+ *
+ * The canonical is always the bare `/quote`: `?service=`, `?product=` and `?source=` pre-fill the
+ * form and carry the referring path for the enquiry record, but they are context, not distinct
+ * pages, and the source path in particular must never become a published URL.
+ *
+ * Indexability follows the feature flag. With the form enabled this is a real conversion page. With
+ * it disabled the route is a short "email us instead" fallback — useful to a visitor who lands on
+ * it, which is why it stays `follow`, but too thin to be worth a place in the index, and it is
+ * excluded from the sitemap for the same reason.
+ */
+export const metadata: Metadata = buildPageMetadata({
   title: 'Request a Printing Quote',
-  description: 'Tell Otahuhu Printing about your garment, badge, banner, card, sticker, label or signage requirements.',
-  alternates: { canonical: '/quote' },
-}
+  description:
+    'Tell Otahuhu Printing about your garment, badge, banner, card, sticker, label or signage requirements. Sending a request does not place an order and takes no payment.',
+  path: '/quote',
+  policy: quoteFormEnabled ? 'index' : 'noindex-follow',
+})
 
 const isGuid = (value?: string) => Boolean(value && /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value))
 

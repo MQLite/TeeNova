@@ -1,4 +1,5 @@
 import type { Metadata } from 'next'
+import { buildPageMetadata } from '@/lib/seo/metadata'
 import {
   publishedServices,
   resolveService,
@@ -20,23 +21,25 @@ export const publishedServiceParams = (): { slug: string }[] =>
 export const resolveServiceForRequest = (slug: string) =>
   resolveService(slug, { allowDraftPreview: serviceDraftPreviewAllowed() })
 
+/**
+ * Metadata for one service page.
+ *
+ * Title and description come from the service definition, so each of the eight pages is unique by
+ * construction. The brand suffix, canonical, Open Graph shape and robots decision all come from the
+ * shared builder (Jira 10308) rather than being written out here — this file used to carry its own
+ * `openGraph` block with the brand name as a literal.
+ *
+ * A draft preview is reachable only outside production, and is marked `noindex, nofollow` anyway so
+ * an accidentally exposed preview environment cannot be crawled. It also emits no structured data.
+ */
 export function serviceMetadata(slug: string): Metadata {
   const resolved = resolveServiceForRequest(slug)
   if (!resolved) return {}
   const { service, isDraftPreview } = resolved
-  return {
+  return buildPageMetadata({
     title: service.name,
     description: service.description,
-    alternates: { canonical: serviceHref(service) },
-    openGraph: {
-      title: `${service.name} | Otahuhu Printing`,
-      description: service.description,
-      type: 'website',
-      locale: 'en_NZ',
-      siteName: 'Otahuhu Printing Shop',
-    },
-    // A draft preview is only reachable outside production, but it is marked non-indexable anyway
-    // so an accidentally exposed preview environment cannot be crawled.
-    ...(isDraftPreview ? { robots: { index: false, follow: false } } : {}),
-  }
+    path: serviceHref(service),
+    policy: isDraftPreview ? 'noindex-nofollow' : 'index',
+  })
 }

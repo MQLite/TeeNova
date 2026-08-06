@@ -5,6 +5,7 @@ import PolicyContentPage, {
   generateMetadata as policyMetadata,
   generateStaticParams as policyParams,
 } from '../policies/[slug]/page'
+import { DEVELOPMENT_FALLBACK_ORIGIN } from '@/lib/seo/site-url'
 
 /**
  * Jira 10303 — route behaviour.
@@ -146,9 +147,16 @@ describe('metadata', () => {
     expect(faq.title).toBe('Frequently asked questions')
     expect(artwork.title).not.toBe(faq.title)
     expect(artwork.description).not.toBe(faq.description)
-    expect(artwork.alternates?.canonical).toBe('/help/artwork-requirements')
-    expect(faq.alternates?.canonical).toBe('/help/faq')
-    expect(artwork.robots).toBeUndefined()
+    // Canonicals became absolute in Jira 10308 — a relative canonical with no `metadataBase`
+    // resolves against whichever host answered the request. Outside production the origin is the
+    // documented development fallback; in production it is the configured public origin, and when
+    // that is missing the canonical is omitted entirely rather than guessed.
+    expect(artwork.alternates?.canonical).toBe(
+      `${DEVELOPMENT_FALLBACK_ORIGIN}/help/artwork-requirements`,
+    )
+    expect(faq.alternates?.canonical).toBe(`${DEVELOPMENT_FALLBACK_ORIGIN}/help/faq`)
+    // A published document is explicitly indexable; only a draft preview is noindex.
+    expect(artwork.robots).toEqual({ index: true, follow: true })
   })
 
   it('returns empty metadata for an unknown slug rather than inventing one', () => {

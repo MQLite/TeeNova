@@ -30,6 +30,7 @@ import ServiceDetailPage, {
   generateStaticParams,
 } from './[slug]/page'
 import ServicesIndexPage from './page'
+import { DEVELOPMENT_FALLBACK_ORIGIN } from '@/lib/seo/site-url'
 import { publishedServices } from '@/lib/service-content/registry'
 
 const PUBLISHED_SLUGS = publishedServices().map((service) => service.slug)
@@ -153,9 +154,11 @@ describe('service metadata', () => {
       const metadata = generateMetadata({ params: { slug } })
       expect(metadata.title).toBeTruthy()
       expect(metadata.description).toBeTruthy()
-      expect(metadata.alternates?.canonical).toBe(`/services/${slug}`)
-      // A published page is indexable; only a draft preview is marked noindex.
-      expect(metadata.robots).toBeUndefined()
+      // Absolute since Jira 10308: a relative canonical with no `metadataBase` resolves against
+      // whichever host answered the request.
+      expect(metadata.alternates?.canonical).toBe(`${DEVELOPMENT_FALLBACK_ORIGIN}/services/${slug}`)
+      // A published page is explicitly indexable; only a draft preview is marked noindex.
+      expect(metadata.robots).toEqual({ index: true, follow: true })
       titles.add(String(metadata.title))
       descriptions.add(String(metadata.description))
     }
@@ -167,7 +170,9 @@ describe('service metadata', () => {
     expect(generateMetadata({ params: { slug: 'flag-printing' } })).toEqual({})
   })
 
-  it('adds no structured data, sitemap entry or rating (Jira 10308 scope)', () => {
+  // Structured data moved into the document body in Jira 10308 (see `seo-structured-data.test.tsx`);
+  // the metadata object still carries none, and no rating or offer is fabricated anywhere.
+  it('keeps structured data out of the metadata object and fabricates no rating or offer', () => {
     for (const slug of PUBLISHED_SLUGS) {
       const metadata = generateMetadata({ params: { slug } }) as Record<string, unknown>
       expect(metadata.other).toBeUndefined()

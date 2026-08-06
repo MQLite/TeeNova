@@ -12,6 +12,12 @@ export const portfolioEnabled = process.env.NEXT_PUBLIC_PORTFOLIO_ENABLED === 't
 export const portfolioApi = {
   list(maxResultCount=24): Promise<PortfolioPage> { return apiClient.get('/api/portfolio/items',{skipCount:0,maxResultCount},{revalidate:300}) },
   /**
+   * One page of published items (Jira 10308). Identical filtering to `list`; the only addition is
+   * `skipCount`, which the sitemap needs to enumerate every published item rather than the first
+   * screenful. Read-only and anonymous, so it inherits the backend's Published-only rule.
+   */
+  listPage(skipCount:number,maxResultCount:number): Promise<PortfolioPage> { return apiClient.get('/api/portfolio/items',{skipCount,maxResultCount},{revalidate:300}) },
+  /**
    * Published items for one service classification (Jira 10306). The backend already filters the
    * anonymous list by `Status == Published` and by `serviceType`; callers filter again client-side
    * so a service page can never show another service's work even if the query were ignored.

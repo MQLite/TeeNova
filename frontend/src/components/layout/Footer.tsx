@@ -1,9 +1,11 @@
 import Link from 'next/link'
 import { BrandMark } from '@/components/brand/BrandMark'
 import { publicContentHref, publishedDocuments } from '@/lib/public-content/registry'
+import { socialProfileLinks } from '@/lib/seo/social-profiles'
 import { publishedServices, serviceHref } from '@/lib/service-content/registry'
 import { brandFullName } from '@/lib/site-brand'
-import { quoteFormEnabled, quoteHref } from '@/lib/site-contact'
+import { openingHours, shopAddress } from '@/lib/site-business'
+import { businessPhone, phoneHref, quoteFormEnabled, quoteHref } from '@/lib/site-contact'
 
 // Footer link lists (Jira 9604). `external: true` renders a plain <a> for the shop mailto quote/contact
 // pattern; everything else is an existing internal route or homepage anchor. No dead "#" links.
@@ -27,6 +29,9 @@ const SUPPORT_LINKS: FooterLink[] = [
   { href: quoteHref(), label: 'Request a Quote', external: !quoteFormEnabled },
   { href: '/contact', label: 'Contact Us' },
 ]
+
+/** Verified, configured profile URLs only — the same source JSON-LD `sameAs` reads. */
+const SOCIAL_LINKS = socialProfileLinks()
 
 const HELP_AND_POLICY_LINKS: FooterLink[] = publishedDocuments().map((document) => ({
   href: publicContentHref(document),
@@ -86,9 +91,30 @@ export function Footer() {
               Auckland&apos;s local custom print shop — T-shirts, badges, banners, business cards,
               stickers, signage and more. Perfect for events, businesses, churches, clubs and teams.
             </p>
-            {/* Inert labels, not links: no verified social profile URL exists. Styled as plain
-                text so they cannot read as broken links. */}
-            <p className="mt-5 text-xs text-ink-inverse-muted">Find us on Facebook and Instagram</p>
+            {/* Social profiles (Jira 10308). This was the sentence "Find us on Facebook and
+                Instagram" with no link behind it — a claim the site could not act on. It now renders
+                only verified, configured profile URLs, from the same module that feeds JSON-LD
+                `sameAs`, so the visible links and the machine-readable ones cannot disagree. With
+                nothing configured — the state today, approvals A27/A28/A39/A40 — nothing is
+                rendered at all: no chip, no inert label, no `#`. */}
+            {SOCIAL_LINKS.length > 0 && (
+              <nav aria-label="Social profiles" className="mt-5">
+                <ul className="flex flex-wrap gap-x-4 gap-y-1 text-xs">
+                  {SOCIAL_LINKS.map((link) => (
+                    <li key={link.platform}>
+                      <a
+                        href={link.url}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="inline-flex min-h-9 items-center text-ink-inverse-secondary transition-colors duration-fast hover:text-ink-inverse hover:underline"
+                      >
+                        {link.label}
+                      </a>
+                    </li>
+                  ))}
+                </ul>
+              </nav>
+            )}
           </div>
 
           {/* Services — omitted entirely rather than rendered empty when nothing is published. */}
@@ -117,11 +143,27 @@ export function Footer() {
               attached to them. */}
           <FooterColumn title="Visit Us">
             <div className="card-inverse p-4">
-              <p className="text-xs font-medium text-ink-inverse">
-                483 Great South Road, Otahuhu, Auckland 1062
-              </p>
-              <p className="mt-1 text-xs text-ink-inverse-secondary">Mon–Fri 9am–5pm</p>
-              <p className="text-xs text-ink-inverse-secondary">Sat 10am–4pm</p>
+              {/* Address and hours read from the one NAP module (Jira 10308); the strings are
+                  unchanged. Writing them out here as well is how the site ended up with the same
+                  address in four files. */}
+              <p className="text-xs font-medium text-ink-inverse">{shopAddress.singleLine}</p>
+              {openingHours.map((row) => (
+                <p key={row.label} className="mt-1 text-xs text-ink-inverse-secondary first:mt-1">
+                  {row.label} {row.display}
+                </p>
+              ))}
+              {/* Click-to-call, rendered only when a number is configured. None exists today
+                  (A05), so nothing appears — never a placeholder. */}
+              {businessPhone && phoneHref && (
+                <p className="mt-2 text-xs">
+                  <a
+                    href={phoneHref}
+                    className="inline-flex min-h-9 items-center text-ink-inverse-secondary transition-colors duration-fast hover:text-ink-inverse hover:underline"
+                  >
+                    {businessPhone}
+                  </a>
+                </p>
+              )}
               <p className="mt-2 text-xs text-ink-inverse-secondary">
                 Ask us which pickup or delivery options are available for your job.
               </p>
