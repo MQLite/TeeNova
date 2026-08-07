@@ -7,12 +7,12 @@ const BACKEND_URL =
   process.env.NEXT_PUBLIC_API_BASE_URL ??
   'https://localhost:44300'
 
-export function getAdminToken(): string | undefined {
-  return cookies().get('admin_token')?.value
+export async function getAdminToken(): Promise<string | undefined> {
+  return (await cookies()).get('admin_token')?.value
 }
 
-export function getAdminAuthHeaders(): Record<string, string> {
-  const token = getAdminToken()
+export async function getAdminAuthHeaders(): Promise<Record<string, string>> {
+  const token = await getAdminToken()
   if (!token) return {}
   return { Authorization: `Bearer ${token}` }
 }
@@ -20,8 +20,8 @@ export function getAdminAuthHeaders(): Record<string, string> {
 // Decodes the JWT payload (server-side only) and returns the username from the name claim.
 // Not `sub` — that carries the admin user id, which ABP's ICurrentUser.Id depends on.
 // Does not verify the signature — middleware already guards access.
-export function getAdminUsername(): string | null {
-  const token = getAdminToken()
+export async function getAdminUsername(): Promise<string | null> {
+  const token = await getAdminToken()
   if (!token) return null
   try {
     const parts = token.split('.')
@@ -38,8 +38,8 @@ export function getAdminUsername(): string | null {
 
 // Decodes the JWT payload and returns the role claim ("Admin" or "Viewer").
 // JwtSecurityTokenHandler maps ClaimTypes.Role → "role" in the JWT output.
-export function getAdminRole(): string | null {
-  const token = getAdminToken()
+export async function getAdminRole(): Promise<string | null> {
+  const token = await getAdminToken()
   if (!token) return null
   try {
     const parts = token.split('.')
@@ -56,8 +56,8 @@ export function getAdminRole(): string | null {
 
 // Returns an api client configured with the admin Bearer token.
 // Call inside an async server component or route handler — never on the client.
-export function makeAdminApiClient() {
-  return makeApiClient(BACKEND_URL, getAdminAuthHeaders())
+export async function makeAdminApiClient() {
+  return makeApiClient(BACKEND_URL, await getAdminAuthHeaders())
 }
 
 // Server-component helper: redirect to login with session-expired reason.

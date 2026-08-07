@@ -7,11 +7,12 @@ export const dynamic = 'force-dynamic'
 export const metadata: Metadata = { title: 'Server Logs' }
 
 interface ServerLogsPageProps {
-  searchParams?: { downloadError?: string | string[] }
+  searchParams?: Promise<{ downloadError?: string | string[] }>
 }
 
-export default function ServerLogsPage({ searchParams }: ServerLogsPageProps) {
-  const role = getAdminRole()
+export default async function ServerLogsPage(props: ServerLogsPageProps) {
+  const searchParams = await props.searchParams;
+  const role = await getAdminRole()
   if (!role) redirectToExpiredLogin('/admin/system/logs')
 
   return (

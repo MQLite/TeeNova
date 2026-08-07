@@ -9,7 +9,7 @@ import { ActionGroup, PageContainer, Section, SectionHeading } from '@/component
 import { defaultDescription, defaultSocialDescription, defaultTitle } from '@/lib/seo/identity'
 import { buildPageMetadata } from '@/lib/seo/metadata'
 import { publishedServices } from '@/lib/service-content/registry'
-import { openingHoursSentence, shopAddress } from '@/lib/site-business'
+import { approvedBusinessFacts } from '@/lib/site-business'
 
 /**
  * Homepage (Jira 10307 presentation pass).
@@ -84,6 +84,11 @@ const STEPS = [
 ]
 
 export default function HomePage() {
+  const businessFacts = approvedBusinessFacts()
+  const hoursSentence = businessFacts.openingHours
+    ?.map((row) => `${row.label} ${row.display}`)
+    .join(' and ')
+
   return (
     <>
       {/* ─── HERO ──────────────────────────────────────────────────────────── */}
@@ -203,11 +208,15 @@ export default function HomePage() {
             {/* Address and hours read from the one NAP module (Jira 10308) rather than being
                 written out here, so the homepage, the footer, the contact page and any structured
                 data cannot disagree about them. The strings are unchanged. */}
-            <p className="eyebrow mb-2">{shopAddress.singleLine}</p>
-            <h2 className="display-sub">Visit or Contact Our Otahuhu Print Shop</h2>
+            {businessFacts.address && (
+              <p className="eyebrow mb-2">{businessFacts.address.singleLine}</p>
+            )}
+            <h2 className="display-sub">
+              {businessFacts.address ? 'Visit or Contact' : 'Contact'} Our Otahuhu Print Shop
+            </h2>
             <p className="mt-2 max-w-measure text-sm leading-relaxed text-ink-muted">
               Need help with a print job? Contact us about T-shirts, badges, banners,
-              signs and custom jobs. Open {openingHoursSentence}.
+              signs and custom jobs.{hoursSentence ? ` Open ${hoursSentence}.` : ''}
             </p>
           </div>
           <ActionGroup align="center" className="shrink-0 sm:justify-end">

@@ -8,9 +8,10 @@ const BACKEND_URL =
 
 export async function GET(
   _request: NextRequest,
-  { params }: { params: { id: string; documentId: string } },
+  props: { params: Promise<{ id: string; documentId: string }> }
 ) {
-  const token = cookies().get('admin_token')?.value
+  const params = await props.params;
+  const token = (await cookies()).get('admin_token')?.value
   if (!token) {
     return NextResponse.json({ message: 'Unauthorized' }, { status: 401 })
   }

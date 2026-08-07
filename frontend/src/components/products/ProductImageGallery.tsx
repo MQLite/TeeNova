@@ -219,7 +219,7 @@ export function ProductImageGallery({
 
       {images.length > 1 && (
         <div className="mt-3 grid grid-cols-4 gap-2">
-          {images.map((image) => {
+          {images.map((image, index) => {
             const isActive = image.id === activeImage?.id
             const thumbUrl = resolveImageUrl(image.url)
             const usable = thumbUrl && !failedUrls[thumbUrl] ? thumbUrl : null
@@ -228,6 +228,7 @@ export function ProductImageGallery({
                 key={image.id}
                 type="button"
                 onClick={() => onSelectImage(image.id)}
+                aria-label={`${productName} image ${index + 1} of ${images.length}`}
                 aria-pressed={isActive}
                 className={`relative aspect-square overflow-hidden rounded-2xl border bg-white transition-all ${
                   isActive ? 'border-ink shadow-sm' : 'border-line hover:border-line-strong'

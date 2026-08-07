@@ -30,11 +30,17 @@ export function generateStaticParams() {
   return publishedServiceParams()
 }
 
-export function generateMetadata({ params }: { params: { slug: string } }): Metadata {
-  return serviceMetadata(params.slug)
+type SlugParams = { slug: string }
+
+export function generateMetadata(props: { params: SlugParams }): Metadata
+export function generateMetadata(props: { params: Promise<SlugParams> }): Promise<Metadata>
+export function generateMetadata(props: { params: SlugParams | Promise<SlugParams> }): Metadata | Promise<Metadata> {
+  return props.params instanceof Promise
+    ? props.params.then((params) => serviceMetadata(params.slug))
+    : serviceMetadata(props.params.slug)
 }
 
-export default function ServiceDetailPage({ params }: { params: { slug: string } }) {
+function renderServiceDetailPage(params: SlugParams) {
   const resolved = resolveServiceForRequest(params.slug)
   if (!resolved) notFound()
 
@@ -91,5 +97,13 @@ export default function ServiceDetailPage({ params }: { params: { slug: string }
         <OtherServicesLinks services={publishedServices()} current={service} />
       </div>
     </div>
-  )
+  );
 }
+
+function ServiceDetailPage(props: { params: SlugParams }): ReturnType<typeof renderServiceDetailPage>
+function ServiceDetailPage(props: { params: Promise<SlugParams> }): Promise<ReturnType<typeof renderServiceDetailPage>>
+function ServiceDetailPage(props: { params: SlugParams | Promise<SlugParams> }) {
+  return props.params instanceof Promise ? props.params.then(renderServiceDetailPage) : renderServiceDetailPage(props.params)
+}
+
+export default ServiceDetailPage

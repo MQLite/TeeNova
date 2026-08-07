@@ -4,7 +4,8 @@ import { AiOrderReviewWorkspace } from './AiOrderReviewWorkspace'
 
 export const metadata = { title: 'AI Order Review' }
 
-export default function AiOrderReviewPage({ params }: { params: { id: string } }) {
-  if (getAdminRole() !== 'Admin') redirect('/admin')
+export default async function AiOrderReviewPage(props: { params: Promise<{ id: string }> }) {
+  const params = await props.params;
+  if (await getAdminRole() !== 'Admin') redirect('/admin')
   return <AiOrderReviewWorkspace importId={params.id} />
 }

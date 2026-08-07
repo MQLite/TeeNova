@@ -4,7 +4,7 @@ import { AiOrderOperationsClient } from './AiOrderOperationsClient'
 
 export const metadata = { title: 'AI Order Operations' }
 
-export default function AiOrderOperationsPage() {
-  if (getAdminRole() !== 'Admin') redirect('/admin')
+export default async function AiOrderOperationsPage() {
+  if (await getAdminRole() !== 'Admin') redirect('/admin')
   return <AiOrderOperationsClient />
 }

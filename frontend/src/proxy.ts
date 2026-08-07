@@ -52,7 +52,7 @@ function buildRedirectUrl(req: NextRequest, pathname: string, params?: URLSearch
   return url
 }
 
-export function middleware(req: NextRequest) {
+export function proxy(req: NextRequest) {
   const { pathname } = req.nextUrl
   const token = req.cookies.get(COOKIE_NAME)?.value
 

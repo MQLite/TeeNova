@@ -20,7 +20,7 @@ function RoleBadge({ role }: { role: string }) {
 }
 
 export default async function AdminUsersPage() {
-  const role = getAdminRole()
+  const role = await getAdminRole()
 
   if (role !== 'Admin') {
     return (
@@ -39,7 +39,7 @@ export default async function AdminUsersPage() {
   let error: string | null = null
 
   try {
-    const client = makeAdminApiClient()
+    const client = await makeAdminApiClient()
     users = await client.get<AdminUser[]>('/api/admin-users')
   } catch {
     error = 'Failed to load users.'

@@ -5,7 +5,7 @@ import { Icon } from '@/components/ui/Icon'
 import { ActionGroup, CardGrid, Section, SectionHeading } from '@/components/ui/Layout'
 import { PageHero } from '@/components/ui/PageHero'
 import { buildPageMetadata } from '@/lib/seo/metadata'
-import { mapsSearchUrl, openingHours, shopAddress } from '@/lib/site-business'
+import { approvedBusinessFacts, mapsSearchUrl } from '@/lib/site-business'
 import { businessPhone, contactEmail, emailHref, phoneHref } from '@/lib/site-contact'
 
 // Contact / Location page (Jira 9605). Frontend-only, no backend form and no email-sending: the quote
@@ -22,12 +22,6 @@ import { businessPhone, contactEmail, emailHref, phoneHref } from '@/lib/site-co
 // bounded to the homepage hero and the homepage closing CTA (Jira 10300 §14.4); every other page
 // uses the black `inverse` or the warm `plain` treatment, so the gradient means "home" again.
 
-const CONTACT_EMAIL = contactEmail
-// Address, hours and the Maps search link now come from the one NAP module (Jira 10308) instead of
-// being written out again here. The rendered strings are unchanged.
-const SHOP_ADDRESS = shopAddress.singleLine
-const MAPS_SEARCH_URL = mapsSearchUrl
-
 export const metadata: Metadata = buildPageMetadata({
   title: 'Contact Otahuhu Printing Shop',
   description:
@@ -36,14 +30,23 @@ export const metadata: Metadata = buildPageMetadata({
   policy: 'index',
 })
 
+const BUSINESS_FACTS = approvedBusinessFacts()
+const CONTACT_EMAIL = contactEmail
+const SHOP_ADDRESS = BUSINESS_FACTS.address?.singleLine
+
 const CONTACT_CARDS: { label: string; value: string; note?: string; href?: string }[] = [
   { label: 'Email', value: CONTACT_EMAIL, note: 'Best way to reach us', href: emailHref },
-  { label: 'Location', value: SHOP_ADDRESS, note: 'Local print shop' },
-  {
-    label: 'Hours',
-    value: `${openingHours[0].label} ${openingHours[0].display}`,
-    note: `${openingHours[1].label} ${openingHours[1].display}`,
-  },
+  ...(SHOP_ADDRESS ? [{ label: 'Location', value: SHOP_ADDRESS, note: 'Local print shop' }] : []),
+  ...(BUSINESS_FACTS.openingHours?.length
+    ? [{
+        label: 'Hours',
+        value: `${BUSINESS_FACTS.openingHours[0].label} ${BUSINESS_FACTS.openingHours[0].display}`,
+        note: BUSINESS_FACTS.openingHours
+          .slice(1)
+          .map((row) => `${row.label} ${row.display}`)
+          .join(', '),
+      }]
+    : []),
   // Rendered only when a number is configured. No telephone exists today (Jira 10300 A05), so the
   // card is absent rather than showing a placeholder — and when one is supplied it appears here,
   // visibly, before it can appear in structured data.
@@ -138,7 +141,7 @@ export default function ContactPage() {
       </Section>
 
       {/* ─── FIND US ───────────────────────────────────────────────────────── */}
-      <Section spacing="tight" divided>
+      {SHOP_ADDRESS && <Section spacing="tight" divided>
         <div className="mx-auto max-w-measure-wide text-center">
           <SectionHeading
             align="center"
@@ -147,7 +150,7 @@ export default function ContactPage() {
             lead={`Find us at ${SHOP_ADDRESS}. Get in touch to arrange pickup, or ask us about the fulfilment options available for your order.`}
           />
           <ActionGroup align="center" className="mt-8">
-            <a href={MAPS_SEARCH_URL} target="_blank" rel="noreferrer" className="btn-glass">
+            <a href={mapsSearchUrl} target="_blank" rel="noreferrer" className="btn-glass">
               Open in Google Maps
               <Icon name="external" className="h-4 w-4" />
             </a>
@@ -157,7 +160,7 @@ export default function ContactPage() {
           </ActionGroup>
           <p className="eyebrow mt-6">{SHOP_ADDRESS}</p>
         </div>
-      </Section>
+      </Section>}
 
       {/* ─── SERVICES REMINDER ─────────────────────────────────────────────── */}
       <Section spacing="tight" tone="alt" divided>

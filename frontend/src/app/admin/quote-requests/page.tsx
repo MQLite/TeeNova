@@ -1,6 +1,6 @@
 import { getAdminRole } from '@/lib/auth'
 import { QuoteRequestListClient } from './QuoteRequestListClient'
 
-export default function QuoteRequestsPage() {
-  return <QuoteRequestListClient role={getAdminRole() ?? undefined} />
+export default async function QuoteRequestsPage() {
+  return <QuoteRequestListClient role={(await getAdminRole()) ?? undefined} />
 }

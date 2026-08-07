@@ -27,7 +27,7 @@ export async function GET(
   req: NextRequest,
   { params }: { params: Promise<{ fileId: string }> },
 ): Promise<NextResponse> {
-  const token = cookies().get(COOKIE_NAME)?.value
+  const token = (await cookies()).get(COOKIE_NAME)?.value
   if (!token) return redirectToLogin(req)
 
   const { fileId } = await params

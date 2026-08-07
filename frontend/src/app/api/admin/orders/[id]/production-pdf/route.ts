@@ -25,7 +25,7 @@ export async function GET(
     return NextResponse.json({ message: 'Missing order id.' }, { status: 400 })
   }
 
-  const token = cookies().get(COOKIE_NAME)?.value
+  const token = (await cookies()).get(COOKIE_NAME)?.value
   if (!token) {
     return NextResponse.json({ message: 'Unauthorized' }, { status: 401 })
   }

@@ -12,14 +12,14 @@ const COOKIE_NAME = 'admin_token'
 
 async function proxyRequest(
   req: NextRequest,
-  params: Promise<{ path: string[] }>,
+  params: { path: string[] },
 ): Promise<NextResponse> {
-  const token = cookies().get(COOKIE_NAME)?.value
+  const token = (await cookies()).get(COOKIE_NAME)?.value
   if (!token) {
     return NextResponse.json({ message: 'Unauthorized' }, { status: 401 })
   }
 
-  const { path } = await params
+  const { path } = params
   const backendPath = '/' + path.join('/')
   const backendUrl = new URL(`${BACKEND_URL}${backendPath}`)
 
@@ -68,18 +68,23 @@ async function proxyRequest(
   })
 }
 
-export async function GET(req: NextRequest, { params }: { params: Promise<{ path: string[] }> }) {
+export async function GET(req: NextRequest, props: { params: Promise<{ path: string[] }> }) {
+  const params = await props.params;
   return proxyRequest(req, params)
 }
-export async function POST(req: NextRequest, { params }: { params: Promise<{ path: string[] }> }) {
+export async function POST(req: NextRequest, props: { params: Promise<{ path: string[] }> }) {
+  const params = await props.params;
   return proxyRequest(req, params)
 }
-export async function PUT(req: NextRequest, { params }: { params: Promise<{ path: string[] }> }) {
+export async function PUT(req: NextRequest, props: { params: Promise<{ path: string[] }> }) {
+  const params = await props.params;
   return proxyRequest(req, params)
 }
-export async function DELETE(req: NextRequest, { params }: { params: Promise<{ path: string[] }> }) {
+export async function DELETE(req: NextRequest, props: { params: Promise<{ path: string[] }> }) {
+  const params = await props.params;
   return proxyRequest(req, params)
 }
-export async function PATCH(req: NextRequest, { params }: { params: Promise<{ path: string[] }> }) {
+export async function PATCH(req: NextRequest, props: { params: Promise<{ path: string[] }> }) {
+  const params = await props.params;
   return proxyRequest(req, params)
 }

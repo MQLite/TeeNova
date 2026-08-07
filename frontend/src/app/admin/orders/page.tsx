@@ -9,7 +9,7 @@ export const dynamic = 'force-dynamic'
 export const metadata = { title: 'Orders' }
 
 export default async function AdminOrdersPage() {
-  const ordersApi = makeOrdersApi(makeAdminApiClient())
+  const ordersApi = makeOrdersApi(await makeAdminApiClient())
   let orders: Awaited<ReturnType<typeof ordersApi.getList>>['items'] = []
   let totalCount = 0
   try {

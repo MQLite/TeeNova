@@ -9,7 +9,7 @@ export const metadata = { title: 'Assets' }
 export const dynamic = 'force-dynamic'
 
 export default async function AdminAssetsPage() {
-  const filesApi = makeFilesApi(makeAdminApiClient())
+  const filesApi = makeFilesApi(await makeAdminApiClient())
   let assets: Awaited<ReturnType<typeof filesApi.getAdminAssets>>['items'] = []
   try {
     const result = await filesApi.getAdminAssets()

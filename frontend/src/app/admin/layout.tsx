@@ -17,8 +17,7 @@ export const metadata: Metadata = {
   robots: { index: false, follow: false },
 }
 
-export default function AdminLayout({ children }: { children: ReactNode }) {
-  const username = getAdminUsername() ?? undefined
-  const role = getAdminRole() ?? undefined
-  return <AdminShell username={username} role={role}>{children}</AdminShell>
+export default async function AdminLayout({ children }: { children: ReactNode }) {
+  const [username, role] = await Promise.all([getAdminUsername(), getAdminRole()])
+  return <AdminShell username={username ?? undefined} role={role ?? undefined}>{children}</AdminShell>
 }

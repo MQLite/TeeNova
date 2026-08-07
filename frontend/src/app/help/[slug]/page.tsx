@@ -16,11 +16,17 @@ export function generateStaticParams() {
   return publishedParams('help')
 }
 
-export function generateMetadata({ params }: { params: { slug: string } }): Metadata {
-  return contentMetadata('help', params.slug)
+type SlugParams = { slug: string }
+
+export function generateMetadata(props: { params: SlugParams }): Metadata
+export function generateMetadata(props: { params: Promise<SlugParams> }): Promise<Metadata>
+export function generateMetadata(props: { params: SlugParams | Promise<SlugParams> }): Metadata | Promise<Metadata> {
+  return props.params instanceof Promise
+    ? props.params.then((params) => contentMetadata('help', params.slug))
+    : contentMetadata('help', props.params.slug)
 }
 
-export default function HelpContentPage({ params }: { params: { slug: string } }) {
+function renderHelpContentPage(params: SlugParams) {
   const resolved = resolveForRequest('help', params.slug)
   if (!resolved) notFound()
 
@@ -40,3 +46,11 @@ export default function HelpContentPage({ params }: { params: { slug: string } }
     </>
   )
 }
+
+function HelpContentPage(props: { params: SlugParams }): ReturnType<typeof renderHelpContentPage>
+function HelpContentPage(props: { params: Promise<SlugParams> }): Promise<ReturnType<typeof renderHelpContentPage>>
+function HelpContentPage(props: { params: SlugParams | Promise<SlugParams> }) {
+  return props.params instanceof Promise ? props.params.then(renderHelpContentPage) : renderHelpContentPage(props.params)
+}
+
+export default HelpContentPage

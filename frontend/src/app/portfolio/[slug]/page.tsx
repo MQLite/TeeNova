@@ -27,11 +27,12 @@ async function loadItem(slug: string): Promise<PortfolioItem | null> {
   return portfolioApi.get(slug).catch(() => null)
 }
 
-export async function generateMetadata({
-  params,
-}: {
-  params: { slug: string }
-}): Promise<Metadata> {
+export async function generateMetadata(
+  props: {
+    params: { slug: string } | Promise<{ slug: string }>
+  }
+): Promise<Metadata> {
+  const params = await props.params;
   const item = await loadItem(params.slug)
   if (!item) return {}
 
@@ -54,7 +55,8 @@ export async function generateMetadata({
   })
 }
 
-export default async function PortfolioDetailPage({ params }: { params: { slug: string } }) {
+export default async function PortfolioDetailPage(props: { params: { slug: string } | Promise<{ slug: string }> }) {
+  const params = await props.params;
   if (!portfolioEnabled) notFound()
   const item = await loadItem(params.slug)
   if (!item) notFound()

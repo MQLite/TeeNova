@@ -209,7 +209,7 @@ function Section({ title, action, children }: { title: string; action?: ReactNod
 }
 
 export default async function AdminDashboardPage() {
-  const dashboardApi = makeDashboardApi(makeAdminApiClient())
+  const dashboardApi = makeDashboardApi(await makeAdminApiClient())
   let stats: DashboardStats | null = null
   try {
     stats = await dashboardApi.getSummary()

@@ -34,23 +34,31 @@ afterEach(() => {
 
 const textOf = (element: HTMLElement) => (element.textContent ?? '').replace(/\s+/g, ' ')
 
-describe('one visible address and one visible set of hours', () => {
-  it('renders the same address string in the footer, the homepage and the contact page', () => {
+describe('approval-gated visible address and hours', () => {
+  it('renders neither address nor hours while their approvals are open', () => {
     const surfaces = {
       footer: textOf(render(<Footer />).container),
       homepage: textOf(render(<HomePage />).container),
       contact: textOf(render(<ContactPage />).container),
     }
     for (const [name, text] of Object.entries(surfaces)) {
-      expect(text, name).toContain(shopAddress.singleLine)
+      expect(text, name).not.toContain(shopAddress.singleLine)
+      expect(text, name).not.toContain(openingHoursSentence)
     }
   })
 
-  it('renders the same opening hours everywhere they appear', () => {
-    const footer = textOf(render(<Footer />).container)
-    const contact = textOf(render(<ContactPage />).container)
-    const home = textOf(render(<HomePage />).container)
+  it('renders the same address and hours after their explicit approval gates open', async () => {
+    vi.stubEnv('NEXT_PUBLIC_BUSINESS_ADDRESS_APPROVED', 'true')
+    vi.stubEnv('NEXT_PUBLIC_BUSINESS_HOURS_APPROVED', 'true')
+    vi.resetModules()
+    const { Footer: ApprovedFooter } = await import('@/components/layout/Footer')
+    const { default: ApprovedHome } = await import('@/app/page')
+    const { default: ApprovedContact } = await import('@/app/contact/page')
+    const footer = textOf(render(<ApprovedFooter />).container)
+    const contact = textOf(render(<ApprovedContact />).container)
+    const home = textOf(render(<ApprovedHome />).container)
 
+    for (const text of [footer, contact, home]) expect(text).toContain(shopAddress.singleLine)
     for (const row of openingHours) {
       expect(footer, row.label).toContain(`${row.label} ${row.display}`)
       expect(contact, row.label).toContain(row.display)

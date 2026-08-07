@@ -17,11 +17,17 @@ export function generateStaticParams() {
   return publishedParams('policies')
 }
 
-export function generateMetadata({ params }: { params: { slug: string } }): Metadata {
-  return contentMetadata('policies', params.slug)
+type SlugParams = { slug: string }
+
+export function generateMetadata(props: { params: SlugParams }): Metadata
+export function generateMetadata(props: { params: Promise<SlugParams> }): Promise<Metadata>
+export function generateMetadata(props: { params: SlugParams | Promise<SlugParams> }): Metadata | Promise<Metadata> {
+  return props.params instanceof Promise
+    ? props.params.then((params) => contentMetadata('policies', params.slug))
+    : contentMetadata('policies', props.params.slug)
 }
 
-export default function PolicyContentPage({ params }: { params: { slug: string } }) {
+function renderPolicyContentPage(params: SlugParams) {
   const resolved = resolveForRequest('policies', params.slug)
   if (!resolved) notFound()
 
@@ -41,3 +47,11 @@ export default function PolicyContentPage({ params }: { params: { slug: string }
     </>
   )
 }
+
+function PolicyContentPage(props: { params: SlugParams }): ReturnType<typeof renderPolicyContentPage>
+function PolicyContentPage(props: { params: Promise<SlugParams> }): Promise<ReturnType<typeof renderPolicyContentPage>>
+function PolicyContentPage(props: { params: SlugParams | Promise<SlugParams> }) {
+  return props.params instanceof Promise ? props.params.then(renderPolicyContentPage) : renderPolicyContentPage(props.params)
+}
+
+export default PolicyContentPage

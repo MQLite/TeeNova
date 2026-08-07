@@ -4,7 +4,7 @@ import { publicContentHref, publishedDocuments } from '@/lib/public-content/regi
 import { socialProfileLinks } from '@/lib/seo/social-profiles'
 import { publishedServices, serviceHref } from '@/lib/service-content/registry'
 import { brandFullName } from '@/lib/site-brand'
-import { openingHours, shopAddress } from '@/lib/site-business'
+import { approvedBusinessFacts } from '@/lib/site-business'
 import { businessPhone, phoneHref, quoteFormEnabled, quoteHref } from '@/lib/site-contact'
 
 // Footer link lists (Jira 9604). `external: true` renders a plain <a> for the shop mailto quote/contact
@@ -80,6 +80,8 @@ function FooterColumn({ title, children }: { title: string; children: React.Reac
  * measured in `design-tokens.test.ts`.
  */
 export function Footer() {
+  const businessFacts = approvedBusinessFacts()
+
   return (
     <footer className="surface-inverse">
       <div className="section-container py-14 sm:py-16">
@@ -141,13 +143,17 @@ export function Footer() {
               A05/A08), so they are presented as the shop's own details to check, not as a
               guaranteed service commitment — and no pickup, delivery or turnaround promise is
               attached to them. */}
-          <FooterColumn title="Visit Us">
+          <FooterColumn title={businessFacts.address ? 'Visit Us' : 'Contact'}>
             <div className="card-inverse p-4">
               {/* Address and hours read from the one NAP module (Jira 10308); the strings are
                   unchanged. Writing them out here as well is how the site ended up with the same
                   address in four files. */}
-              <p className="text-xs font-medium text-ink-inverse">{shopAddress.singleLine}</p>
-              {openingHours.map((row) => (
+              {businessFacts.address && (
+                <p className="text-xs font-medium text-ink-inverse">
+                  {businessFacts.address.singleLine}
+                </p>
+              )}
+              {businessFacts.openingHours?.map((row) => (
                 <p key={row.label} className="mt-1 text-xs text-ink-inverse-secondary first:mt-1">
                   {row.label} {row.display}
                 </p>

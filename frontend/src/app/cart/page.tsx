@@ -59,7 +59,7 @@ export default function CartPage() {
         <div className="mx-auto mb-6 flex h-20 w-20 items-center justify-center rounded-full bg-black/[0.04]">
           <CartIcon className="h-10 w-10 text-black/25" />
         </div>
-        <h2 className="text-2xl text-black" style={{ fontWeight: 400, letterSpacing: '-0.96px' }}>Your cart is empty</h2>
+        <h1 className="text-2xl text-black" style={{ fontWeight: 400, letterSpacing: '-0.96px' }}>Your cart is empty</h1>
         <p className="mt-2 text-base text-black/50" style={{ letterSpacing: '-0.14px', fontWeight: 400 }}>
           Add some custom T-shirts to get started.
         </p>

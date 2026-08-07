@@ -5,9 +5,10 @@ const BACKEND_URL = process.env.BACKEND_URL ?? process.env.NEXT_PUBLIC_API_BASE_
 
 export async function GET(
   _request: NextRequest,
-  { params }: { params: { id: string; attachmentId: string } },
+  props: { params: Promise<{ id: string; attachmentId: string }> }
 ) {
-  const token = cookies().get('admin_token')?.value
+  const params = await props.params;
+  const token = (await cookies()).get('admin_token')?.value
   if (!token) return NextResponse.json({ message: 'Unauthorized' }, { status: 401 })
   if (!/^[0-9a-f-]{36}$/i.test(params.id) || !/^[0-9a-f-]{36}$/i.test(params.attachmentId))
     return NextResponse.json({ message: 'Invalid attachment identifier.' }, { status: 400 })

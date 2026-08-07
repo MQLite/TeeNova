@@ -16,7 +16,7 @@ interface Props {
 export default async function AdminAssetDetailPage({ params }: Props) {
   const { id } = await params
 
-  const filesApi = makeFilesApi(makeAdminApiClient())
+  const filesApi = makeFilesApi(await makeAdminApiClient())
   let asset
   try {
     asset = await filesApi.getAdminAssetById(id)

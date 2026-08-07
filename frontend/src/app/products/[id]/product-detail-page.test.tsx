@@ -77,7 +77,7 @@ describe('product detail server shell', () => {
   it('answers a genuine 404 with the not-found response, not a retry screen', async () => {
     getProduct.mockRejectedValue(new ApiError(404, 'Not found'))
 
-    await expect(renderPage()).rejects.toMatchObject({ digest: 'NEXT_NOT_FOUND' })
+    await expect(renderPage()).rejects.toMatchObject({ digest: 'NEXT_HTTP_ERROR_FALLBACK;404' })
   })
 
   it('propagates a temporary failure to the retryable error boundary', async () => {

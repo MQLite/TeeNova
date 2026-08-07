@@ -16,7 +16,7 @@ interface PageProps {
 export default async function AdminPrintConfigProductPrintOptionsPage({ params }: PageProps) {
   const { id } = await params
 
-  const catalogApi = makeCatalogApi(makeAdminApiClient())
+  const catalogApi = makeCatalogApi(await makeAdminApiClient())
   let product
   try {
     product = await catalogApi.getProduct(id)
