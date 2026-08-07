@@ -48,10 +48,10 @@ describe('header', () => {
     expect(home).toHaveAttribute('href', '/')
   })
 
-  it('hides the wordmark below 360px so the cart and menu remain inside the viewport', () => {
+  it('hides the wordmark below 400px so the cart and menu remain inside the viewport', () => {
     const header = source('components', 'layout', 'Header.tsx')
     expect(header).toContain('[&>span:last-child]:hidden')
-    expect(header).toContain('min-[360px]:[&>span:last-child]:block')
+    expect(header).toContain('min-[400px]:[&>span:last-child]:block')
   })
 
   it('marks the current route without relying on colour alone', async () => {

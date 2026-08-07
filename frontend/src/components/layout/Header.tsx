@@ -72,7 +72,7 @@ export function Header() {
           className="shrink-0 rounded-pill transition-opacity duration-fast hover:opacity-80"
           onClick={() => setMenuOpen(false)}
         >
-          <BrandMark className="[&>span:last-child]:hidden min-[360px]:[&>span:last-child]:block" />
+          <BrandMark className="[&>span:last-child]:hidden min-[400px]:[&>span:last-child]:block" />
         </Link>
 
         {/* Desktop nav */}

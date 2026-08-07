@@ -8,6 +8,13 @@ public class PortfolioPublicationValidatorTests
     [Fact]
     public void New_item_defaults_to_draft(){Assert.Equal(PortfolioStatus.Draft,new PortfolioItem(Guid.NewGuid()).Status);}
     [Fact]
+    public void New_image_defaults_required_draft_metadata_to_empty_strings()
+    {
+        var image = new PortfolioItemImage(Guid.NewGuid());
+        Assert.Equal(string.Empty, image.AltText);
+        Assert.Equal(string.Empty, image.PermissionReference);
+    }
+    [Fact]
     public void Valid_item_passes_all_publication_invariants()
     {
         var item = Valid();

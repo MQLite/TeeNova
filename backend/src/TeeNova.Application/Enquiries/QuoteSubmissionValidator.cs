@@ -79,8 +79,12 @@ public sealed class QuoteSubmissionValidator : ITransientDependency
     {
         var result = Optional(value, 200);
         if (result is null) return null;
-        if (!result.StartsWith('/') || result.StartsWith("//") || result.Contains("\\") ||
-            result.Any(char.IsControl) || Uri.TryCreate(result, UriKind.Absolute, out _))
+        // Root-relative paths are the only accepted form. Do not use Uri.TryCreate(..., Absolute)
+        // here: on Linux it treats values such as "/quote" as absolute file URIs, which rejects
+        // the source path sent by every public quote form.
+        if (!result.StartsWith("/", StringComparison.Ordinal) ||
+            result.StartsWith("//", StringComparison.Ordinal) || result.Contains("\\") ||
+            result.Any(char.IsControl))
             Invalid("Source path is invalid.");
         var pathOnly = result.Split('?', '#')[0];
         var allowed = pathOnly == "/" || pathOnly == "/quote" || pathOnly == "/contact" ||

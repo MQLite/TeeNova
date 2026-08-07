@@ -12,9 +12,11 @@ public class PortfolioItemImage : CreationAuditedEntity<Guid>
     public string Sha256 { get; set; } = default!;
     public int Width { get; set; }
     public int Height { get; set; }
-    public string AltText { get; set; } = default!;
+    // Upload creates the image before an Admin can enter publication metadata. These columns are
+    // required in SQL, so the editable draft state must be represented by empty strings, not null.
+    public string AltText { get; set; } = string.Empty;
     public PortfolioPermissionSource PermissionSource { get; set; }
-    public string PermissionReference { get; set; } = default!;
+    public string PermissionReference { get; set; } = string.Empty;
     public bool IsPrimary { get; set; }
     public int SortOrder { get; set; }
     public PortfolioItem? PortfolioItem { get; set; }
@@ -22,4 +24,3 @@ public class PortfolioItemImage : CreationAuditedEntity<Guid>
     protected PortfolioItemImage() { }
     public PortfolioItemImage(Guid id) : base(id) { }
 }
-
