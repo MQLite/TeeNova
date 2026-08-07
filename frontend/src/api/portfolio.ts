@@ -1,5 +1,6 @@
 import { apiClient } from '@/lib/api-client'
 import { adminApiClient } from '@/lib/admin-client'
+import { PORTFOLIO_CACHE_TAG } from '@/lib/portfolio-cache'
 
 export type PortfolioStatus = 'Draft' | 'Published' | 'Archived'
 export type PortfolioPermissionSource = 'BusinessOwned' | 'CustomerPermission' | 'Licensed'
@@ -9,21 +10,22 @@ export interface PortfolioPage { totalCount:number; items:PortfolioItem[] }
 export interface PortfolioDraft { title:string; slug:string; serviceType:string; shortCaption:string; longDescription?:string; sortOrder:number; isFeatured:boolean }
 
 export const portfolioEnabled = process.env.NEXT_PUBLIC_PORTFOLIO_ENABLED === 'true'
+const publicPortfolioCache = { revalidate: 300, tags: [PORTFOLIO_CACHE_TAG] }
 export const portfolioApi = {
-  list(maxResultCount=24): Promise<PortfolioPage> { return apiClient.get('/api/portfolio/items',{skipCount:0,maxResultCount},{revalidate:300}) },
+  list(maxResultCount=24): Promise<PortfolioPage> { return apiClient.get('/api/portfolio/items',{skipCount:0,maxResultCount},publicPortfolioCache) },
   /**
    * One page of published items (Jira 10308). Identical filtering to `list`; the only addition is
    * `skipCount`, which the sitemap needs to enumerate every published item rather than the first
    * screenful. Read-only and anonymous, so it inherits the backend's Published-only rule.
    */
-  listPage(skipCount:number,maxResultCount:number): Promise<PortfolioPage> { return apiClient.get('/api/portfolio/items',{skipCount,maxResultCount},{revalidate:300}) },
+  listPage(skipCount:number,maxResultCount:number): Promise<PortfolioPage> { return apiClient.get('/api/portfolio/items',{skipCount,maxResultCount},publicPortfolioCache) },
   /**
    * Published items for one service classification (Jira 10306). The backend already filters the
    * anonymous list by `Status == Published` and by `serviceType`; callers filter again client-side
    * so a service page can never show another service's work even if the query were ignored.
    */
-  listByService(serviceType:string,maxResultCount=3): Promise<PortfolioPage> { return apiClient.get('/api/portfolio/items',{skipCount:0,maxResultCount,serviceType},{revalidate:300}) },
-  get(slug:string): Promise<PortfolioItem> { return apiClient.get(`/api/portfolio/items/${encodeURIComponent(slug)}`,undefined,{revalidate:300}) },
+  listByService(serviceType:string,maxResultCount=3): Promise<PortfolioPage> { return apiClient.get('/api/portfolio/items',{skipCount:0,maxResultCount,serviceType},publicPortfolioCache) },
+  get(slug:string): Promise<PortfolioItem> { return apiClient.get(`/api/portfolio/items/${encodeURIComponent(slug)}`,undefined,publicPortfolioCache) },
 }
 export const adminPortfolioApi = {
   list(params?:{search?:string;status?:PortfolioStatus;serviceType?:string}):Promise<PortfolioPage>{ return adminApiClient.get('/api/portfolio/admin/items',{skipCount:0,maxResultCount:100,search:params?.search,status:params?.status,serviceType:params?.serviceType}) },

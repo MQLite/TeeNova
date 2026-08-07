@@ -3,6 +3,8 @@
 // and forwards the request to the backend. Returns 401 if no cookie is present.
 import { type NextRequest, NextResponse } from 'next/server'
 import { cookies } from 'next/headers'
+import { revalidateTag } from 'next/cache'
+import { PORTFOLIO_CACHE_TAG } from '@/lib/portfolio-cache'
 
 const BACKEND_URL =
   process.env.BACKEND_URL ??
@@ -53,6 +55,13 @@ async function proxyRequest(
     })
   } catch {
     return NextResponse.json({ message: 'Backend unreachable.' }, { status: 503 })
+  }
+
+  // Portfolio moderation is a privacy boundary. Expire all public portfolio reads immediately
+  // after a successful Admin mutation so an unpublished or deleted item cannot remain visible for
+  // the normal five-minute ISR window.
+  if (backendRes.ok && hasBody && backendPath.startsWith('/api/portfolio/admin/items')) {
+    revalidateTag(PORTFOLIO_CACHE_TAG, { expire: 0 })
   }
 
   if (backendRes.status === 204) {

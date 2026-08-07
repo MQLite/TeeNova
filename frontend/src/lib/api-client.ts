@@ -67,6 +67,8 @@ async function handleResponse<T>(res: Response): Promise<T> {
 export interface ReadRequestOptions {
   /** Seconds the Next.js server Data Cache may reuse this response before refetching. */
   revalidate?: number
+  /** Tags that a trusted mutation route can invalidate after publication-state changes. */
+  tags?: string[]
   /** Cancels an in-flight read. */
   signal?: AbortSignal
 }
@@ -75,7 +77,12 @@ export interface ReadRequestOptions {
 function readCacheInit(options?: ReadRequestOptions): RequestInit {
   const isServer = typeof window === 'undefined'
   if (options?.revalidate === undefined || !isServer) return { cache: 'no-store' }
-  return { next: { revalidate: options.revalidate } } as RequestInit
+  return {
+    next: {
+      revalidate: options.revalidate,
+      ...(options.tags ? { tags: options.tags } : {}),
+    },
+  } as RequestInit
 }
 
 // Factory that creates an API client with optional default headers.
