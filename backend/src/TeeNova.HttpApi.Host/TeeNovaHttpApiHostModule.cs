@@ -16,7 +16,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Microsoft.IdentityModel.Tokens;
-using Microsoft.OpenApi.Models;
+using Microsoft.OpenApi;
 using TeeNova.AdminLogs;
 using TeeNova.AiOrderImports;
 using TeeNova.Auth;
@@ -119,10 +119,12 @@ public class TeeNovaHttpApiHostModule : AbpModule
                 Type         = SecuritySchemeType.Http,
                 Scheme       = "bearer",
                 BearerFormat = "JWT",
-                Reference    = new OpenApiReference { Type = ReferenceType.SecurityScheme, Id = "Bearer" },
             };
             options.AddSecurityDefinition("Bearer", bearerScheme);
-            options.AddSecurityRequirement(new OpenApiSecurityRequirement { { bearerScheme, [] } });
+            options.AddSecurityRequirement(document => new OpenApiSecurityRequirement
+            {
+                [new OpenApiSecuritySchemeReference("Bearer", document)] = [],
+            });
         });
     }
 
@@ -431,7 +433,10 @@ public class TeeNovaHttpApiHostModule : AbpModule
 
         app.UseForwardedHeaders();
         app.UseAbpRequestLocalization();
+        // Keep the static-file middleware for customer uploads created at runtime, and register
+        // ABP/.NET static asset endpoints for framework virtual files introduced in ABP 10.
         app.UseStaticFiles();
+        app.MapAbpStaticAssets();
         app.UseRouting();
         app.UseCors();
         app.UseAuthentication();

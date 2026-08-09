@@ -5,5 +5,9 @@
       references are evaluated in parallel.
     -->
     <BuildInParallel>false</BuildInParallel>
+    <AbpVersion>10.6.0</AbpVersion>
+    <MicrosoftExtensionsVersion>10.0.10</MicrosoftExtensionsVersion>
+    <EntityFrameworkCoreVersion>10.0.10</EntityFrameworkCoreVersion>
+    <IdentityModelVersion>8.22.0</IdentityModelVersion>
   </PropertyGroup>
 </Project>

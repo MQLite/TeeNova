@@ -6,7 +6,7 @@ A production-oriented monorepo for a custom printing e-commerce platform.
 
 | Layer | Technology |
 |-------|-----------|
-| Backend | ABP Framework 8.x · ASP.NET Core on .NET 8 · EF Core · SQL Server |
+| Backend | ABP Framework 10.6 · ASP.NET Core on .NET 10 · EF Core · SQL Server |
 | Frontend | Next.js 14 (App Router) · React 18 · TypeScript · Tailwind CSS |
 | State | Zustand (cart, persisted to localStorage) |
 | Storage | Local disk (dev) → swap `IFileStorageService` for Azure Blob / S3 |
@@ -17,7 +17,7 @@ A production-oriented monorepo for a custom printing e-commerce platform.
 
 ### Prerequisites
 
-- .NET 8 SDK
+- .NET 10 SDK
 - SQL Server (local or remote)
 - Node.js 20+
 

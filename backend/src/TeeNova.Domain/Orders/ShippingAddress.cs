@@ -33,15 +33,15 @@ public class ShippingAddress : ValueObject
         Phone = phone;
     }
 
-    protected override IEnumerable<object?> GetAtomicValues()
+    protected override IEnumerable<object> GetAtomicValues()
     {
         yield return FullName;
         yield return AddressLine1;
-        yield return AddressLine2;
+        yield return AddressLine2!;
         yield return City;
-        yield return State;
+        yield return State!;
         yield return PostalCode;
         yield return Country;
-        yield return Phone;
+        yield return Phone!;
     }
 }
