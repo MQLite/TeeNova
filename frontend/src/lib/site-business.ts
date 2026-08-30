@@ -19,15 +19,16 @@
  *      a line of page copy: it is what a search engine reproduces in a knowledge panel, and a wrong
  *      opening hour there sends a customer to a closed door. Jira 10300 records the street address
  *      (A07), the opening hours (A09 — **BLK**), the public business name (A01/A02 — **BLK**), the
- *      telephone (A05 — **BLK**) and the service area (A10) as unresolved, so every one of those
- *      gates is **off by default** and the node is omitted rather than half-populated.
+ *      telephone (A05) and the service area (A10) through owner-confirmed values and approval
+ *      gates, so the node is omitted rather than half-populated while required identity gates are
+ *      still open.
  *
  * Nothing here invents a value. A missing or unapproved fact produces `null`, and every consumer
  * omits the field entirely — never an empty string, never a placeholder.
  */
 
 import { brandFullName, brandLegalName, brandName } from './site-brand'
-import { contactEmail } from './site-contact'
+import { businessPhone, contactEmail } from './site-contact'
 
 const flag = (name: string): boolean => process.env[name]?.trim().toLowerCase() === 'true'
 const text = (name: string): string | null => process.env[name]?.trim() || null
@@ -180,7 +181,7 @@ export interface ApprovedBusinessFacts {
   legalName: string | null
   address: ShopAddress | null
   openingHours: readonly OpeningHoursRow[] | null
-  /** Verified public telephone. Absent everywhere today (A05). */
+  /** Verified public telephone. */
   telephone: string | null
   /** Public contact mailbox, once a role is assigned and the address is a confirmed one. */
   email: string | null
@@ -199,7 +200,6 @@ export interface ApprovedBusinessFacts {
  */
 export function approvedBusinessFacts(): ApprovedBusinessFacts {
   const gates = businessApprovalGates()
-  const phone = text('NEXT_PUBLIC_BUSINESS_PHONE')
   const email = text('NEXT_PUBLIC_CONTACT_EMAIL') ?? contactEmail
 
   const areaServed = (text('NEXT_PUBLIC_BUSINESS_AREA_SERVED') ?? '')
@@ -214,7 +214,7 @@ export function approvedBusinessFacts(): ApprovedBusinessFacts {
     legalName: gates.identity ? brandLegalName : null,
     address: gates.address ? shopAddress : null,
     openingHours: gates.hours ? openingHours : null,
-    telephone: phone,
+    telephone: businessPhone,
     // A confirmed mailbox is still not a *public contact* mailbox until the role is assigned, and a
     // misspelled address is never published.
     email: gates.emailRole && isConfirmedBusinessEmail(email) ? email.trim().toLowerCase() : null,
@@ -269,7 +269,7 @@ export function localBusinessBlockers(): BusinessFactBlocker[] {
     blockers.push({
       approval: 'A05',
       fact: 'Telephone',
-      detail: 'No telephone number exists anywhere in the repository or configuration.',
+      detail: 'No verified public telephone number is configured.',
     })
   }
   if (!facts.email) {

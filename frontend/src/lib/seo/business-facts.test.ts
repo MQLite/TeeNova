@@ -31,14 +31,14 @@ afterEach(() => {
 })
 
 describe('default (nothing approved) state', () => {
-  it('publishes no name, address, hours, phone or email as a structured fact', async () => {
+  it('publishes no unapproved identity, address, hours or email as a structured fact', async () => {
     const business = await loadBusiness()
     const facts = business.approvedBusinessFacts()
     expect(facts.name).toBeNull()
     expect(facts.legalName).toBeNull()
     expect(facts.address).toBeNull()
     expect(facts.openingHours).toBeNull()
-    expect(facts.telephone).toBeNull()
+    expect(facts.telephone).toBe('(09) 270 3378')
     expect(facts.email).toBeNull()
     expect(facts.areaServed).toEqual([])
     expect(facts.priceRange).toBeNull()
@@ -53,7 +53,8 @@ describe('default (nothing approved) state', () => {
   it('reports every open approval as a blocker rather than filling the gap', async () => {
     const business = await loadBusiness()
     const approvals = business.localBusinessBlockers().map((blocker) => blocker.approval)
-    expect(approvals).toEqual(expect.arrayContaining(['A01/A02', 'A07', 'A09', 'A05']))
+    expect(approvals).toEqual(expect.arrayContaining(['A01/A02', 'A07', 'A09']))
+    expect(approvals).not.toContain('A05')
   })
 })
 

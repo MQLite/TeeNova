@@ -114,10 +114,17 @@ describe('nothing appears only in structured data', () => {
   })
 
   it('publishes a telephone only once it is also rendered as a click-to-call link', async () => {
-    // No number is configured, so neither the graph nor the page shows one.
-    expect(approvedBusinessFacts().telephone).toBeNull()
-    const withoutPhone = render(<ContactPage />).container
-    expect(withoutPhone.querySelector('a[href^="tel:"]')).toBeNull()
+    expect(approvedBusinessFacts().telephone).toBe('(09) 270 3378')
+    const withDefaultNumbers = render(<ContactPage />).container
+    const defaultLinks = [...withDefaultNumbers.querySelectorAll('a[href^="tel:"]')]
+    expect(defaultLinks.map((link) => link.getAttribute('href'))).toEqual([
+      'tel:0272767379',
+      'tel:092703378',
+    ])
+    expect(textOf(withDefaultNumbers)).toContain('027 276 7379')
+    expect(textOf(withDefaultNumbers)).toContain('(09) 270 3378')
+    expect(textOf(withDefaultNumbers)).toContain('Messenger (Meta)')
+    expect(textOf(withDefaultNumbers)).toContain('Link coming soon')
 
     vi.stubEnv('NEXT_PUBLIC_BUSINESS_PHONE', '+64 9 555 0100')
     vi.resetModules()
@@ -136,7 +143,7 @@ describe('release blockers', () => {
     expect(facts).toContain('Public business name')
     expect(facts).toContain('Street address')
     expect(facts).toContain('Opening hours')
-    expect(facts).toContain('Telephone')
+    expect(facts).not.toContain('Telephone')
     expect(facts).toContain('Public contact mailbox role')
     for (const blocker of blockers) {
       expect(blocker.approval).toMatch(/^A\d{2}/)

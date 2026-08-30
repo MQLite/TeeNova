@@ -6,7 +6,7 @@
  * A `LocalBusiness` node is the highest-consequence structured data on a shop's site: it is what
  * feeds a knowledge panel and a map listing, and a wrong opening hour in it sends a customer to a
  * locked door on a Sunday. Jira 10300 records the public business name (A01/A02), the opening hours
- * (A09) and the telephone (A05) as unresolved, and the street address (A07) as shown-but-unapproved.
+ * (A09) and street address (A07) as unresolved while the public telephone (A05) is now supplied.
  * So the node is built by a gate, not by a template: it appears when the facts are approved and is
  * absent when they are not. A thin node carrying only a name is worse than no node — it asserts an
  * identity the owner has not chosen, and search engines treat contradictions between visible content

@@ -158,8 +158,7 @@ export function Footer() {
                   {row.label} {row.display}
                 </p>
               ))}
-              {/* Click-to-call, rendered only when a number is configured. None exists today
-                  (A05), so nothing appears — never a placeholder. */}
+              {/* Verified click-to-call number from the shared contact configuration. */}
               {businessPhone && phoneHref && (
                 <p className="mt-2 text-xs">
                   <a

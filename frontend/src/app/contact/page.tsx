@@ -6,17 +6,25 @@ import { ActionGroup, CardGrid, Section, SectionHeading } from '@/components/ui/
 import { PageHero } from '@/components/ui/PageHero'
 import { buildPageMetadata } from '@/lib/seo/metadata'
 import { approvedBusinessFacts, mapsSearchUrl } from '@/lib/site-business'
-import { businessPhone, contactEmail, emailHref, phoneHref } from '@/lib/site-contact'
+import {
+  businessMobile,
+  businessPhone,
+  contactEmail,
+  emailHref,
+  messengerHref,
+  mobileHref,
+  phoneHref,
+} from '@/lib/site-contact'
 
 // Contact / Location page (Jira 9605). Frontend-only, no backend form and no email-sending: the quote
 // and contact actions all use the existing storefront mailto pattern. Business details shown (street
-// address, suburb, hours, email) are the owner-provided shop details — no invented phone, parking
-// notes, or social URLs.
+// address, suburb, hours, email and phone numbers) are the owner-provided shop details — no
+// invented parking notes or social URLs.
 //
 // Jira 10308: no LocalBusiness JSON-LD is emitted here or anywhere else. The public business name
-// (A01/A02), opening hours (A09) and telephone (A05) are unresolved approvals, and a machine-readable
-// business node is a stronger claim than page copy — see `lib/site-business.ts`. The facts on this
-// page are now read from that module so the visible page and any future graph share one source.
+// (A01/A02) and opening hours (A09) are unresolved approvals, and a machine-readable business node
+// is a stronger claim than page copy — see `lib/site-business.ts`. The facts on this page are now
+// read from shared modules so the visible page and any future graph share one source.
 //
 // Jira 10307: the two full-bleed rainbow bands on this page are gone. The accent gradient is now
 // bounded to the homepage hero and the homepage closing CTA (Jira 10300 §14.4); every other page
@@ -34,8 +42,29 @@ const BUSINESS_FACTS = approvedBusinessFacts()
 const CONTACT_EMAIL = contactEmail
 const SHOP_ADDRESS = BUSINESS_FACTS.address?.singleLine
 
-const CONTACT_CARDS: { label: string; value: string; note?: string; href?: string }[] = [
+const CONTACT_CARDS: {
+  label: string
+  value: string
+  note?: string
+  href?: string
+  external?: boolean
+}[] = [
   { label: 'Email', value: CONTACT_EMAIL, note: 'Best way to reach us', href: emailHref },
+  { label: 'Mobile', value: businessMobile, note: 'Call or text us', href: mobileHref },
+  { label: 'Phone', value: businessPhone, note: 'Call the shop', href: phoneHref },
+  messengerHref
+    ? {
+        label: 'Messenger (Meta)',
+        value: 'Message us on Messenger',
+        note: 'Opens Messenger',
+        href: messengerHref,
+        external: true,
+      }
+    : {
+        label: 'Messenger (Meta)',
+        value: 'Link coming soon',
+        note: 'Space reserved for our Messenger contact link',
+      },
   ...(SHOP_ADDRESS ? [{ label: 'Location', value: SHOP_ADDRESS, note: 'Local print shop' }] : []),
   ...(BUSINESS_FACTS.openingHours?.length
     ? [{
@@ -46,12 +75,6 @@ const CONTACT_CARDS: { label: string; value: string; note?: string; href?: strin
           .map((row) => `${row.label} ${row.display}`)
           .join(', '),
       }]
-    : []),
-  // Rendered only when a number is configured. No telephone exists today (Jira 10300 A05), so the
-  // card is absent rather than showing a placeholder — and when one is supplied it appears here,
-  // visibly, before it can appear in structured data.
-  ...(businessPhone && phoneHref
-    ? [{ label: 'Phone', value: businessPhone, note: 'Call the shop', href: phoneHref }]
     : []),
   { label: 'Pickup / delivery', value: 'Ask which options are available for your job' },
 ]
@@ -95,6 +118,8 @@ export default function ContactPage() {
               {card.href ? (
                 <a
                   href={card.href}
+                  target={card.external ? '_blank' : undefined}
+                  rel={card.external ? 'noreferrer' : undefined}
                   className="link mt-2 block break-words text-base font-medium"
                 >
                   {card.value}
