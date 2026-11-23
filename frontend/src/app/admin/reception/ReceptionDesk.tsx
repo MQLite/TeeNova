@@ -22,7 +22,7 @@ export function ReceptionDesk() {
   const [received, setReceived] = useState(todayInAuckland)
   const [photo, setPhoto] = useState('')
   const [sourcePhotoUrl, setSourcePhotoUrl] = useState('')
-  const [masthead, setMasthead] = useState<HTMLElement | null>(null)
+  const [captureTools, setCaptureTools] = useState<HTMLDivElement | null>(null)
   const cameraInput = useRef<HTMLInputElement>(null)
   const galleryInput = useRef<HTMLInputElement>(null)
   useEffect(() => () => {
@@ -192,7 +192,7 @@ export function ReceptionDesk() {
     setDirty(true)
   }
   return <div className="reception-desk" lang="zh-CN">
-    <header className="rc-mast" ref={setMasthead}><strong>OtahuhuPrintingShop</strong><span>接待工作台</span></header>
+    <header className="rc-mast"><strong>OtahuhuPrintingShop</strong><span>接待工作台</span></header>
     <nav aria-label="接待导航">{([['queue','工单总览'], ['write','接单录入'], ['review','核对工作单']] as const).map(([tab,label]) =>
       <button key={tab} disabled={!!busy} aria-current={view === tab ? 'page' : undefined} onClick={() => { setError(''); if (tab === 'review') review(); else setView(tab) }}>{label}</button>)}</nav>
     <div className="rc-body">
@@ -201,14 +201,14 @@ export function ReceptionDesk() {
       {busy && <p role="status">{busy}</p>}
       <section hidden={view !== 'write'}>
         <div className="rc-heading"><div><small>{received}</small><h1>接待手记</h1></div><span>门店自取</span></div>
-        <div className="rc-tools">
+        <div className="rc-tools" ref={setCaptureTools}>
           <input ref={cameraInput} hidden type="file" aria-label="拍摄接待原稿" accept="image/*" capture="environment" onChange={e => void selectPhoto(e.currentTarget, 'Camera')} />
           <input ref={galleryInput} hidden type="file" aria-label="选择接待原稿照片" accept="image/jpeg,image/png,image/webp" onChange={e => void selectPhoto(e.currentTarget, 'Upload')} />
           <button disabled={!!busy} onClick={() => cameraInput.current?.click()}>{sourcePhotoUrl ? '重新拍照' : '拍照'}</button>
           <button disabled={!!busy} onClick={() => galleryInput.current?.click()}>从相册选择</button>
           {sourcePhotoUrl && <button disabled={!!busy} onClick={useHandwriting}>改用手写</button>}
         </div>
-        {sourcePhotoUrl ? <OriginalPhoto url={sourcePhotoUrl} /> : <InkPad key={padKey} toolbarHost={view === 'write' ? masthead : null} initialStrokes={initialStrokes} onReady={ready} disabled={!!busy} onChange={(element, ink, lines) => {
+        {sourcePhotoUrl ? <OriginalPhoto url={sourcePhotoUrl} /> : <InkPad key={padKey} toolbarHost={view === 'write' ? captureTools : null} initialStrokes={initialStrokes} onReady={ready} disabled={!!busy} onChange={(element, ink, lines) => {
           canvas.current = element; setHasInk(ink); strokes.current = lines; setDirty(true)
           job.current = undefined; recognized.current = false
         }}/>}

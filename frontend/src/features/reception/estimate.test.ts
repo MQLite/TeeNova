@@ -13,6 +13,19 @@ const group = (heading: string, quantity = 8): GarmentGroup => ({
 })
 
 describe('reception estimates', () => {
+  it.each([
+    [tee.name, 'tee', 'A3'], [hoodie.name, 'hoodie', 'A3'],
+    ['Gildan Cotton Tee for kids', 'kidsTee', 'A4'], ['Gildan Hoodie for Kids', 'kidsHoodie', 'A4'],
+  ] as const)('quotes missing front/back sizes for %s', (name, pricingKind, expected) => {
+    const option = (code: string) => ({id: 'id-' + code, code, name: code, basePrice: 0, isActive: true, sortOrder: 0})
+    const config = {products:[{...tee, name}], areas:['FRONT_CENTER','BACK_CENTER'].map(option), sizes:['A3','A4','A5'].map(option)}
+    const g = {...group('B&F'), pricingKind, prints:[{area:'FRONT_CENTER',size:''},{area:'BACK_CENTER',size:''}]}
+    const sizes = () => estimateLines([g], config)[0].prints.map(p => p.printSizeId)
+    expect(sizes()).toEqual(['id-' + expected, 'id-' + expected])
+    expect(g.prints.map(p => p.size)).toEqual(['',''])
+    g.prints[0].size = 'A5'
+    expect(sizes()).toEqual(['id-A5', 'id-' + expected])
+  })
   it('maps unmarked garments and circled H, leaving banners unlinked', () => {
     expect(garmentKind(group('White B&F'))).toBe('tee')
     expect(garmentKind(group('Ⓗ'))).toBe('hoodie')

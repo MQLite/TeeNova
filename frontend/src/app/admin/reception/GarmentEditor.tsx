@@ -1,5 +1,5 @@
 import { totalPieces, type GarmentGroup, type PrintLayout, type SizeRow } from '@/features/reception/worksheet'
-import { garmentKind, garments, type EstimateCatalogue } from '@/features/reception/estimate'
+import { defaultDoubleSidedPrintSize, garmentKind, garments, type EstimateCatalogue } from '@/features/reception/estimate'
 
 const emptyRow = (): SizeRow => ({ colour: '', size: '', quantity: null })
 
@@ -28,7 +28,8 @@ export function GarmentEditor({layout, catalogue, onChange}: {
         {(g.prints ?? []).map((spec,j) => <div className="rc-tools" key={j}>
           {(['area','size'] as const).map(key => <label key={key}>{key === 'area' ? '印花位置' : '印花大小'}
             <select value={spec[key]} onChange={e => update(i,{prints:g.prints!.map((p,k) => k === j ? {...p,[key]:e.target.value} : p)})}>
-              <option value="">请选择</option>
+              <option value="">{key === 'size' && defaultDoubleSidedPrintSize(g, spec.area)
+                ? `按 ${defaultDoubleSidedPrintSize(g, spec.area)} 估价（未注明）` : '请选择'}</option>
               {(key === 'area' ? catalogue?.areas : catalogue?.sizes)?.map(o => <option key={o.id} value={o.code}>{o.name}</option>)}
             </select>
           </label>)}

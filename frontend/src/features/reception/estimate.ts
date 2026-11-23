@@ -21,6 +21,16 @@ export function garmentKind(group: GarmentGroup): Kind {
   return hoodie ? (kids ? 'kidsHoodie' : 'hoodie') : (kids ? 'kidsTee' : 'tee')
 }
 
+export function defaultDoubleSidedPrintSize(group: GarmentGroup, area: string) {
+  if (area !== 'FRONT_CENTER' && area !== 'BACK_CENTER') return undefined
+  const opposite = area === 'FRONT_CENTER' ? 'BACK_CENTER' : 'FRONT_CENTER'
+  if (!group.prints?.some(p => p.area === opposite)) return undefined
+  switch (garmentKind(group)) {
+    case 'tee': case 'hoodie': return 'A3'
+    case 'kidsTee': case 'kidsHoodie': return 'A4'
+  }
+}
+
 export async function loadEstimateCatalogue(signal: AbortSignal): Promise<EstimateCatalogue> {
   const [areas, sizes] = await Promise.all([printConfigApi.getAreas({signal}), printConfigApi.getSizes({signal})])
   const products: Product[] = []
@@ -53,8 +63,10 @@ export function estimateLines(groups: GarmentGroup[], catalogue: EstimateCatalog
     if (group.prints == null) throw new Error(`请在「${group.heading}」核对印花，或选择仅计衣价。`)
     const prints = (group.prints ?? []).map(spec => {
       const area = catalogue.areas.find(a => a.code === spec.area)
-      const size = catalogue.sizes.find(s => s.code === spec.size)
-      if (!area || !size) throw new Error(`请补选「${group.heading}」的印花位置和大小。`)
+      if (!area) throw new Error(`请核对「${group.heading}」的印花位置。`)
+      const sizeCode = spec.size.trim() || defaultDoubleSidedPrintSize(group, spec.area)
+      const size = catalogue.sizes.find(s => s.code === sizeCode)
+      if (!size) throw new Error(`请为「${group.heading}」的${area.name}选择可用的印花大小。`)
       return {printAreaId:area.id, printSizeId:size.id}
     })
     const scope = product.printPricingGroupId ?? product.id

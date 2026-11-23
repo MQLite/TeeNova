@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { formatPaymentAmount } from '@/lib/money'
-import { garmentKind, loadEstimateCatalogue, quoteEstimate, type EstimateCatalogue } from './estimate'
+import { defaultDoubleSidedPrintSize, garmentKind, loadEstimateCatalogue, quoteEstimate, type EstimateCatalogue } from './estimate'
 import type { PrintLayout } from './worksheet'
 
 export function useReceptionEstimate(layout: PrintLayout | null | undefined, instructions: string) {
@@ -38,7 +38,10 @@ export function useReceptionEstimate(layout: PrintLayout | null | undefined, ins
     : result && result.layout === layout ? result.text : '正在估价…'
   const garmentOnly = linked && layout?.groups.filter(g => garmentKind(g) !== 'unlinked')
     .every(g => g.prints?.length === 0)
-  const notes = [garmentOnly && '仅计衣价', linked && excluded && '其余单独报价'].filter(Boolean).join('，')
+  const defaults = new Set(layout?.groups.flatMap(g => g.prints?.filter(p => !p.size.trim())
+    .map(p => defaultDoubleSidedPrintSize(g, p.area)) ?? []))
+  const notes = [garmentOnly && '仅计衣价', defaults.has('A3') && '成人双面未注明大小按 A3 估价',
+    defaults.has('A4') && '童装双面未注明大小按 A4 估价', linked && excluded && '其余单独报价'].filter(Boolean).join('，')
   const display = notes ? `${text}（${notes}）` : text
   return {catalogue, text: display, printText: text === '正在估价…' ? '待估价' : display,
     retry: linked ? () => setAttempt(n => n+1) : undefined}
