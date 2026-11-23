@@ -2,4 +2,3 @@ export interface ApprovedServiceAssurance { id: string; title: string; detail: s
 /** Operational assurances require owner approval and supporting evidence. */
 export const serviceAssurances: readonly ApprovedServiceAssurance[] = []
 export const publishedServiceAssurances = () => serviceAssurances.filter((item) => item.published && item.evidenceReference.trim())
-

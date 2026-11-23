@@ -33,4 +33,3 @@ public static partial class PortfolioPublicationValidator
     [GeneratedRegex("^[a-z0-9]+(?:-[a-z0-9]+)*$", RegexOptions.CultureInvariant)]
     private static partial Regex SlugPattern();
 }
-

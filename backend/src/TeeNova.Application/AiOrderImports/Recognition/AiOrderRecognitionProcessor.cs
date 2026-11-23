@@ -377,6 +377,7 @@ public sealed class AiOrderRecognitionProcessor : ITransientDependency
                     cancellationToken);
                 await preparation.CompleteAsync(cancellationToken);
             }
+            var reception = attempt.ContractVersion == ReceptionRecognition.Contract;
             var request = new AiOrderRecognitionRequest(
                 attempt.ImportId,
                 attempt.Id,
@@ -386,11 +387,11 @@ public sealed class AiOrderRecognitionProcessor : ITransientDependency
                 attempt.ContractVersion ?? AiOrderRecognitionVersions.Contract,
                 _options.CurrencyContext,
                 _options.LocaleContext,
-                _promptBuilder.Build(
+                reception ? ReceptionRecognition.Prompt(import.CreationTime) : _promptBuilder.Build(
                     _options.CurrencyContext,
                     _options.LocaleContext,
                     sourceSnapshot),
-                _validator.JsonSchema,
+                reception ? ReceptionRecognition.Schema : _validator.JsonSchema,
                 sources);
             var provider = _providers.Resolve(selection.ProviderId);
             var aggregateUsage = new AiOrderRecognitionUsage(0, 0, 0);
@@ -402,11 +403,13 @@ public sealed class AiOrderRecognitionProcessor : ITransientDependency
                 aggregateUsage = AddUsage(aggregateUsage, result.Usage);
                 try
                 {
-                    validated = _validator.ValidateAndCanonicalize(
-                        result.StructuredOutputJson);
-                    _validator.ValidateSourceReferences(
-                        validated.CanonicalJson,
-                        sourceSnapshot.ToDictionary(x => x.Id, x => x.PageCount));
+                    if (reception)
+                        validated = ReceptionRecognition.Validate(result.StructuredOutputJson, _options.MaximumOutputCharacters);
+                    else
+                    {
+                        validated = _validator.ValidateAndCanonicalize(result.StructuredOutputJson);
+                        _validator.ValidateSourceReferences(validated.CanonicalJson, sourceSnapshot.ToDictionary(x => x.Id, x => x.PageCount));
+                    }
                     break;
                 }
                 catch (BusinessException) when (repair == 0)
@@ -443,7 +446,7 @@ public sealed class AiOrderRecognitionProcessor : ITransientDependency
                 attempt.ImportId,
                 attempt.LeaseToken,
                 import.CurrentRevision,
-                AiOrderRecognitionVersions.StructuralValidation,
+                reception ? ReceptionRecognition.Contract : AiOrderRecognitionVersions.StructuralValidation,
                 validated.CanonicalJson,
                 validated.CanonicalSha256,
                 import.CreatedByAdminId,
@@ -461,9 +464,8 @@ public sealed class AiOrderRecognitionProcessor : ITransientDependency
                     : null,
                 workerClaimToken,
                 cancellationToken);
-            await _validationProcessor.TryValidateAfterRecognitionAsync(
-                attempt.ImportId,
-                cancellationToken);
+            if (!reception)
+                await _validationProcessor.TryValidateAfterRecognitionAsync(attempt.ImportId, cancellationToken);
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {

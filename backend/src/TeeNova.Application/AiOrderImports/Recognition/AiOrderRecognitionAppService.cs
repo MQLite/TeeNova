@@ -149,7 +149,13 @@ public class AiOrderRecognitionAppService : ApplicationService
             importId,
             selection,
             cancellationToken);
-        var requestHash = HashStartRequest(importId, selection, sourceSnapshot);
+        var import = await _imports.GetAsync(importId, includeDetails: false, cancellationToken);
+        var reception = import.ContractVersion == ReceptionRecognition.Contract;
+        if (reception && selection.ProviderId != "openai")
+            throw Safe(AiOrderImportErrorCodes.InvalidRequest, "Reception worksheets require an enabled OpenAI model.");
+        var promptVersion = reception ? ReceptionRecognition.PromptVersion : AiOrderRecognitionVersions.Prompt;
+        var contract = reception ? ReceptionRecognition.Contract : AiOrderRecognitionVersions.Contract;
+        var requestHash = HashStartRequest(importId, selection, sourceSnapshot, promptVersion, contract);
         var attemptQuery = await _attempts.GetQueryableAsync();
         var existing = await attemptQuery.SingleOrDefaultAsync(
             x => x.ImportId == importId && x.StartOperationKey == normalizedKey,
@@ -163,7 +169,6 @@ public class AiOrderRecognitionAppService : ApplicationService
             return ToDto(existing);
         }
 
-        var import = await _imports.GetAsync(importId, includeDetails: false, cancellationToken);
         if ((!isRetry && import.Status != AiOrderImportStatus.Uploaded) ||
             (isRetry && import.Status != AiOrderImportStatus.Failed))
             throw Safe(
@@ -285,8 +290,8 @@ public class AiOrderRecognitionAppService : ApplicationService
         attempt.ConfigureRecognition(
             selection.ApiMode,
             selection.ApiVersion,
-            AiOrderRecognitionVersions.Prompt,
-            AiOrderRecognitionVersions.Contract,
+            promptVersion,
+            contract,
             selection.StructuredOutputMode,
             selection.PricingVersion,
             JsonSerializer.Serialize(new
@@ -328,15 +333,17 @@ public class AiOrderRecognitionAppService : ApplicationService
     private static string HashStartRequest(
         Guid importId,
         AiOrderRecognitionModelSelection selection,
-        IReadOnlyCollection<AiOrderRecognitionSourceDescriptor> sources)
+        IReadOnlyCollection<AiOrderRecognitionSourceDescriptor> sources,
+        string promptVersion,
+        string contract)
     {
         var builder = new StringBuilder()
             .Append("ai-order-recognition-start:v1\n")
             .Append("import:").Append(importId.ToString("N")).Append('\n')
             .Append("provider:").Append(selection.ProviderId).Append('\n')
             .Append("model:").Append(selection.ModelId).Append('\n')
-            .Append("prompt:").Append(AiOrderRecognitionVersions.Prompt).Append('\n')
-            .Append("contract:").Append(AiOrderRecognitionVersions.Contract).Append('\n');
+            .Append("prompt:").Append(promptVersion).Append('\n')
+            .Append("contract:").Append(contract).Append('\n');
         foreach (var source in sources.OrderBy(x => x.Sequence))
         {
             builder.Append("source:")

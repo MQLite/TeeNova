@@ -53,6 +53,11 @@ export function AdminShell({ children, username, role }: Props) {
 
           <div className="flex items-center gap-2">
             {role === 'Admin' && (
+              <Link href="/admin/reception" className="rounded-full border px-3 py-2 text-xs md:hidden">
+                接待工作台
+              </Link>
+            )}
+            {role === 'Admin' && (
               <Link
                 href="/admin/ai-order-imports"
                 className="rounded-full border border-black/[0.12] px-3 py-1.5 font-mono text-[9px] uppercase tracking-[0.54px] text-black/60 md:hidden"

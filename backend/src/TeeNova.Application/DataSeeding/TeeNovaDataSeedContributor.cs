@@ -295,7 +295,7 @@ public class TeeNovaDataSeedContributor : IDataSeedContributor, ITransientDepend
             {
                 Description = "A timeless everyday classic. Soft 100% cotton with a relaxed fit, perfect for vibrant custom prints. Available in multiple colors and sizes.",
                 IsActive = true
-            }, "/images/products/classic-tee.svg",
+            }, "/images/products/classic-tee-printed.png",
             ["White", "Black", "Navy Blue"],
             ["S", "M", "L", "XL", "XXL"],
             "CCT");
@@ -305,7 +305,7 @@ public class TeeNovaDataSeedContributor : IDataSeedContributor, ITransientDepend
             {
                 Description = "Premium quality unisex tee in a soft cotton-modal blend. Modern slim fit with a reinforced collar 鈥?ideal for bold custom artwork.",
                 IsActive = true
-            }, "/images/products/premium-tee.svg",
+            }, "/images/products/premium-tee-printed.png",
             ["Charcoal", "White", "Forest Green"],
             ["S", "M", "L", "XL"],
             "PUT", xlSurcharge: 2.00m);
@@ -315,7 +315,7 @@ public class TeeNovaDataSeedContributor : IDataSeedContributor, ITransientDepend
             {
                 Description = "Streetwear-inspired oversized tee with dropped shoulders. Heavy 280gsm cotton gives a premium feel 鈥?perfect for full-front oversized prints.",
                 IsActive = true
-            }, "/images/products/oversized-tee.svg",
+            }, "/images/products/oversized-tee-printed.png",
             ["Black", "Sand", "Bone White"],
             ["M", "L", "XL", "XXL"],
             "OST", xxlSurcharge: 5.00m);

@@ -6,4 +6,3 @@ public interface IPortfolioObjectStorage
     Task<Stream> OpenReadAsync(string objectKey, CancellationToken cancellationToken = default);
     Task DeleteAsync(string objectKey, CancellationToken cancellationToken = default);
 }
-

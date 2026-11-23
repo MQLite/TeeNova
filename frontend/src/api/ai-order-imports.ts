@@ -539,6 +539,7 @@ export interface AiOrderCatalogueSearchItem {
 export async function createAiOrderImport(
   idempotencyKey: string,
   captureSessionId: string,
+  receptionWorksheet = false,
 ): Promise<AiOrderImport> {
   const response = await fetch('/api/proxy/api/admin/ai-order-imports', {
     method: 'POST',
@@ -546,7 +547,7 @@ export async function createAiOrderImport(
       'Content-Type': 'application/json',
       'Idempotency-Key': idempotencyKey,
     },
-    body: JSON.stringify({ captureSessionId }),
+    body: JSON.stringify(receptionWorksheet ? { captureSessionId, receptionWorksheet } : { captureSessionId }),
   })
   if (!response.ok) throw await toApiError(response)
   return response.json() as Promise<AiOrderImport>

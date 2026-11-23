@@ -9,6 +9,22 @@ import { isOptimizableImageUrl, resolveImageUrl } from './image-utils'
 
 const CATALOG_IMAGE = 'https://localhost:44300/uploads/products/tee.png'
 
+describe('resolveImageUrl', () => {
+  it('upgrades legacy seeded blank-shirt paths to the generated print previews', () => {
+    expect(resolveImageUrl('/images/products/classic-tee.svg'))
+      .toBe('https://localhost:44300/images/products/classic-tee-printed.png')
+    expect(resolveImageUrl('/images/products/premium-tee.svg'))
+      .toBe('https://localhost:44300/images/products/premium-tee-printed.png')
+    expect(resolveImageUrl('/images/products/oversized-tee.svg'))
+      .toBe('https://localhost:44300/images/products/oversized-tee-printed.png')
+  })
+
+  it('leaves uploaded and unrelated image paths unchanged', () => {
+    expect(resolveImageUrl('/uploads/products/customer-tee.png'))
+      .toBe('https://localhost:44300/uploads/products/customer-tee.png')
+  })
+})
+
 describe('isOptimizableImageUrl', () => {
   it('admits a catalogue image on the configured API origin', () => {
     expect(isOptimizableImageUrl(CATALOG_IMAGE)).toBe(true)

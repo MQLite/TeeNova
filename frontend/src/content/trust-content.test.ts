@@ -8,4 +8,3 @@ describe('approval-controlled trust content',()=>{
  it('ships every registry empty by default',()=>{expect(brandMedia).toEqual([]);expect(testimonials).toEqual([]);expect(customerLogos).toEqual([]);expect(serviceAssurances).toEqual([])})
  it('renders no published content from empty registries',()=>{expect(publishedBrandMedia()).toEqual([]);expect(publishedTestimonials()).toEqual([]);expect(publishedCustomerLogos()).toEqual([]);expect(publishedServiceAssurances()).toEqual([])})
 })
-

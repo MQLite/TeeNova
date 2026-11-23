@@ -21,4 +21,3 @@ public interface IPortfolioAppService : IApplicationService
     Task<PortfolioImageContent> OpenAdminImageAsync(Guid id, Guid imageId);
     Task<PortfolioImageContent> OpenPublishedImageAsync(string slug, Guid imageId);
 }
-

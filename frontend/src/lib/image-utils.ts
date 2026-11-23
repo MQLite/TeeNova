@@ -3,6 +3,17 @@ import type { ProductImage } from '@/types'
 const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL ?? 'https://localhost:44300'
 
 /**
+ * Existing development databases retain the original seeded SVG paths. Keep those records working
+ * while serving the newer generated product artwork; fresh databases receive the PNG paths directly
+ * from `TeeNovaDataSeedContributor`.
+ */
+const SEEDED_PRODUCT_IMAGE_UPGRADES: Readonly<Record<string, string>> = {
+  '/images/products/classic-tee.svg': '/images/products/classic-tee-printed.png',
+  '/images/products/premium-tee.svg': '/images/products/premium-tee-printed.png',
+  '/images/products/oversized-tee.svg': '/images/products/oversized-tee-printed.png',
+}
+
+/**
  * Resolves an image URL from the API so it is always usable in <img src>.
  * - Absolute URLs (http/https) are returned unchanged.
  * - Root-relative paths (/uploads/…, /images/…) are prefixed with the API origin
@@ -11,9 +22,10 @@ const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL ?? 'https://localhost:4430
  */
 export function resolveImageUrl(url: string | null | undefined): string | null {
   if (!url) return null
-  if (url.startsWith('http://') || url.startsWith('https://')) return url
-  if (url.startsWith('/')) return `${API_BASE}${url}`
-  return url
+  const resolvedPath = SEEDED_PRODUCT_IMAGE_UPGRADES[url] ?? url
+  if (resolvedPath.startsWith('http://') || resolvedPath.startsWith('https://')) return resolvedPath
+  if (resolvedPath.startsWith('/')) return `${API_BASE}${resolvedPath}`
+  return resolvedPath
 }
 
 /** Origin of the public API base, or null when it is not a parseable absolute URL. */

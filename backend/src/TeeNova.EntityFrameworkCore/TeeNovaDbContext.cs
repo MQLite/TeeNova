@@ -46,6 +46,7 @@ public class TeeNovaDbContext : AbpDbContext<TeeNovaDbContext>
     public DbSet<UploadedAsset> UploadedAssets { get; set; }
 
     // Orders
+    public DbSet<TeeNova.Reception.ReceptionSheet> ReceptionSheets { get; set; }
     public DbSet<Order> Orders { get; set; }
     public DbSet<OrderItem> OrderItems { get; set; }
     public DbSet<OrderItemPrint> OrderItemPrints { get; set; }

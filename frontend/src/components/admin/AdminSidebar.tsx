@@ -182,11 +182,14 @@ export function AdminSidebar({ role }: AdminSidebarProps) {
       </div>
 
       {/* Nav */}
-      <nav className="flex-1 space-y-1 px-3 py-4">
+      <nav className="min-h-0 flex-1 space-y-1 overflow-y-auto px-3 py-4">
         <p className="mb-1.5 px-2 font-mono text-[9px] uppercase tracking-[0.54px] text-black/45">
           Management
         </p>
-        {[...navItems, ...(role === 'Admin' ? [aiImportsNavItem, usersNavItem] : [])].map(({ href, label, icon, exact }) => {
+        {[...navItems, ...(role === 'Admin' ? [
+          { href: '/admin/reception', label: '接待工作台', icon: aiImportsNavItem.icon, exact: true },
+          aiImportsNavItem, usersNavItem,
+        ] : [])].map(({ href, label, icon, exact }) => {
           const active = isActive(href, exact)
           return (
             <Link

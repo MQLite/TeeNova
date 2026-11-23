@@ -95,6 +95,8 @@ public class AiOrderImportIntakeAppService : ApplicationService
 
         var canonicalRequest =
             $"ai-order-import-create:v1\ncapture-session-length:{captureSessionId.Length}\ncapture-session:{captureSessionId}";
+        var contract = input?.ReceptionWorksheet == true ? ReceptionRecognition.Contract : ContractVersion;
+        if (contract == ReceptionRecognition.Contract) canonicalRequest += "\n" + contract;
         var requestHash = Convert
             .ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(canonicalRequest)))
             .ToLowerInvariant();
@@ -110,7 +112,7 @@ public class AiOrderImportIntakeAppService : ApplicationService
                 actorId,
                 idempotencyKey,
                 requestHash,
-                ContractVersion,
+                contract,
                 RetentionClass,
                 cancellationToken: cancellationToken);
             var replayDto = await BuildImportDtoAsync(replay, cancellationToken);
@@ -135,7 +137,7 @@ public class AiOrderImportIntakeAppService : ApplicationService
             actorId,
             idempotencyKey,
             requestHash,
-            ContractVersion,
+            contract,
             RetentionClass,
             now.AddDays(_retention.GetRequired(RetentionClass).RetentionDays),
             cancellationToken: cancellationToken);
@@ -149,6 +151,7 @@ public class AiOrderImportIntakeAppService : ApplicationService
     {
         var query = await _imports.GetQueryableAsync();
         var imports = await query
+            .Where(x => x.ContractVersion != ReceptionRecognition.Contract)
             .OrderByDescending(x => x.CreationTime)
             .Take(50)
             .ToListAsync(cancellationToken);

@@ -19,4 +19,3 @@ public class PortfolioItem : FullAuditedAggregateRoot<Guid>
     protected PortfolioItem() { }
     public PortfolioItem(Guid id) : base(id) { }
 }
-

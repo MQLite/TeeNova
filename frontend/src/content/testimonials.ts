@@ -2,4 +2,3 @@ export interface ApprovedTestimonial { id: string; quote: string; attribution: s
 /** No customer quote is shipped without traceable approval. */
 export const testimonials: readonly ApprovedTestimonial[] = []
 export const publishedTestimonials = () => testimonials.filter((item) => item.published && item.quote.trim() && item.attribution.trim() && item.approvalReference.trim())
-

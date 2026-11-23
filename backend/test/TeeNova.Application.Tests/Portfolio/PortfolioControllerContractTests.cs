@@ -18,4 +18,3 @@ public class PortfolioControllerContractTests
     public void Public_image_has_cache_contract_and_admin_preview_is_no_store(){Assert.Equal(3600,Method(nameof(PortfolioController.GetPublishedImageAsync)).GetCustomAttribute<ResponseCacheAttribute>()!.Duration);Assert.True(Method(nameof(PortfolioController.GetAdminImageAsync)).GetCustomAttribute<ResponseCacheAttribute>()!.NoStore);}
     private static MethodInfo Method(string name)=>typeof(PortfolioController).GetMethod(name)!;
 }
-

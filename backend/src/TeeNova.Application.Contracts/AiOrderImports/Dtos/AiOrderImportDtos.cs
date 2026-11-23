@@ -7,6 +7,7 @@ namespace TeeNova.AiOrderImports.Dtos;
 public sealed class CreateAiOrderImportInput
 {
     public string? CaptureSessionId { get; set; }
+    public bool ReceptionWorksheet { get; set; }
 }
 
 public sealed class ReorderAiOrderDocumentsInput

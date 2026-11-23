@@ -446,7 +446,8 @@ public sealed class OpenAiOrderRecognitionProvider :
                 ["format"] = new JsonObject
                 {
                     ["type"] = "json_schema",
-                    ["name"] = "tee_nova_ai_order_extraction_v1",
+                    ["name"] = request.ContractVersion == ReceptionRecognition.Contract
+                        ? "tee_nova_reception_worksheet_v1" : "tee_nova_ai_order_extraction_v1",
                     ["strict"] = true,
                     ["schema"] = OpenAiStrictSchema.Sanitize(request.JsonSchema),
                 },

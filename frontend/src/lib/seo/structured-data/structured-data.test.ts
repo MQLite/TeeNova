@@ -451,8 +451,9 @@ describe('site graph', () => {
     expect(node['@type']).toBe('LocalBusiness')
     expect(node.name).toBe('Otahuhu Printing Shop')
     expect(node.address).toMatchObject({ streetAddress: '483 Great South Road', addressCountry: 'NZ' })
-    // Hours, phone, email, legal name, logo, areaServed and priceRange each need their own approval.
-    for (const key of ['openingHoursSpecification', 'telephone', 'email', 'legalName', 'logo', 'areaServed', 'priceRange', 'sameAs', 'aggregateRating', 'review']) {
+    expect(node.telephone).toBe((await import('@/lib/site-contact')).businessPhone)
+    // The remaining optional fields still require their own approval.
+    for (const key of ['openingHoursSpecification', 'email', 'legalName', 'logo', 'areaServed', 'priceRange', 'sameAs', 'aggregateRating', 'review']) {
       expect(node, key).not.toHaveProperty(key)
     }
     // Organization is not duplicated alongside LocalBusiness.
