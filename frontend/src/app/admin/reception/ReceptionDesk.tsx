@@ -2,7 +2,9 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { blankWorksheet, hasSheetContent, todayInAuckland, validSheetHeadings, type Worksheet } from '@/features/reception/worksheet'
-import { recognizeCapture, type CaptureRequest } from '@/features/reception/recognize'
+import { ensureCaptureSource, recognizeCapture, type CaptureRequest } from '@/features/reception/recognize'
+import { prepareReceptionPhoto } from '@/features/reception/photo'
+import { sourceContentUrl } from '@/api/ai-order-imports'
 import { useReceptionEstimate } from '@/features/reception/useReceptionEstimate'
 import { InkPad, type Stroke } from './InkPad'
 import { GarmentEditor } from './GarmentEditor'
@@ -19,6 +21,13 @@ export function ReceptionDesk() {
   const [sheet, setSheet] = useState<Worksheet>(blankWorksheet)
   const [received, setReceived] = useState(todayInAuckland)
   const [photo, setPhoto] = useState('')
+  const [sourcePhotoUrl, setSourcePhotoUrl] = useState('')
+  const [masthead, setMasthead] = useState<HTMLElement | null>(null)
+  const cameraInput = useRef<HTMLInputElement>(null)
+  const galleryInput = useRef<HTMLInputElement>(null)
+  useEffect(() => () => {
+    if (sourcePhotoUrl.startsWith('blob:')) URL.revokeObjectURL(sourcePhotoUrl)
+  }, [sourcePhotoUrl])
   const [hasInk, setHasInk] = useState(false)
   const [record, setRecord] = useState<SavedSheet>()
   const [initialStrokes, setInitialStrokes] = useState<Stroke[]>([])
@@ -52,8 +61,33 @@ export function ReceptionDesk() {
     else setPhoto('')
     setView('review')
   }
+  async function selectPhoto(input: HTMLInputElement, method: 'Camera' | 'Upload') {
+    const original = input.files?.[0]
+    input.value = ''
+    if (!original || busy) return
+    if ((hasInk || sourcePhotoUrl) && !window.confirm('用这张照片替换当前原稿？')) return
+    setError('')
+    setBusy('正在读取照片…')
+    try {
+      const file = await prepareReceptionPhoto(original)
+      const preview = URL.createObjectURL(file)
+      job.current = { key: crypto.randomUUID(), file, method }
+      recognized.current = false
+      strokes.current = []
+      setInitialStrokes([]); setHasInk(false); setPhoto('')
+      setPadKey(k => k + 1)
+      setSourcePhotoUrl(preview)
+      setDirty(true)
+    } catch (e) { setError(e instanceof Error ? e.message : '照片读取失败。') }
+    finally { setBusy('') }
+  }
+  function useHandwriting() {
+    if (!window.confirm('移除当前照片，改用手写接单？')) return
+    setSourcePhotoUrl(''); setError(''); setDirty(true)
+    job.current = undefined; recognized.current = false
+  }
   async function recognize() {
-    if (!canvas.current || busy) return
+    if ((!sourcePhotoUrl && !hasInk) || busy) return
     if (hasSheetContent(sheet) && !window.confirm('识别结果将更新工作单；未识别到的金额保留当前值。是否继续？')) return
     setError('')
     setBusy('准备手稿…')
@@ -63,6 +97,7 @@ export function ReceptionDesk() {
     try {
       if (!job.current) {
         const blob = await new Promise<Blob | null>(resolve => canvas.current!.toBlob(resolve, 'image/png'))
+        token.signal.throwIfAborted()
         if (!blob) throw new Error('无法读取手稿，请重试。')
         job.current = { key: crypto.randomUUID(), file: new File([blob], 'reception-note.png', { type: 'image/png' }) }
       }
@@ -81,6 +116,7 @@ export function ReceptionDesk() {
   }
   function manual() {
     controller.current?.abort()
+    controller.current = undefined
     setBusy('')
     setError('')
     review()
@@ -91,7 +127,8 @@ export function ReceptionDesk() {
     setError('')
     try {
       sheetId.current ??= crypto.randomUUID()
-      const updated = await saveSheet(sheetId.current, sheet, strokes.current, record?.version)
+      const source = sourcePhotoUrl && job.current ? await ensureCaptureSource(job.current) : undefined
+      const updated = await saveSheet(sheetId.current, sheet, strokes.current, record?.version, source)
       setRecord(updated)
       setDirty(false)
       setConflict(false)
@@ -105,6 +142,7 @@ export function ReceptionDesk() {
     if (dirty &&
         !window.confirm('开始下一张将清空当前未保存的手稿和摘要，是否继续？')) return
     setRecord(undefined); setSheet(blankWorksheet); setHasInk(false); setDirty(false)
+    setSourcePhotoUrl('')
     strokes.current = []; setInitialStrokes([]); setConflict(false)
     setPhoto(''); setError(''); setView('write'); setReceived(todayInAuckland())
     canvas.current = undefined; sheetId.current = undefined; job.current = undefined; recognized.current = false
@@ -121,11 +159,15 @@ export function ReceptionDesk() {
       setSheet({customer: next.customer, phone: next.phone, pickupDate: next.pickupDate ?? '',
         instructions: next.instructions, totalPrice: next.totalPrice, deposit: next.deposit, layout: next.layout})
       strokes.current = next.handwriting ?? []
+      setHasInk(strokes.current.length > 0)
       setInitialStrokes(strokes.current)
       setPadKey(k => k + 1)
       setReceived(formatNzDate(next.creationTime, {year:'numeric',month:'short',day:'numeric'}))
       setDirty(false); setConflict(false); setView('review')
       recognized.current = false; job.current = undefined
+      setPhoto('')
+      setSourcePhotoUrl(next.sourcePhoto ? sourceContentUrl(next.sourcePhoto.importId, next.sourcePhoto.documentId) : '')
+      if (next.sourcePhoto) job.current = { key: crypto.randomUUID(), source: next.sourcePhoto }
     } catch (e) { setError(e instanceof Error ? e.message : '打开失败。') }
     finally { setBusy('') }
   }
@@ -144,14 +186,14 @@ export function ReceptionDesk() {
   }
   const printable = hasSheetContent(sheet) && validSheetHeadings(sheet)
   const estimate = useReceptionEstimate(sheet.layout, sheet.instructions)
-  const canSave = validSheetHeadings(sheet) && (hasSheetContent(sheet) || hasInk || !!record)
+  const canSave = validSheetHeadings(sheet) && (hasSheetContent(sheet) || hasInk || !!sourcePhotoUrl || !!record)
   function edit<K extends keyof Worksheet>(key: K, value: Worksheet[K]) {
     setSheet(current => ({...current, [key]: value}))
     setDirty(true)
   }
   return <div className="reception-desk" lang="zh-CN">
-    <header className="rc-mast"><strong>TeeNova</strong><span>接待工作台</span></header>
-    <nav aria-label="接待导航">{([['queue','工单总览'], ['write','手写接单'], ['review','核对工作单']] as const).map(([tab,label]) =>
+    <header className="rc-mast" ref={setMasthead}><strong>OtahuhuPrintingShop</strong><span>接待工作台</span></header>
+    <nav aria-label="接待导航">{([['queue','工单总览'], ['write','接单录入'], ['review','核对工作单']] as const).map(([tab,label]) =>
       <button key={tab} disabled={!!busy} aria-current={view === tab ? 'page' : undefined} onClick={() => { setError(''); if (tab === 'review') review(); else setView(tab) }}>{label}</button>)}</nav>
     <div className="rc-body">
       {error && <p className="rc-error" role="alert">{error}
@@ -159,23 +201,30 @@ export function ReceptionDesk() {
       {busy && <p role="status">{busy}</p>}
       <section hidden={view !== 'write'}>
         <div className="rc-heading"><div><small>{received}</small><h1>接待手记</h1></div><span>门店自取</span></div>
-        <InkPad key={padKey} initialStrokes={initialStrokes} onReady={ready} disabled={!!busy} onChange={(element, ink, lines) => {
+        <div className="rc-tools">
+          <input ref={cameraInput} hidden type="file" aria-label="拍摄接待原稿" accept="image/*" capture="environment" onChange={e => void selectPhoto(e.currentTarget, 'Camera')} />
+          <input ref={galleryInput} hidden type="file" aria-label="选择接待原稿照片" accept="image/jpeg,image/png,image/webp" onChange={e => void selectPhoto(e.currentTarget, 'Upload')} />
+          <button disabled={!!busy} onClick={() => cameraInput.current?.click()}>{sourcePhotoUrl ? '重新拍照' : '拍照'}</button>
+          <button disabled={!!busy} onClick={() => galleryInput.current?.click()}>从相册选择</button>
+          {sourcePhotoUrl && <button disabled={!!busy} onClick={useHandwriting}>改用手写</button>}
+        </div>
+        {sourcePhotoUrl ? <OriginalPhoto url={sourcePhotoUrl} /> : <InkPad key={padKey} toolbarHost={view === 'write' ? masthead : null} initialStrokes={initialStrokes} onReady={ready} disabled={!!busy} onChange={(element, ink, lines) => {
           canvas.current = element; setHasInk(ink); strokes.current = lines; setDirty(true)
           job.current = undefined; recognized.current = false
-        }}/>
+        }}/>}
         <fieldset disabled={!!busy}><SheetAmounts sheet={sheet} onChange={edit} estimate={estimate}/></fieldset>
         <div className="rc-actions rc-end">
           <button disabled={!!busy || !dirty || !canSave} onClick={() => void save()}>{record ? '保存修改' : '保存工单'}</button>
           <button disabled={!!busy && !controller.current} onClick={manual}>{busy ? '转为手动填写' : '手动填写'}</button>
-          <button className="rc-primary" disabled={!hasInk || !!busy} onClick={() => recognized.current ? review() : void recognize()}>整理成工作单</button></div>
+          <button className="rc-primary" disabled={(!hasInk && !sourcePhotoUrl) || !!busy} onClick={() => recognized.current ? review() : void recognize()}>整理成工作单</button></div>
       </section>
       {view === 'review' && <section><div className="rc-heading"><h1>{record ? '编辑工作单' : '核对工作单'}</h1>
         <span>{record && stages[record.stage] + ' · '}{dirty ? '待保存' : record ? '已保存' : '草稿'}</span></div>
-        <div className="rc-review"><div>{photo ? <div className="rc-paper"><div className="rc-paperhead">手写原稿</div>
+        <div className="rc-review"><div>{sourcePhotoUrl ? <OriginalPhoto url={sourcePhotoUrl} /> : photo ? <div className="rc-paper"><div className="rc-paperhead">手写原稿</div>
           {/* The preview is generated on this pad from the captured strokes. */}
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img src={photo} alt="当前工作单的手写原稿" /></div> : <p>此工单还没有保存手稿。</p>}
-          <button disabled={!!busy} onClick={() => setView('write')}>编辑手稿</button></div>
+          <button disabled={!!busy} onClick={() => setView('write')}>{sourcePhotoUrl ? '更换原稿' : '编辑手稿'}</button></div>
           <fieldset disabled={!!busy}><div className="rc-fields"><label>客户姓名<input value={sheet.customer} maxLength={160} onChange={e => edit('customer', e.target.value)}/></label>
           <label>联系电话<input type="tel" value={sheet.phone} maxLength={80} onChange={e => edit('phone', e.target.value)}/></label>
           <label>预计可取日期<input type="date" value={sheet.pickupDate} onChange={e => edit('pickupDate', e.target.value)}/></label></div>
@@ -192,5 +241,14 @@ export function ReceptionDesk() {
       </section>}
       <ReceptionQueue onOpen={id => void open(id)} onNew={newSheet} disabled={!!busy} active={view === 'queue'}/>
     </div>
+  </div>
+}
+
+function OriginalPhoto({ url }: { url: string }) {
+  const [failed, setFailed] = useState('')
+  return <div className="rc-paper"><div className="rc-paperhead">接待原稿照片</div>
+    {failed === url ? <p role="status">原图暂时无法读取，可以重新选择照片。</p> :
+      /* eslint-disable-next-line @next/next/no-img-element */
+      <img className="rc-original-photo" src={url} alt="当前工作单的接待原稿照片" onError={() => setFailed(url)} />}
   </div>
 }

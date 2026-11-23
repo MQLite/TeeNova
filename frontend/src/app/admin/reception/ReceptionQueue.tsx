@@ -57,7 +57,7 @@ export function ReceptionQueue({onOpen, onNew, disabled, active}: {
     date={date} search={search} onOpen={onOpen} disabled={disabled}/>
   if (!active) return null
   return <section><div className="rc-heading"><h1>工单总览</h1>
-    <button className="rc-primary" disabled={disabled} onClick={onNew}>新建手写工单</button></div>
+    <button className="rc-primary" disabled={disabled} onClick={onNew}>新建接待工单</button></div>
     <div className="rc-search"><label>搜索工单<input type="search" value={text} maxLength={160}
       placeholder="客户姓名、电话或工单号" onChange={e => setText(e.target.value.replace(/^#/, ''))}/></label>
       <label>可取日期<input type="date" value={date} onChange={e => setDate(e.target.value)}/></label>

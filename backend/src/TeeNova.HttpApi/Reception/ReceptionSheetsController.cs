@@ -13,21 +13,24 @@ namespace TeeNova.Reception;
 [ApiController]
 [Route("api/admin/reception-sheets")]
 [Authorize(Roles = TeeNovaRoles.Admin)]
-public class ReceptionSheetsController(IRepository<ReceptionSheet, Guid> sheets) : TeeNovaControllerBase
+public class ReceptionSheetsController(IRepository<ReceptionSheet, Guid> sheets,
+    IRepository<AiOrderImport, Guid> imports, IRepository<AiOrderSourceDocument, Guid> documents) : TeeNovaControllerBase
 {
     public record InkPoint(double X, double Y);
     public record InkStroke(bool Erase, InkPoint[] Points);
     public record SheetInput([StringLength(160)] string? Customer, [StringLength(80)] string? Phone,
         DateOnly? PickupDate, [StringLength(ReceptionSheet.MaxInstructions)] string? Instructions, ReceptionPrintLayout? Layout = null,
-        decimal? TotalPrice = null, decimal? Deposit = null, InkStroke[]? Handwriting = null, string? Version = null);
+        decimal? TotalPrice = null, decimal? Deposit = null, InkStroke[]? Handwriting = null, string? Version = null,
+        ReceptionPhotoSource? SourcePhoto = null, bool ReplaceSourcePhoto = false);
     public record SheetDto(Guid Id, string Customer, string Phone, DateOnly? PickupDate,
         string Instructions, string Stage, DateTime CreationTime, ReceptionPrintLayout? Layout, decimal? TotalPrice,
-        decimal? Deposit, InkStroke[]? Handwriting, string Version);
+        decimal? Deposit, InkStroke[]? Handwriting, string Version, ReceptionPhotoSource? SourcePhoto);
     public record StageInput([Required] string Stage, string? Version = null);
     private static SheetDto Describe(ReceptionSheet s) =>
         new(s.Id, s.Customer, s.Phone, s.PickupDate, s.Instructions, s.Stage.ToString(), s.CreationTime,
             s.ReadPrintLayout() is { } json ? JsonSerializer.Deserialize<ReceptionPrintLayout>(json) : null,
-            s.TotalPrice, s.Deposit, s.HandwritingJson is { } ink ? JsonSerializer.Deserialize<InkStroke[]>(ink) : null, s.ConcurrencyStamp);
+            s.TotalPrice, s.Deposit, s.HandwritingJson is { } ink ? JsonSerializer.Deserialize<InkStroke[]>(ink) : null,
+            s.ConcurrencyStamp, s.ReadSourcePhoto());
 
     [HttpGet("recognition/{importId:guid}")]
     public async Task<IActionResult> RecognizedDraft(Guid importId,
@@ -75,9 +78,21 @@ public class ReceptionSheetsController(IRepository<ReceptionSheet, Guid> sheets)
         if (id == Guid.Empty || input.Layout?.IsValid() == false || !ReceptionSheet.ValidAmount(input.TotalPrice) ||
             !ReceptionSheet.ValidAmount(input.Deposit) || (input.Version == null && string.IsNullOrWhiteSpace(input.Customer) &&
             string.IsNullOrWhiteSpace(input.Phone) && input.PickupDate == null && string.IsNullOrWhiteSpace(input.Instructions) &&
-            !(input.Layout?.Groups.Length > 0) && !(strokes?.Length > 0) && input.TotalPrice == null && input.Deposit == null))
+            !(input.Layout?.Groups.Length > 0) && !(strokes?.Length > 0) && input.SourcePhoto == null &&
+            input.TotalPrice == null && input.Deposit == null))
             return BadRequest();
         var existing = await sheets.FindAsync(id, cancellationToken: ct);
+        var previousPhoto = existing?.ReadSourcePhoto();
+        var photo = input.SourcePhoto ?? (input.ReplaceSourcePhoto || strokes is { Length: > 0 } ? null : previousPhoto);
+        if (photo != null && strokes is { Length: > 0 }) return BadRequest();
+        if (photo != null && photo != previousPhoto)
+        {
+            var source = await documents.FindAsync(photo.DocumentId, cancellationToken: ct);
+            if (source == null || source.ImportId != photo.ImportId || source.ContentDeletedAt.HasValue ||
+                source.ContentType is not ("image/jpeg" or "image/png") ||
+                (await imports.FindAsync(photo.ImportId, cancellationToken: ct))?.ContractVersion != ReceptionRecognition.Contract)
+                return BadRequest(new { message = "无法关联这张接待照片，请重新选择原稿。" });
+        }
         var layout = input.Layout == null ? null : JsonSerializer.Serialize(input.Layout);
         var ink = strokes is { Length: > 0 } ? JsonSerializer.Serialize(strokes) : null;
         var customer = input.Customer?.Trim() ?? "";
@@ -87,16 +102,18 @@ public class ReceptionSheetsController(IRepository<ReceptionSheet, Guid> sheets)
         {
             if (existing.Customer == customer && existing.Phone == phone && existing.PickupDate == input.PickupDate &&
                 existing.Instructions == notes && existing.ReadPrintLayout() == layout && existing.HandwritingJson == ink &&
-                existing.TotalPrice == input.TotalPrice && existing.Deposit == input.Deposit) return Ok(Describe(existing));
+                existing.TotalPrice == input.TotalPrice && existing.Deposit == input.Deposit && previousPhoto == photo) return Ok(Describe(existing));
             if (input.Version != existing.ConcurrencyStamp)
                 return Conflict(new { message = "工单已在另一处更新。请重新载入后核对修改。" });
             existing.Revise(customer, phone, input.PickupDate, notes, layout, input.TotalPrice, input.Deposit, ink);
+            existing.SetSourcePhoto(photo);
             await sheets.UpdateAsync(existing, autoSave: true, cancellationToken: ct);
             return Ok(Describe(existing));
         }
         if (input.Version != null) return NotFound();
         var candidate = new ReceptionSheet(id, customer, phone, input.PickupDate, notes);
         candidate.Revise(customer, phone, input.PickupDate, notes, layout, input.TotalPrice, input.Deposit, ink);
+        candidate.SetSourcePhoto(photo);
         await sheets.InsertAsync(candidate, autoSave: true, cancellationToken: ct);
         return Ok(Describe(candidate));
     }

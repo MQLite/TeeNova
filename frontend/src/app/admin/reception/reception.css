@@ -41,9 +41,15 @@
 .rc-paper { position: relative; overflow: hidden; border: 1px solid var(--border); border-radius: 12px; background: var(--surface); }
 .rc-paperhead { border-bottom: 1px solid var(--border); padding: 9px 15px; background: var(--canvas); color: var(--ink-secondary); font-size: 13px; }
 .rc-paper canvas, .rc-paper img { display: block; width: 100%; height: auto; }
+.rc-paper .rc-original-photo { max-height: 65dvh; object-fit: contain; }
 .rc-paper canvas { touch-action: none; cursor: crosshair; }
 .rc-prompt { position: absolute; top: 54px; left: 18px; right: 18px; color: var(--ink-muted); pointer-events: none; }
 .rc-tools, .rc-actions { margin: 12px 0; }
+.rc-mast .rc-ink-tools { margin: 0; }
+.rc-ink-tools > * { white-space: nowrap; }
+@media (min-width: 768px) {
+  .rc-mast:has(.rc-ink-tools) { position: sticky; top: 0; z-index: 2; }
+}
 .rc-end { justify-content: flex-end; }
 .rc-review { display: grid; grid-template-columns: minmax(0,1fr) minmax(0,1fr); gap: 18px; }
 .rc-fields { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 8px; }

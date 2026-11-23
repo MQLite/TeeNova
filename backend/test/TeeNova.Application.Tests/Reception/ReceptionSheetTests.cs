@@ -5,6 +5,20 @@ namespace TeeNova.Tests.Reception;
 public class ReceptionSheetTests
 {
     [Fact]
+    public void Source_photo_can_be_replaced_and_survives_work_order_edits()
+    {
+        var sheet = new ReceptionSheet(Guid.NewGuid(), "", "", null, "");
+        Assert.Null(sheet.ReadSourcePhoto());
+        sheet.SetSourcePhoto(new(Guid.NewGuid(), Guid.NewGuid()));
+        var replacement = new ReceptionPhotoSource(Guid.NewGuid(), Guid.NewGuid());
+        sheet.SetSourcePhoto(replacement);
+        sheet.Revise("C", "021", null, "M 8", null, 120m, 20m, null);
+        Assert.Equal(replacement, sheet.ReadSourcePhoto());
+        sheet.SetSourcePhoto(null);
+        Assert.Null(sheet.ReadSourcePhoto());
+    }
+
+    [Fact]
     public void Revising_a_collected_sheet_updates_original_ink_and_amounts_without_resetting_stage()
     {
         var sheet = new ReceptionSheet(Guid.NewGuid(), "C", "021", null, "First version", "{}");

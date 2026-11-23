@@ -1,10 +1,13 @@
 using System.ComponentModel.DataAnnotations;
+using System.Text.Json;
 using Volo.Abp.Data;
 using Volo.Abp.Domain.Entities.Auditing;
 
 namespace TeeNova.Reception;
 
 public enum ReceptionStage { Preparing, Ready, Collected }
+
+public sealed record ReceptionPhotoSource(Guid ImportId, Guid DocumentId);
 
 public class ReceptionSheet : AuditedAggregateRoot<Guid>
 {
@@ -24,6 +27,15 @@ public class ReceptionSheet : AuditedAggregateRoot<Guid>
     protected ReceptionSheet() { }
 
     public string? ReadPrintLayout() => this.GetProperty<string>("PrintLayoutV1");
+
+    public ReceptionPhotoSource? ReadSourcePhoto() =>
+        this.GetProperty<string>("SourcePhoto") is { } json ? JsonSerializer.Deserialize<ReceptionPhotoSource>(json) : null;
+
+    public void SetSourcePhoto(ReceptionPhotoSource? photo)
+    {
+        if (photo == null) ExtraProperties.Remove("SourcePhoto");
+        else this.SetProperty("SourcePhoto", JsonSerializer.Serialize(photo));
+    }
 
     public ReceptionSheet(Guid id, string customer, string phone, DateOnly? pickupDate, string instructions,
         string? printLayoutJson = null)

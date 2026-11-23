@@ -7,7 +7,7 @@ import { displayAmount } from './SheetAmounts'
 
 export function PrintSheet({ sheet, received, id, estimate }: { sheet: Worksheet; received: string; id?: string; estimate: string }) {
   return createPortal(<article className="reception-print" lang="zh-CN">
-    <header><p>TeeNova · Otahuhu Printing</p><h1>{sheet.layout?.title || '接待工作单'}</h1>
+    <header><p>OtahuhuPrintingShop</p><h1>{sheet.layout?.title || '接待工作单'}</h1>
       <p>{id && '工作单 ' + id + ' · '}门店自取</p></header>
     <dl>{[['接单日期', received], ['预计可取日期', sheet.pickupDate || '待定'],
       ['客户', sheet.customer || '—'], ['联系电话', sheet.phone || '—'],

@@ -5,13 +5,30 @@ import {
 import { adminApiClient } from '@/lib/admin-client'
 import type { Worksheet } from './worksheet'
 
-// Keep these keys for this exact drawing so a lost response can be retried safely.
+export interface PhotoSource { importId: string; documentId: string }
+
 export interface CaptureRequest {
   key: string
-  file: File
+  file?: File
+  method?: 'Camera' | 'Upload'
+  source?: PhotoSource
   importId?: string
   recognitionKey?: string
   retryAttempt?: number
+}
+
+export async function ensureCaptureSource(job: CaptureRequest, signal?: AbortSignal): Promise<PhotoSource> {
+  if (job.source) return job.source
+  if (!job.file) throw new Error('请重新选择接待原稿。')
+  if (!job.importId) job.importId = (await createAiOrderImport('create-' + job.key, job.key, true)).id
+  signal?.throwIfAborted()
+  const record = await getAiOrderImport(job.importId)
+  signal?.throwIfAborted()
+  const document = record.sourceDocuments[0] ?? (await uploadAiOrderSource(
+    job.importId, job.file, job.method ?? 'Upload', 'source-' + job.key, () => {},
+  )).document
+  job.source = { importId: job.importId, documentId: document.id }
+  return job.source
 }
 
 export async function recognizeCapture(job: CaptureRequest, signal: AbortSignal, progress: (text: string) => void) {
@@ -22,12 +39,9 @@ export async function recognizeCapture(job: CaptureRequest, signal: AbortSignal,
   if (!options.recognitionEnabled || !provider || !model) throw new Error('当前没有启用 OpenAI 图片模型，可以直接填写工作单。')
   signal.throwIfAborted()
   progress('正在保存手稿…')
-  if (!job.importId) job.importId = (await createAiOrderImport('create-' + job.key, job.key, true)).id
-  let record = await getAiOrderImport(job.importId)
+  const { importId } = await ensureCaptureSource(job, signal)
   signal.throwIfAborted()
-  if (!record.sourceDocumentCount) {
-    await uploadAiOrderSource(job.importId, job.file, 'Upload', 'source-' + job.key, () => {})
-  }
+  let record = await getAiOrderImport(importId)
   signal.throwIfAborted()
   if (record.status === 'Uploaded' || record.status === 'Failed') {
     if (record.status === 'Failed' && !record.recognition?.isRetryable) throw new Error('此次识别失败，可以对照原稿填写。')
@@ -36,16 +50,16 @@ export async function recognizeCapture(job: CaptureRequest, signal: AbortSignal,
       job.recognitionKey = 'recognize-' + crypto.randomUUID()
       job.retryAttempt = attempt
     }
-    await startAiOrderRecognition(job.importId, provider.id, model.id, job.recognitionKey!, record.status === 'Failed')
+    await startAiOrderRecognition(importId, provider.id, model.id, job.recognitionKey!, record.status === 'Failed')
   }
   progress('正在识别手稿…')
   const deadline = Date.now() + 120_000
   while (Date.now() < deadline) {
     signal.throwIfAborted()
-    record = await getAiOrderImport(job.importId)
+    record = await getAiOrderImport(importId)
     if (record.status === 'NeedsReview' || record.status === 'Draft') {
       const draft = await adminApiClient.get<Omit<Worksheet, 'pickupDate'> & { pickupDate: string | null }>(
-        '/api/admin/reception-sheets/recognition/' + job.importId, undefined, { signal },
+        '/api/admin/reception-sheets/recognition/' + importId, undefined, { signal },
       )
       return { ...draft, pickupDate: draft.pickupDate ?? '' }
     }

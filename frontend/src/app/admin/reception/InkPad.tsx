@@ -1,11 +1,13 @@
 'use client'
 
 import { useCallback, useEffect, useRef, useState, type PointerEvent } from 'react'
+import { createPortal } from 'react-dom'
 
 type Point = { x: number; y: number }
 export type Stroke = { points: Point[]; erase: boolean }
 
-export function InkPad({ initialStrokes, onReady, onChange, disabled }: {
+export function InkPad({ initialStrokes, onReady, onChange, disabled, toolbarHost }: {
+  toolbarHost: HTMLElement | null
   initialStrokes: Stroke[]
   onReady: (canvas: HTMLCanvasElement, hasInk: boolean) => void
   onChange: (canvas: HTMLCanvasElement, hasInk: boolean, strokes: Stroke[]) => void
@@ -89,10 +91,11 @@ export function InkPad({ initialStrokes, onReady, onChange, disabled }: {
         onPointerMove={move} onPointerUp={end} onPointerCancel={end} onLostPointerCapture={end} />
       {!count && <span className="rc-prompt">用手写笔直接写，例如 White B&amp;F、M 8、L 10</span>}
     </div>
-    <div className="rc-tools"><button disabled={disabled} aria-pressed={!eraser} onClick={() => setEraser(false)}>手写笔</button>
+    {toolbarHost && createPortal(<div className="rc-tools rc-ink-tools" role="group" aria-label="手写工具">
+      <button disabled={disabled} aria-pressed={!eraser} onClick={() => setEraser(false)}>手写笔</button>
       <button disabled={disabled} aria-pressed={eraser} onClick={() => setEraser(true)}>橡皮</button>
       <button disabled={disabled || !count} onClick={undo}>撤销</button>
       <label className="rc-touch"><input type="checkbox" checked={allowTouch} disabled={disabled}
-        onChange={e => setAllowTouch(e.target.checked)}/>允许手指书写</label></div>
+        onChange={e => setAllowTouch(e.target.checked)}/>允许手指书写</label></div>, toolbarHost)}
   </>
 }
