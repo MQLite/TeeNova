@@ -17,7 +17,8 @@ export interface CaptureRequest {
 export async function recognizeCapture(job: CaptureRequest, signal: AbortSignal, progress: (text: string) => void) {
   const options = await getAiOrderRecognitionOptions()
   const provider = options.providers.find(p => p.id.toLowerCase() === 'openai')
-  const model = provider?.models.find(m => m.supportsImages)
+  const imageModels = provider?.models.filter(m => m.supportsImages)
+  const model = imageModels?.find(m => m.id === 'gpt-6.2-sol') ?? imageModels?.[0]
   if (!options.recognitionEnabled || !provider || !model) throw new Error('当前没有启用 OpenAI 图片模型，可以直接填写工作单。')
   signal.throwIfAborted()
   progress('正在保存手稿…')
