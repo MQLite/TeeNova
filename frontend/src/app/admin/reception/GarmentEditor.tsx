@@ -2,6 +2,7 @@ import { totalPieces, type GarmentGroup, type PrintLayout, type SizeRow } from '
 import { defaultDoubleSidedPrintSize, garmentKind, garments, type EstimateCatalogue } from '@/features/reception/estimate'
 
 const emptyRow = (): SizeRow => ({ colour: '', size: '', quantity: null })
+const showPrintOptions = false
 
 export function GarmentEditor({layout, catalogue, onChange}: {
   layout?: PrintLayout | null; catalogue?: EstimateCatalogue; onChange: (value: PrintLayout) => void
@@ -25,7 +26,7 @@ export function GarmentEditor({layout, catalogue, onChange}: {
         <option value="unlinked">单独报价（含 Banner）</option>
       </select></label>
       {garmentKind(g) !== 'unlinked' && <div>
-        {(g.prints ?? []).map((spec,j) => <div className="rc-tools" key={j}>
+        {showPrintOptions && (g.prints ?? []).map((spec,j) => <div className="rc-tools" key={j}>
           {(['area','size'] as const).map(key => <label key={key}>{key === 'area' ? '印花位置' : '印花大小'}
             <select value={spec[key]} onChange={e => update(i,{prints:g.prints!.map((p,k) => k === j ? {...p,[key]:e.target.value} : p)})}>
               <option value="">{key === 'size' && defaultDoubleSidedPrintSize(g, spec.area)
@@ -35,7 +36,7 @@ export function GarmentEditor({layout, catalogue, onChange}: {
           </label>)}
           <button onClick={() => update(i,{prints:g.prints!.filter((_,k) => j !== k)})}>移除印花</button>
         </div>)}
-        <button disabled={(g.prints?.length ?? 0) >= 12} onClick={() => update(i,{prints:[...(g.prints ?? []),{area:'',size:''}]})}>添加印花</button>
+        {showPrintOptions && <button disabled={(g.prints?.length ?? 0) >= 12} onClick={() => update(i,{prints:[...(g.prints ?? []),{area:'',size:''}]})}>添加印花</button>}
         {g.prints == null && <button onClick={() => update(i,{prints:[]})}>仅计衣价</button>}
         {g.prints?.length === 0 && <small>仅计衣价</small>}
       </div>}

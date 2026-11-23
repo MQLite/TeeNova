@@ -66,7 +66,7 @@ export function estimateLines(groups: GarmentGroup[], catalogue: EstimateCatalog
       if (!area) throw new Error(`请核对「${group.heading}」的印花位置。`)
       const sizeCode = spec.size.trim() || defaultDoubleSidedPrintSize(group, spec.area)
       const size = catalogue.sizes.find(s => s.code === sizeCode)
-      if (!size) throw new Error(`请为「${group.heading}」的${area.name}选择可用的印花大小。`)
+      if (!size) throw new Error(`「${group.heading}」的${area.name}缺少可用的印花大小，暂时无法估价。`)
       return {printAreaId:area.id, printSizeId:size.id}
     })
     const scope = product.printPricingGroupId ?? product.id
