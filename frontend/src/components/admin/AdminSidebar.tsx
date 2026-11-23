@@ -2,6 +2,7 @@
 
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
+import { receptionPath } from '@/components/layout/SiteFrame'
 
 const navItems = [
   {
@@ -187,7 +188,7 @@ export function AdminSidebar({ role }: AdminSidebarProps) {
           Management
         </p>
         {[...navItems, ...(role === 'Admin' ? [
-          { href: '/admin/reception', label: '接待工作台', icon: aiImportsNavItem.icon, exact: true },
+          { href: receptionPath, label: '接待工作台', icon: aiImportsNavItem.icon, exact: true },
           aiImportsNavItem, usersNavItem,
         ] : [])].map(({ href, label, icon, exact }) => {
           const active = isActive(href, exact)

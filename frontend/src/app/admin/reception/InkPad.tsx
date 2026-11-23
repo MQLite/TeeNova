@@ -12,6 +12,7 @@ export function InkPad({ initialStrokes, onReady, onChange, disabled }: {
   disabled: boolean
 }) {
   const paper = useRef<HTMLCanvasElement>(null)
+  const inkColor = useRef('black')
   const history = useRef<Stroke[]>(initialStrokes.slice())
   const pointer = useRef<number>()
   const [eraser, setEraser] = useState(false)
@@ -27,7 +28,7 @@ export function InkPad({ initialStrokes, onReady, onChange, disabled }: {
   }
   const segment = useCallback((a: Point, b: Point, erase: boolean) => {
     const ctx = paper.current!.getContext('2d')!
-    ctx.strokeStyle = erase ? 'white' : '#183c34'
+    ctx.strokeStyle = erase ? 'white' : inkColor.current
     ctx.lineWidth = erase ? 40 : 4
     ctx.lineCap = 'round'
     ctx.beginPath()
@@ -66,6 +67,7 @@ export function InkPad({ initialStrokes, onReady, onChange, disabled }: {
   }
   const redraw = useCallback(() => {
     const ctx = paper.current!.getContext('2d')!
+    inkColor.current = getComputedStyle(ctx.canvas).color
     ctx.fillStyle = 'white'
     ctx.fillRect(0, 0, 1800, 900)
     for (const stroke of history.current) {

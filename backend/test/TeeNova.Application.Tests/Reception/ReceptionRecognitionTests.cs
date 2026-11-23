@@ -53,4 +53,17 @@ public class ReceptionRecognitionTests
     [InlineData("\"quantity\":8", "\"qty\":8")]
     public void Malformed_tables_trigger_the_existing_repair_path(string original, string replacement) =>
         Assert.Throws<BusinessException>(() => ReceptionRecognition.Validate(Reply.Replace(original, replacement), 24000));
+
+    [Fact]
+    public void Pricing_inputs_survive_validation_without_becoming_an_agreed_total()
+    {
+        var reply = Reply.Replace("\"rows\":", """
+            "pricingKind":"hoodie","prints":[{"area":"FRONT_CENTER","size":"A4"}],"rows":
+            """);
+        using var doc = JsonDocument.Parse(ReceptionRecognition.Validate(reply, 24000).CanonicalJson);
+        var group = doc.RootElement.GetProperty("layout").GetProperty("groups")[0];
+        Assert.Equal("hoodie", group.GetProperty("pricingKind").GetString());
+        Assert.Equal("A4", group.GetProperty("prints")[0].GetProperty("size").GetString());
+        Assert.Equal(JsonValueKind.Null, doc.RootElement.GetProperty("totalPrice").ValueKind);
+    }
 }

@@ -1,5 +1,7 @@
 export interface SizeRow { colour: string; size: string; quantity: number | null }
 export interface GarmentGroup {
+  pricingKind?: 'tee' | 'hoodie' | 'kidsTee' | 'kidsHoodie' | 'unlinked' | null
+  prints?: {area: string; size: string}[] | null
   heading: string
   presentation: 'rows' | 'matrix'
   rows: SizeRow[]

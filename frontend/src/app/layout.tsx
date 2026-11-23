@@ -2,6 +2,7 @@ import type { Metadata } from 'next'
 import './globals.css'
 import { Header } from '@/components/layout/Header'
 import { Footer } from '@/components/layout/Footer'
+import { SiteFrame } from '@/components/layout/SiteFrame'
 import { JsonLd } from '@/components/seo/JsonLd'
 import {
   defaultDescription,
@@ -87,13 +88,11 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         <a href="#main-content" className="skip-link">
           Skip to main content
         </a>
-        <div className="flex min-h-screen flex-col bg-canvas">
-          <Header />
+        <SiteFrame header={<Header />} footer={<Footer />}>
           <main id="main-content" tabIndex={-1} className="flex-1 outline-none">
             {children}
           </main>
-          <Footer />
-        </div>
+        </SiteFrame>
         {/* Site-level graph. Today this is the WebSite node only: the business identity and NAP
             approvals are open, so no Organization or LocalBusiness node is published. */}
         <JsonLd graph={siteGraph()} />

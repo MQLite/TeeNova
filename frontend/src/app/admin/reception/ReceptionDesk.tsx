@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { blankWorksheet, hasSheetContent, todayInAuckland, validSheetHeadings, type Worksheet } from '@/features/reception/worksheet'
 import { recognizeCapture, type CaptureRequest } from '@/features/reception/recognize'
+import { useReceptionEstimate } from '@/features/reception/useReceptionEstimate'
 import { InkPad, type Stroke } from './InkPad'
 import { GarmentEditor } from './GarmentEditor'
 import { PrintSheet } from './PrintSheet'
@@ -142,6 +143,7 @@ export function ReceptionDesk() {
     finally { setBusy('') }
   }
   const printable = hasSheetContent(sheet) && validSheetHeadings(sheet)
+  const estimate = useReceptionEstimate(sheet.layout, sheet.instructions)
   const canSave = validSheetHeadings(sheet) && (hasSheetContent(sheet) || hasInk || !!record)
   function edit<K extends keyof Worksheet>(key: K, value: Worksheet[K]) {
     setSheet(current => ({...current, [key]: value}))
@@ -161,7 +163,7 @@ export function ReceptionDesk() {
           canvas.current = element; setHasInk(ink); strokes.current = lines; setDirty(true)
           job.current = undefined; recognized.current = false
         }}/>
-        <fieldset disabled={!!busy}><SheetAmounts sheet={sheet} onChange={edit}/></fieldset>
+        <fieldset disabled={!!busy}><SheetAmounts sheet={sheet} onChange={edit} estimate={estimate}/></fieldset>
         <div className="rc-actions rc-end">
           <button disabled={!!busy || !dirty || !canSave} onClick={() => void save()}>{record ? '保存修改' : '保存工单'}</button>
           <button disabled={!!busy && !controller.current} onClick={manual}>{busy ? '转为手动填写' : '手动填写'}</button>
@@ -177,8 +179,8 @@ export function ReceptionDesk() {
           <fieldset disabled={!!busy}><div className="rc-fields"><label>客户姓名<input value={sheet.customer} maxLength={160} onChange={e => edit('customer', e.target.value)}/></label>
           <label>联系电话<input type="tel" value={sheet.phone} maxLength={80} onChange={e => edit('phone', e.target.value)}/></label>
           <label>预计可取日期<input type="date" value={sheet.pickupDate} onChange={e => edit('pickupDate', e.target.value)}/></label></div>
-          <SheetAmounts sheet={sheet} onChange={edit}/>
-          <GarmentEditor layout={sheet.layout} onChange={layout => edit('layout', layout)}/>
+          <SheetAmounts sheet={sheet} onChange={edit} estimate={estimate}/>
+          <GarmentEditor layout={sheet.layout} catalogue={estimate.catalogue} onChange={layout => edit('layout', layout)}/>
           <label>制作说明<textarea rows={3} value={sheet.instructions} maxLength={24000} onChange={e => edit('instructions', e.target.value)} placeholder="交付约定或整单备注"/></label></fieldset>
         </div><div className="rc-actions rc-end">
           <button disabled={!!busy} onClick={newSheet}>开始下一张</button>
@@ -186,7 +188,7 @@ export function ReceptionDesk() {
           {record && record.stage !== 'Collected' && <button disabled={dirty || !!busy} onClick={() => void advance()}>
             {record.stage === 'Preparing' ? '标为已做好' : '登记已取货'}</button>}
           <button className="rc-primary" disabled={!!busy || !printable} onClick={() => window.print()}>打印 / 保存 A4 PDF</button>
-        </div><PrintSheet sheet={sheet} received={received} id={record?.id}/>
+        </div><PrintSheet sheet={sheet} received={received} id={record?.id} estimate={estimate.printText}/>
       </section>}
       <ReceptionQueue onOpen={id => void open(id)} onNew={newSheet} disabled={!!busy} active={view === 'queue'}/>
     </div>

@@ -5,6 +5,7 @@ import type { ReactNode } from 'react'
 import { usePathname, useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { AdminSidebar } from '@/components/admin/AdminSidebar'
+import { receptionPath } from '@/components/layout/SiteFrame'
 
 interface Props {
   children: ReactNode
@@ -17,7 +18,7 @@ export function AdminShell({ children, username, role }: Props) {
   const router = useRouter()
   const [loggingOut, setLoggingOut] = useState(false)
 
-  if (pathname === '/admin/login') {
+  if (pathname === '/admin/login' || pathname === receptionPath) {
     return <>{children}</>
   }
 
@@ -53,7 +54,7 @@ export function AdminShell({ children, username, role }: Props) {
 
           <div className="flex items-center gap-2">
             {role === 'Admin' && (
-              <Link href="/admin/reception" className="rounded-full border px-3 py-2 text-xs md:hidden">
+              <Link href={receptionPath} className="rounded-full border px-3 py-2 text-xs md:hidden">
                 接待工作台
               </Link>
             )}

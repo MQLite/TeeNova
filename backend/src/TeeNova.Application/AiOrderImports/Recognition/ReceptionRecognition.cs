@@ -13,7 +13,7 @@ public sealed record ReceptionDraft(string Customer, string Phone, DateOnly? Pic
 public static class ReceptionRecognition
 {
     public const string Contract = "reception-worksheet-v1";
-    public const string PromptVersion = "reception-print-prompt-v1";
+    public const string PromptVersion = "reception-print-prompt-v2";
     private static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web)
     {
         RespectRequiredConstructorParameters = true,
@@ -34,6 +34,15 @@ public static class ReceptionRecognition
             Choose matrix for comparing sizes across colours, or rows for a long or irregular list.
             Within one garment/design group keep different colours as separate rows. Split distinct garment styles,
             print placements and designs into clearly named groups. Never mix garment colour with ink colour.
+            For catalogue estimates, an unmarked garment is a Gildan Cotton Tee (pricingKind tee).
+            A hand-drawn circle enclosing the letter H (Ⓗ) or an explicit hoodie denotes a Gildan Hoodie.
+            Use kidsTee or kidsHoodie only for clearly identified children's versions.
+            Banners and other explicitly different products are unlinked. Keep banner work in the instructions.
+            Use English catalogue colour names where clear (e.g. White). Record each written print position
+            in prints using FRONT_CENTER, BACK_CENTER, LEFT_CHEST, RIGHT_CHEST, LEFT_SLEEVE or RIGHT_SLEEVE
+            when applicable. B&F means both FRONT_CENTER and BACK_CENTER. Use written print sizes
+            such as A3, A4, A5, B3 or LOGO_SIZE; leave an unspecified size empty. Preserve unclear wording
+            in the notes. Do not invent a print or calculate a monetary estimate.
             Keep B&F (front and back) and other print instructions with the correct group. Use empty strings for
             unwritten text and null for unknown quantities. Preserve explicit zero. Do not infer missing counts,
             duplicate rows or add totals to the rows; the app computes totals. Place uncertain readings,
@@ -56,8 +65,11 @@ public static class ReceptionRecognition
           "pickupDate":{"type":["string","null"],"format":"date"},"instructions":{"type":"string"},
           "layout":{"type":"object","additionalProperties":false,"required":["title","groups"],
            "properties":{"title":{"type":"string"},"groups":{"type":"array","maxItems":40,
-            "items":{"type":"object","additionalProperties":false,"required":["heading","presentation","notes","rows"],
+            "items":{"type":"object","additionalProperties":false,"required":["heading","presentation","notes","rows","pricingKind","prints"],
              "properties":{"heading":{"type":"string"},"presentation":{"type":"string","enum":["matrix","rows"]},
+             "pricingKind":{"type":"string","enum":["tee","hoodie","kidsTee","kidsHoodie","unlinked"]},
+             "prints":{"type":"array","maxItems":12,"items":{"type":"object","additionalProperties":false,
+               "required":["area","size"],"properties":{"area":{"type":"string"},"size":{"type":"string"}}}},
              "notes":{"type":"string"},"rows":{"type":"array","minItems":1,"maxItems":300,
               "items":{"type":"object","additionalProperties":false,"required":["colour","size","quantity"],
                "properties":{"colour":{"type":"string"},"size":{"type":"string"},
