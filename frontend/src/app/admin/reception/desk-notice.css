@@ -1,0 +1,10 @@
+.rc-pending-notice { display: flex; align-items: center; flex-wrap: wrap; gap: 8px 16px; padding: 10px 16px; margin-bottom: 16px; border: 1px solid var(--border); border-inline-start: 4px solid var(--action); border-radius: 8px; background: var(--surface); }
+.rc-pending-notice a { text-decoration: underline; padding-block: 10px; }
+.rc-pending-notice button { margin-inline-start: auto; }
+.reception-desk button.rc-delete { color: var(--danger-ink); margin-inline-end: auto; }
+.rc-delete-dialog { width: min(480px, 92vw); margin: auto; border: 1px solid var(--border); border-radius: 14px; padding: 22px; color: var(--ink); background: var(--surface); }
+.rc-delete-dialog::backdrop { background: rgb(18 24 30 / 60%); }
+.rc-delete-dialog h2 { font-size: 1.25rem; font-weight: 700; }
+.rc-delete-dialog p { margin: 12px 0; overflow-wrap: anywhere; }
+.reception-desk .rc-delete-confirm { background: var(--danger-surface); color: var(--danger-ink); border-color: currentColor; }
+@media print { .rc-pending-notice, .rc-delete-dialog { display: none !important; } }

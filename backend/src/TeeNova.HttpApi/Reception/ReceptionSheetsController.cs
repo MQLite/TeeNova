@@ -1,4 +1,9 @@
 using System.ComponentModel.DataAnnotations;
+using Volo.Abp.Uow;
+using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Options;
+using TeeNova.AiOrderImports.PrivateStorage;
 using System.Text.Json;
 using TeeNova.AiOrderImports;
 using TeeNova.AiOrderImports.Recognition;
@@ -14,7 +19,8 @@ namespace TeeNova.Reception;
 [Route("api/admin/reception-sheets")]
 [Authorize(Roles = TeeNovaRoles.Admin)]
 public class ReceptionSheetsController(IRepository<ReceptionSheet, Guid> sheets,
-    IRepository<AiOrderImport, Guid> imports, IRepository<AiOrderSourceDocument, Guid> documents) : TeeNovaControllerBase
+    IRepository<AiOrderImport, Guid> imports, IRepository<AiOrderSourceDocument, Guid> documents,
+    IConfiguration config, IHostEnvironment host, IOptions<PrivateObjectStorageOptions> storageOptions) : TeeNovaControllerBase
 {
     public record InkPoint(double X, double Y);
     public record InkStroke(bool Erase, InkPoint[] Points);
@@ -59,7 +65,31 @@ public class ReceptionSheetsController(IRepository<ReceptionSheet, Guid> sheets,
         var rows = await query.OrderBy(x => x.PickupDate == null).ThenBy(x => x.PickupDate)
             .ThenBy(x => x.CreationTime).ThenBy(x => x.Id).Skip(offset).Take(51)
             .Select(x => new { x.Id, x.Customer, x.PickupDate, x.CreationTime, x.TotalPrice, x.Deposit }).ToListAsync(ct);
-        return Ok(new { items = rows.Take(50), hasMore = rows.Count > 50 });
+        var page = rows.Take(50).ToArray();
+        var artwork = page.Length == 0 ? null : GmailArtworkStore.Configured(config, host, storageOptions)?.ListForSheets(page.Select(s => s.Id));
+        return Ok(new { items = page.Select(s => new { s.Id, s.Customer, s.PickupDate, s.CreationTime, s.TotalPrice, s.Deposit,
+            artwork = artwork?[s.Id] ?? Enumerable.Empty<GmailFileInfo>() }), hasMore = rows.Count > 50 });
+    }
+
+    [HttpDelete("{id:guid}")]
+    public async Task<IActionResult> Delete(Guid id, [FromQuery, Required, StringLength(64)] string version,
+        [FromServices] IUnitOfWorkManager work, CancellationToken ct)
+    {
+        using (var tx = work.Begin(requiresNew: true, isTransactional: true))
+        {
+            var sheet = await (await sheets.GetQueryableAsync()).IgnoreQueryFilters().SingleOrDefaultAsync(s => s.Id == id, ct);
+            if (sheet == null) return NoContent();
+            if (sheet.Stage != ReceptionStage.Deleted)
+            {
+                if (sheet.ConcurrencyStamp != version)
+                    return Conflict(new { message = "工单已被更新，请重新打开并核对后再删除。" });
+                sheet.MarkDeleted();
+                await sheets.UpdateAsync(sheet, cancellationToken: ct);
+            }
+            await tx.CompleteAsync(ct);
+        }
+        GmailArtworkStore.Configured(config, host, storageOptions)?.ReturnFromDeletedSheet(id);
+        return NoContent();
     }
 
     [HttpGet("{id:guid}")]
@@ -111,6 +141,8 @@ public class ReceptionSheetsController(IRepository<ReceptionSheet, Guid> sheets,
             return Ok(Describe(existing));
         }
         if (input.Version != null) return NotFound();
+        if (await (await sheets.GetQueryableAsync()).IgnoreQueryFilters().AnyAsync(s => s.Id == id && s.Stage == ReceptionStage.Deleted, ct))
+            return Conflict(new { message = "这张工单已删除。" });
         var candidate = new ReceptionSheet(id, customer, phone, input.PickupDate, notes);
         candidate.Revise(customer, phone, input.PickupDate, notes, layout, input.TotalPrice, input.Deposit, ink);
         candidate.SetSourcePhoto(photo);

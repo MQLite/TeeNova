@@ -5,7 +5,7 @@ using Volo.Abp.Domain.Entities.Auditing;
 
 namespace TeeNova.Reception;
 
-public enum ReceptionStage { Preparing, Ready, Collected }
+public enum ReceptionStage { Preparing, Ready, Collected, Deleted }
 
 public sealed record ReceptionPhotoSource(Guid ImportId, Guid DocumentId);
 
@@ -58,6 +58,8 @@ public class ReceptionSheet : AuditedAggregateRoot<Guid>
         Deposit = deposit;
         HandwritingJson = handwritingJson;
     }
+
+    public void MarkDeleted() => Stage = ReceptionStage.Deleted;
 
     public bool TryAdvance(ReceptionStage next)
     {

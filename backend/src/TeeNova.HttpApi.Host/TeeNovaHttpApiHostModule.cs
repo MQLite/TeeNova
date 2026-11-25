@@ -52,6 +52,7 @@ public class TeeNovaHttpApiHostModule : AbpModule
         ConfigureCors(context, configuration);
         ConfigureSwagger(context);
         ConfigureJwtAuthentication(context, configuration);
+        ConfigureGmailReception(context, configuration);
         ConfigureForwardedHeaders(context);
         ConfigureRateLimiting(context, configuration);
         ConfigureExceptionHandling(context, hostingEnvironment);
@@ -76,6 +77,24 @@ public class TeeNovaHttpApiHostModule : AbpModule
         // auto-API layer is left off to keep admin operations off anonymous routes. If a new public/admin
         // endpoint is needed, add an explicit action to the relevant controller with the right
         // [Authorize]/[AllowAnonymous] attribute rather than re-enabling blanket auto-API.
+    }
+
+    private static void ConfigureGmailReception(ServiceConfigurationContext context, Microsoft.Extensions.Configuration.IConfiguration configuration)
+    {
+        context.Services.AddAuthentication().AddJwtBearer("GmailReception", options =>
+        {
+            options.Authority = "https://accounts.google.com";
+            options.MapInboundClaims = false;
+            options.Audience = configuration["GmailReception:ClientId"] ?? "unconfigured.invalid";
+        });
+        context.Services.AddAuthorization(options => options.AddPolicy("GmailReception", policy =>
+        {
+            policy.AddAuthenticationSchemes("GmailReception").RequireAuthenticatedUser();
+            policy.RequireAssertion(ctx => !string.IsNullOrWhiteSpace(configuration["GmailReception:ClientId"])
+                && !string.IsNullOrWhiteSpace(configuration["GmailReception:Mailbox"])
+                && string.Equals(ctx.User.FindFirstValue("email_verified"), "true", StringComparison.OrdinalIgnoreCase)
+                && string.Equals(ctx.User.FindFirstValue("email"), configuration["GmailReception:Mailbox"], StringComparison.OrdinalIgnoreCase));
+        }));
     }
 
     private void ConfigureCors(ServiceConfigurationContext context, Microsoft.Extensions.Configuration.IConfiguration configuration)

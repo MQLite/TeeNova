@@ -70,10 +70,17 @@ async function proxyRequest(
 
   const responseBody = await backendRes.arrayBuffer()
   const responseContentType = backendRes.headers.get('content-type') ?? 'application/json'
+  const fileHeaders: Record<string, string> = {}
+  if (backendPath.startsWith('/api/gmail-reception/') && backendRes.ok && responseContentType !== 'application/json') {
+    for (const name of ['content-security-policy', 'x-content-type-options']) {
+      const value = backendRes.headers.get(name)
+      if (value) fileHeaders[name] = value
+    }
+  }
 
   return new NextResponse(responseBody, {
     status: backendRes.status,
-    headers: { 'Content-Type': responseContentType, 'Cache-Control': 'no-store' },
+    headers: { 'Content-Type': responseContentType, 'Cache-Control': 'no-store', ...fileHeaders },
   })
 }
 

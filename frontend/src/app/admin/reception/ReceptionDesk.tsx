@@ -1,4 +1,7 @@
 'use client'
+import { PendingNotice } from './PendingNotice'
+import { DeleteSheetButton } from './DeleteSheetButton'
+import { GmailArtwork } from './GmailArtwork'
 
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { blankWorksheet, hasSheetContent, todayInAuckland, validSheetHeadings, type Worksheet } from '@/features/reception/worksheet'
@@ -16,7 +19,9 @@ import { ApiError } from '@/lib/api-client'
 import { formatNzDate } from '@/lib/datetime'
 import './reception.css'
 
-export function ReceptionDesk() {
+export function ReceptionDesk({ initialSheet }: { initialSheet?: string } = {}) {
+  const openedFromLink = useRef<string>()
+  const [deletedMessage, setDeletedMessage] = useState('')
   const [view, setView] = useState<'write' | 'review' | 'queue'>('queue')
   const [sheet, setSheet] = useState<Worksheet>(blankWorksheet)
   const [received, setReceived] = useState(todayInAuckland)
@@ -141,6 +146,10 @@ export function ReceptionDesk() {
   function newSheet() {
     if (dirty &&
         !window.confirm('开始下一张将清空当前未保存的手稿和摘要，是否继续？')) return
+    setDeletedMessage('')
+    resetSheet()
+  }
+  function resetSheet() {
     setRecord(undefined); setSheet(blankWorksheet); setHasInk(false); setDirty(false)
     setSourcePhotoUrl('')
     strokes.current = []; setInitialStrokes([]); setConflict(false)
@@ -148,7 +157,8 @@ export function ReceptionDesk() {
     canvas.current = undefined; sheetId.current = undefined; job.current = undefined; recognized.current = false
     setPadKey(k => k + 1)
   }
-  async function open(id: string) {
+  const open = useCallback(async (id: string) => {
+    setDeletedMessage('')
     if (dirty && !window.confirm('打开已保存版本会替换当前未保存的修改，是否继续？')) return
     setBusy('正在打开工单…')
     setError('')
@@ -170,7 +180,12 @@ export function ReceptionDesk() {
       if (next.sourcePhoto) job.current = { key: crypto.randomUUID(), source: next.sourcePhoto }
     } catch (e) { setError(e instanceof Error ? e.message : '打开失败。') }
     finally { setBusy('') }
-  }
+  }, [dirty])
+  useEffect(() => {
+    if (!initialSheet || openedFromLink.current === initialSheet) return
+    openedFromLink.current = initialSheet
+    void open(initialSheet)
+  }, [initialSheet, open])
   async function advance() {
     if (!record || busy || dirty || record.stage === 'Collected') return
     setBusy('正在更新状态…')
@@ -194,7 +209,8 @@ export function ReceptionDesk() {
   return <div className="reception-desk" lang="zh-CN">
     <header className="rc-mast"><strong>OtahuhuPrintingShop</strong><span>接待工作台</span></header>
     <nav aria-label="接待导航">{([['queue','工单总览'], ['write','接单录入'], ['review','核对工作单']] as const).map(([tab,label]) =>
-      <button key={tab} disabled={!!busy} aria-current={view === tab ? 'page' : undefined} onClick={() => { setError(''); if (tab === 'review') review(); else setView(tab) }}>{label}</button>)}</nav>
+      <button key={tab} disabled={!!busy} aria-current={view === tab ? 'page' : undefined} onClick={() => { setError(''); if (tab === 'review') review(); else setView(tab) }}>{label}</button>)}
+      <a href="/admin/reception/pending">待关联设计稿</a></nav>
     <div className="rc-body">
       {error && <p className="rc-error" role="alert">{error}
         {conflict && record && <button onClick={() => void open(record.id)}>重新载入工单</button>}</p>}
@@ -220,7 +236,9 @@ export function ReceptionDesk() {
       </section>
       {view === 'review' && <section><div className="rc-heading"><h1>{record ? '编辑工作单' : '核对工作单'}</h1>
         <span>{record && stages[record.stage] + ' · '}{dirty ? '待保存' : record ? '已保存' : '草稿'}</span></div>
-        <div className="rc-review"><div>{sourcePhotoUrl ? <OriginalPhoto url={sourcePhotoUrl} /> : photo ? <div className="rc-paper"><div className="rc-paperhead">手写原稿</div>
+        <div className="rc-review"><div>
+          {record && <GmailArtwork key={record.id} sheetId={record.id} />}
+          {sourcePhotoUrl ? <OriginalPhoto url={sourcePhotoUrl} /> : photo ? <div className="rc-paper"><div className="rc-paperhead">手写原稿</div>
           {/* The preview is generated on this pad from the captured strokes. */}
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img src={photo} alt="当前工作单的手写原稿" /></div> : <p>此工单还没有保存手稿。</p>}
@@ -232,6 +250,12 @@ export function ReceptionDesk() {
           <GarmentEditor layout={sheet.layout} catalogue={estimate.catalogue} onChange={layout => edit('layout', layout)}/>
           <label>制作说明<textarea rows={3} value={sheet.instructions} maxLength={24000} onChange={e => edit('instructions', e.target.value)} placeholder="交付约定或整单备注"/></label></fieldset>
         </div><div className="rc-actions rc-end">
+          {record && <DeleteSheetButton sheet={record} disabled={!!busy} dirty={dirty}
+            onDeleted={() => {
+              if (initialSheet === record.id) window.history.replaceState(window.history.state, '', '/admin/reception')
+              setDeletedMessage('已删除工单 #' + record.id.slice(0, 8))
+              resetSheet(); setView('queue')
+            }} />}
           <button disabled={!!busy} onClick={newSheet}>开始下一张</button>
           <button disabled={!!busy || !dirty || !canSave} onClick={() => void save()}>{record ? '保存修改' : '保存到取货列表'}</button>
           {record && record.stage !== 'Collected' && <button disabled={dirty || !!busy} onClick={() => void advance()}>
@@ -239,6 +263,8 @@ export function ReceptionDesk() {
           <button className="rc-primary" disabled={!!busy || !printable} onClick={() => window.print()}>打印 / 保存 A4 PDF</button>
         </div><PrintSheet sheet={sheet} received={received} id={record?.id} estimate={estimate.printText}/>
       </section>}
+      {view === 'queue' && deletedMessage && <p role="status">{deletedMessage}</p>}
+      {view === 'queue' && <PendingNotice />}
       <ReceptionQueue onOpen={id => void open(id)} onNew={newSheet} disabled={!!busy} active={view === 'queue'}/>
     </div>
   </div>

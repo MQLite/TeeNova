@@ -5,7 +5,7 @@ import type { ReactNode } from 'react'
 import { usePathname, useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { AdminSidebar } from '@/components/admin/AdminSidebar'
-import { receptionPath } from '@/components/layout/SiteFrame'
+import { isReceptionPath, receptionPath } from '@/components/layout/SiteFrame'
 
 interface Props {
   children: ReactNode
@@ -18,7 +18,7 @@ export function AdminShell({ children, username, role }: Props) {
   const router = useRouter()
   const [loggingOut, setLoggingOut] = useState(false)
 
-  if (pathname === '/admin/login' || pathname === receptionPath) {
+  if (pathname === '/admin/login' || isReceptionPath(pathname)) {
     return <>{children}</>
   }
 

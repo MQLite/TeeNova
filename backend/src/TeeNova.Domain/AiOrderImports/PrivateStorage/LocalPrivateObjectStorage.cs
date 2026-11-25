@@ -33,21 +33,26 @@ public sealed partial class LocalPrivateObjectStorage : IPrivateObjectStorage
                 $"{PrivateObjectStorageOptions.SectionName}:RootPath is required.");
         }
 
-        var contentRoot = Path.GetFullPath(environment.ContentRootPath);
-        _rootPath = Path.GetFullPath(
+        _minimumFreeSpaceBytes = Math.Max(0, options.Value.MinimumFreeSpaceBytes);
+        _rootPath = PreparePrivateDirectory(environment.ContentRootPath, configuredRoot, options.Value.ForbiddenPathPrefixes);
+    }
+
+    public static string PreparePrivateDirectory(string contentRoot, string configuredRoot, string[]? forbiddenPrefixes)
+    {
+        contentRoot = Path.GetFullPath(contentRoot);
+        var root = Path.GetFullPath(
             Path.IsPathRooted(configuredRoot)
                 ? configuredRoot
                 : Path.Combine(contentRoot, configuredRoot));
-        _minimumFreeSpaceBytes = Math.Max(0, options.Value.MinimumFreeSpaceBytes);
 
         var publicRoot = Path.GetFullPath(Path.Combine(contentRoot, "wwwroot"));
-        if (IsSameOrDescendant(_rootPath, publicRoot))
+        if (IsSameOrDescendant(root, publicRoot))
         {
             throw new InvalidOperationException(
                 "AI order private storage must resolve outside wwwroot.");
         }
 
-        foreach (var forbidden in options.Value.ForbiddenPathPrefixes ?? [])
+        foreach (var forbidden in forbiddenPrefixes ?? [])
         {
             if (string.IsNullOrWhiteSpace(forbidden))
                 continue;
@@ -55,13 +60,15 @@ public sealed partial class LocalPrivateObjectStorage : IPrivateObjectStorage
                 Path.IsPathRooted(forbidden)
                     ? forbidden
                     : Path.Combine(contentRoot, forbidden));
-            if (IsSameOrDescendant(_rootPath, resolved))
+            if (IsSameOrDescendant(root, resolved))
                 throw new InvalidOperationException(
                     "AI order private storage resolves inside a forbidden static mapping.");
         }
 
-        CreatePrivateDirectory(_rootPath);
-        EnsurePathHasNoReparseComponents(_rootPath);
+        EnsurePathHasNoReparseComponents(root);
+        CreatePrivateDirectory(root);
+        EnsurePathHasNoReparseComponents(root);
+        return root;
     }
 
     public async Task<string> SaveAsync(
