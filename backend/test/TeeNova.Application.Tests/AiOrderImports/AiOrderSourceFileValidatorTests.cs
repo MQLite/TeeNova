@@ -1,4 +1,5 @@
 using Microsoft.Extensions.Options;
+using System.Text;
 using PdfSharp.Pdf;
 using SixLabors.ImageSharp;
 using SixLabors.ImageSharp.Formats.Jpeg;
@@ -29,6 +30,7 @@ public class AiOrderSourceFileValidatorTests
 
     [Theory]
     [InlineData("page.heic", "image/heic", AiOrderImportErrorCodes.UnsupportedFileType)]
+    [InlineData("source.txt", "text/plain", AiOrderImportErrorCodes.UnsupportedFileType)]
     [InlineData("../page.exe", "application/octet-stream", AiOrderImportErrorCodes.UnsupportedFileType)]
     [InlineData("page.jpg", "image/png", AiOrderImportErrorCodes.FileTypeMismatch)]
     public void Declaration_rejects_unsupported_or_mismatched_formats(
@@ -39,6 +41,48 @@ public class AiOrderSourceFileValidatorTests
         var exception = Assert.Throws<BusinessException>(() =>
             CreateValidator().ValidateDeclaration(fileName, contentType, 100));
 
+        Assert.Equal(expectedCode, exception.Code);
+    }
+
+    [Fact]
+    public void Reception_declaration_accepts_plain_text_with_a_matching_extension_and_charset()
+    {
+        var validator = CreateValidator();
+        Assert.Equal("text/plain", validator.ValidateDeclaration(
+            "pasted.TXT", "text/plain; charset=UTF-8", 12, allowReceptionText: true).ContentType);
+        foreach (var contentType in new[] { "text/html", "text/plain; charset=utf-16" })
+        {
+            var exception = Assert.Throws<BusinessException>(() =>
+                validator.ValidateDeclaration("pasted.txt", contentType, 12, allowReceptionText: true));
+            Assert.Equal(AiOrderImportErrorCodes.FileTypeMismatch, exception.Code);
+        }
+    }
+
+    [Fact]
+    public async Task Inspect_accepts_pasted_text_at_the_utf16_limit()
+    {
+        var text = new string('衣', 19998) + "🧵";
+        await using var stream = new MemoryStream(Encoding.UTF8.GetBytes(text));
+        var inspected = await CreateValidator().InspectAsync(stream, new("text", "text/plain"), default);
+        Assert.Null(inspected.ImageWidth);
+        Assert.Null(inspected.PageCount);
+        Assert.Empty(inspected.Warnings);
+    }
+
+    public static TheoryData<byte[], string> InvalidPastedText => new()
+    {
+        { Encoding.UTF8.GetBytes("\r\n\t \u00a0\ufeff"), AiOrderImportErrorCodes.InvalidSourceContent },
+        { new byte[] { 0xc3, 0x28 }, AiOrderImportErrorCodes.InvalidSourceContent },
+        { Encoding.UTF8.GetBytes(new string('衣', 19999) + "🧵"), AiOrderImportErrorCodes.FileTooLarge },
+    };
+
+    [Theory]
+    [MemberData(nameof(InvalidPastedText))]
+    public async Task Inspect_rejects_invalid_pasted_text(byte[] content, string expectedCode)
+    {
+        await using var stream = new MemoryStream(content);
+        var exception = await Assert.ThrowsAsync<BusinessException>(() =>
+            CreateValidator().InspectAsync(stream, new("text", "text/plain"), default));
         Assert.Equal(expectedCode, exception.Code);
     }
 

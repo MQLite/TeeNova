@@ -387,7 +387,7 @@ public sealed class AiOrderRecognitionProcessor : ITransientDependency
                 attempt.ContractVersion ?? AiOrderRecognitionVersions.Contract,
                 _options.CurrencyContext,
                 _options.LocaleContext,
-                reception ? ReceptionRecognition.Prompt(import.CreationTime) : _promptBuilder.Build(
+                reception ? ReceptionRecognition.Prompt(import.CreationTime, attempt.PromptVersion) : _promptBuilder.Build(
                     _options.CurrencyContext,
                     _options.LocaleContext,
                     sourceSnapshot),

@@ -8,6 +8,7 @@ namespace TeeNova.Reception;
 public enum ReceptionStage { Preparing, Ready, Collected, Deleted }
 
 public sealed record ReceptionPhotoSource(Guid ImportId, Guid DocumentId);
+public sealed record ReceptionTextSource(Guid ImportId, Guid DocumentId);
 
 public class ReceptionSheet : AuditedAggregateRoot<Guid>
 {
@@ -35,6 +36,15 @@ public class ReceptionSheet : AuditedAggregateRoot<Guid>
     {
         if (photo == null) ExtraProperties.Remove("SourcePhoto");
         else this.SetProperty("SourcePhoto", JsonSerializer.Serialize(photo));
+    }
+
+    public ReceptionTextSource? ReadSourceText() =>
+        this.GetProperty<string>("SourceText") is { } json ? JsonSerializer.Deserialize<ReceptionTextSource>(json) : null;
+
+    public void SetSourceText(ReceptionTextSource? text)
+    {
+        if (text == null) ExtraProperties.Remove("SourceText");
+        else this.SetProperty("SourceText", JsonSerializer.Serialize(text));
     }
 
     public ReceptionSheet(Guid id, string customer, string phone, DateOnly? pickupDate, string instructions,

@@ -49,6 +49,10 @@
 .rc-ink-tools > * { white-space: nowrap; }
 .rc-end { justify-content: flex-end; }
 .rc-review { display: grid; grid-template-columns: minmax(0,1fr) minmax(0,1fr); gap: 18px; }
+.rc-text-editor textarea { resize: vertical; tab-size: 4; }
+.rc-text-original { margin-bottom: 8px; }
+.rc-text-original pre { max-height: 55dvh; overflow: auto; padding: 12px; margin: 0; font: inherit; white-space: pre-wrap; overflow-wrap: anywhere; tab-size: 4; }
+.rc-text-original > button { display: none; }
 .rc-fields { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 8px; }
 .reception-desk label { display: grid; gap: 3px; margin: 5px 0; font-size: 14px; }
 .reception-desk input, .reception-desk textarea { min-width: 0; width: 100%; font-size: 16px; }
@@ -75,6 +79,9 @@
 @media (max-width: 650px) { .rc-board { grid-template-columns: 1fr; } }
 .reception-print { display: none; }
 .rc-review fieldset { min-width: 0; }
+.rc-recognition-review fieldset { min-width: 0; margin-block: 1em; padding: .75em; border: 1px solid var(--border); }
+.rc-recognition-review legend { font-weight: 650; }
+.rc-recognition-review .rc-review { white-space: pre-wrap; overflow-wrap: anywhere; }
 .rc-editor section { border-block-start: 1px solid var(--border); padding-block: 10px; margin-block: 8px; }
 .rc-editor table { width: 100%; table-layout: fixed; }
 .rc-editor th { text-align: left; font-size: 14px; }
@@ -91,6 +98,8 @@
 .rc-group-note { white-space: pre-wrap; overflow-wrap: anywhere; margin-top: .4em; }
 @media (max-width: 850px) {
   .rc-review { grid-template-columns: 1fr; }
+  .rc-text-original > button { display: block; width: 100%; text-align: start; }
+  .rc-text-original > h2, .rc-text-original .rc-text-folded { display: none; }
   .reception-desk nav { padding: 4px; gap: 0; }
 }
 @media print {

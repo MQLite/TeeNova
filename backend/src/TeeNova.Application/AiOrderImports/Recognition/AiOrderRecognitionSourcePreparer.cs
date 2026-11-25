@@ -24,13 +24,13 @@ public sealed class AiOrderRecognitionSourcePreparer : ITransientDependency
     }
 
     public async Task<IReadOnlyList<AiOrderRecognitionSourceDescriptor>> DescribeAsync(
-        Guid importId,
+        AiOrderImport import,
         AiOrderRecognitionModelSelection selection,
         CancellationToken cancellationToken)
     {
         var query = await _sources.GetQueryableAsync();
         var sources = await query
-            .Where(x => x.ImportId == importId && x.ContentDeletedAt == null)
+            .Where(x => x.ImportId == import.Id && x.ContentDeletedAt == null)
             .OrderBy(x => x.Sequence)
             .ToListAsync(cancellationToken);
         if (sources.Count == 0)
@@ -41,10 +41,13 @@ public sealed class AiOrderRecognitionSourcePreparer : ITransientDependency
 
         foreach (var source in sources)
         {
-            var supported = source.ContentType == "application/pdf"
-                ? selection.SupportsPdf
-                : selection.SupportsImages &&
-                  source.ContentType is "image/jpeg" or "image/png" or "image/webp";
+            var supported = source.ContentType switch
+            {
+                "text/plain" => import.ContractVersion == ReceptionRecognition.Contract && selection.ProviderId == "openai",
+                "application/pdf" => selection.SupportsPdf,
+                "image/jpeg" or "image/png" or "image/webp" => selection.SupportsImages,
+                _ => false,
+            };
             if (!supported)
                 throw new BusinessException(AiOrderImportErrorCodes.RecognitionSourceUnsupported);
         }

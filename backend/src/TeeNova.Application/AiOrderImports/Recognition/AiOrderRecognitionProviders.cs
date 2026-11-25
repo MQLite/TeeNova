@@ -32,7 +32,8 @@ public abstract class AiOrderRecognitionProviderBase
     protected async Task<ProviderHttpResponse> SendAsync(
         string providerId,
         HttpRequestMessage request,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        bool includeErrorBody = true)
     {
         var options = _options.CurrentValue;
         using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
@@ -51,7 +52,7 @@ public abstract class AiOrderRecognitionProviderBase
                     response.StatusCode,
                     ReadRetryAfter(response),
                     requestId,
-                    await ReadErrorDiagnosticAsync(response.Content, timeout.Token));
+                    includeErrorBody ? await ReadErrorDiagnosticAsync(response.Content, timeout.Token) : null);
             }
 
             var maximumBytes = checked(options.MaximumOutputCharacters * 4L);
@@ -401,10 +402,11 @@ public sealed class OpenAiOrderRecognitionProvider :
         CancellationToken cancellationToken)
     {
         var provider = ProviderOptions(ProviderId);
-        var content = new JsonArray
-        {
-            new JsonObject { ["type"] = "input_text", ["text"] = request.Prompt },
-        };
+        var receptionText = request.ContractVersion == ReceptionRecognition.Contract &&
+                            request.PromptVersion == ReceptionRecognition.TextPromptVersion;
+        var content = new JsonArray();
+        if (!receptionText)
+            content.Add(new JsonObject { ["type"] = "input_text", ["text"] = request.Prompt });
         foreach (var source in request.OrderedSourceDocuments)
         {
             content.Add(new JsonObject
@@ -412,7 +414,15 @@ public sealed class OpenAiOrderRecognitionProvider :
                 ["type"] = "input_text",
                 ["text"] = AttachmentLabel(source),
             });
-            if (source.ContentType == "application/pdf")
+            if (source.ContentType == "text/plain" && receptionText)
+            {
+                content.Add(new JsonObject
+                {
+                    ["type"] = "input_text",
+                    ["text"] = Encoding.UTF8.GetString(source.Content),
+                });
+            }
+            else if (source.ContentType == "application/pdf")
             {
                 content.Add(new JsonObject
                 {
@@ -453,12 +463,15 @@ public sealed class OpenAiOrderRecognitionProvider :
                 },
             },
         };
+        if (receptionText)
+            body["instructions"] = request.Prompt;
         var uri = new Uri(new Uri(provider.BaseUrl.TrimEnd('/') + "/"), "v1/responses");
         using var httpRequest = new HttpRequestMessage(HttpMethod.Post, uri);
         httpRequest.Headers.Authorization = new AuthenticationHeaderValue("Bearer", provider.ApiKey);
         httpRequest.Headers.Add("Idempotency-Key", request.AttemptId.ToString("N"));
         httpRequest.Content = JsonContent(body);
-        var response = await SendAsync(ProviderId, httpRequest, cancellationToken);
+        // Provider error bodies can quote the customer's pasted message.
+        var response = await SendAsync(ProviderId, httpRequest, cancellationToken, includeErrorBody: !receptionText);
         using var document = Parse(response.Body);
         var root = document.RootElement;
         var output = ReadAnswer(root);

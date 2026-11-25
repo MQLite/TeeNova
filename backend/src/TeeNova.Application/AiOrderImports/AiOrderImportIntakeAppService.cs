@@ -251,7 +251,9 @@ public class AiOrderImportIntakeAppService : ApplicationService
         var expected = _fileValidator.ValidateDeclaration(
             originalFileName,
             declaredContentType,
-            declaredLength);
+            declaredLength,
+            allowReceptionText: import.ContractVersion == ReceptionRecognition.Contract &&
+                                captureMethod == AiOrderCaptureMethod.Upload);
 
         string objectKey;
         long actualBytes;
@@ -705,6 +707,7 @@ public class AiOrderImportIntakeAppService : ApplicationService
             "image/png" => ".png",
             "image/webp" => ".webp",
             "application/pdf" => ".pdf",
+            "text/plain" => ".txt",
             _ => ".bin",
         };
         return $"ai-order-source-{documentId:N}{extension}";

@@ -598,6 +598,30 @@ public sealed class AiOrderRecognitionTests
     }
 
     [Fact]
+    public async Task Reception_text_provider_failure_discards_echoed_customer_text_and_retains_retry_classification()
+    {
+        const string transcript = "Contact Mira at 0210000123";
+        var handler = new RecordingHandler(HttpStatusCode.TooManyRequests,
+            $$$"""{"error":{"message":"Too many tokens in {{{transcript}}}"}}""");
+        var provider = new OpenAiOrderRecognitionProvider(new TestHttpClientFactory(handler), Monitor("openai"));
+        var request = Request("openai", "model-1", "text/plain");
+        var source = request.OrderedSourceDocuments.Single() with { Content = Encoding.UTF8.GetBytes(transcript) };
+
+        var failure = await Assert.ThrowsAsync<AiOrderRecognitionProviderException>(() =>
+            provider.RecognizeAsync(request with
+            {
+                ContractVersion = ReceptionRecognition.Contract,
+                PromptVersion = ReceptionRecognition.TextPromptVersion,
+                OrderedSourceDocuments = [source],
+            }, default));
+
+        Assert.Null(failure.Diagnostic);
+        Assert.Equal(HttpStatusCode.TooManyRequests, failure.StatusCode);
+        Assert.True(failure.IsRetryable);
+        Assert.DoesNotContain(transcript, failure.Message);
+    }
+
+    [Fact]
     public async Task Openai_adapter_reads_the_message_item_past_a_leading_reasoning_item()
     {
         // Reasoning models put a reasoning item first; the answer is in the message item.
@@ -761,6 +785,31 @@ public sealed class AiOrderRecognitionTests
         Assert.Equal("test-provider-key", handler.ApiKeyHeader);
         Assert.Equal("msg_1", result.ProviderRequestId);
         Assert.Equal(1, result.Usage.CachedInputTokens);
+    }
+
+    [Fact]
+    public async Task Reception_text_is_sent_verbatim_as_customer_content_separate_from_instructions()
+    {
+        const string transcript = "黑T：M 8件、L 6件，左胸印标。\r\n更正：M 改为 10 件。\n订金\tNZ$50";
+        var handler = new RecordingHandler(HttpStatusCode.OK, ResponseFor("openai"));
+        var provider = new OpenAiOrderRecognitionProvider(new TestHttpClientFactory(handler), Monitor("openai"));
+        var request = Request("openai", "model-1", "text/plain");
+        var source = request.OrderedSourceDocuments.Single() with { Content = Encoding.UTF8.GetBytes(transcript) };
+
+        await provider.RecognizeAsync(request with
+        {
+            ContractVersion = ReceptionRecognition.Contract,
+            PromptVersion = ReceptionRecognition.TextPromptVersion,
+            OrderedSourceDocuments = [source],
+        }, default);
+
+        var body = JsonNode.Parse(handler.Body)!;
+        Assert.Equal(request.Prompt, (string?)body["instructions"]);
+        var message = body["input"]!.AsArray().Single()!;
+        Assert.Equal("user", (string?)message["role"]);
+        var parts = message["content"]!.AsArray();
+        Assert.Contains(parts, part => (string?)part!["type"] == "input_text" && (string?)part["text"] == transcript);
+        Assert.All(parts, part => Assert.Equal("input_text", (string?)part!["type"]));
     }
 
     [Fact]

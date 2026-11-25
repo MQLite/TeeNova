@@ -2,6 +2,8 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using System.Net.Http.Headers;
+using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.Extensions.Options;
@@ -15,6 +17,8 @@ namespace TeeNova.AiOrderImports;
 
 public sealed class AiOrderSourceFileValidator : ITransientDependency
 {
+    private const int MaxTextLength = 20_000;
+    private static readonly UTF8Encoding StrictUtf8 = new(false, true);
     private static readonly IReadOnlyDictionary<string, DeclaredSourceFormat> Formats =
         new Dictionary<string, DeclaredSourceFormat>(StringComparer.OrdinalIgnoreCase)
         {
@@ -35,7 +39,8 @@ public sealed class AiOrderSourceFileValidator : ITransientDependency
     public DeclaredSourceFormat ValidateDeclaration(
         string fileName,
         string declaredContentType,
-        long declaredLength)
+        long declaredLength,
+        bool allowReceptionText = false)
     {
         if (declaredLength <= 0)
             throw Safe(AiOrderImportErrorCodes.EmptyFile, "The selected file is empty.");
@@ -43,6 +48,15 @@ public sealed class AiOrderSourceFileValidator : ITransientDependency
             throw Safe(AiOrderImportErrorCodes.FileTooLarge, "The selected file is too large.");
 
         var extension = Path.GetExtension(Path.GetFileName(fileName));
+        if (allowReceptionText && string.Equals(extension, ".txt", StringComparison.OrdinalIgnoreCase))
+        {
+            if (!MediaTypeHeaderValue.TryParse(declaredContentType, out var mediaType) ||
+                !string.Equals(mediaType.MediaType, "text/plain", StringComparison.OrdinalIgnoreCase) ||
+                (mediaType.CharSet is { } charset &&
+                 !string.Equals(charset.Trim('"'), "utf-8", StringComparison.OrdinalIgnoreCase)))
+                throw Safe(AiOrderImportErrorCodes.FileTypeMismatch, "Reception text must be UTF-8 plain text.");
+            return new("text", "text/plain");
+        }
         if (string.IsNullOrWhiteSpace(extension) || !Formats.TryGetValue(extension, out var format))
         {
             throw Safe(
@@ -72,6 +86,27 @@ public sealed class AiOrderSourceFileValidator : ITransientDependency
         ArgumentNullException.ThrowIfNull(content);
         if (!content.CanSeek)
             throw new InvalidOperationException("Stored private content must be seekable.");
+
+        if (expected.Kind == "text")
+        {
+            // A UTF-16 code unit takes at most three UTF-8 bytes, bounding the decode allocation.
+            if (content.Length > MaxTextLength * 3)
+                throw Safe(AiOrderImportErrorCodes.FileTooLarge, "Reception text exceeds the 20,000-character limit.");
+            var bytes = new byte[(int)content.Length];
+            await content.ReadExactlyAsync(bytes, cancellationToken);
+            string text;
+            try { text = StrictUtf8.GetString(bytes); }
+            catch (DecoderFallbackException)
+            {
+                throw Safe(AiOrderImportErrorCodes.InvalidSourceContent, "Reception text must be valid UTF-8.");
+            }
+            if (text.Length > MaxTextLength)
+                throw Safe(AiOrderImportErrorCodes.FileTooLarge, "Reception text exceeds the 20,000-character limit.");
+            // Match ECMAScript trim() in the reception editor, including BOM and excluding NEL.
+            if (text.All(ch => (char.IsWhiteSpace(ch) && ch != '\u0085') || ch == '\ufeff'))
+                throw Safe(AiOrderImportErrorCodes.InvalidSourceContent, "Reception text is blank.");
+            return new(null, null, null, []);
+        }
 
         var header = new byte[12];
         var headerRead = await content.ReadAsync(header, cancellationToken);

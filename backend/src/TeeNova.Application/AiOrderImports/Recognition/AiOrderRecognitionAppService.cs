@@ -145,15 +145,14 @@ public class AiOrderRecognitionAppService : ApplicationService
         var selection = _models.ResolveEnabled(
             input.Provider?.Trim() ?? string.Empty,
             input.Model?.Trim() ?? string.Empty);
-        var sourceSnapshot = await _sources.DescribeAsync(
-            importId,
-            selection,
-            cancellationToken);
         var import = await _imports.GetAsync(importId, includeDetails: false, cancellationToken);
         var reception = import.ContractVersion == ReceptionRecognition.Contract;
         if (reception && selection.ProviderId != "openai")
             throw Safe(AiOrderImportErrorCodes.InvalidRequest, "Reception worksheets require an enabled OpenAI model.");
+        var sourceSnapshot = await _sources.DescribeAsync(import, selection, cancellationToken);
         var promptVersion = reception ? ReceptionRecognition.PromptVersion : AiOrderRecognitionVersions.Prompt;
+        if (reception && sourceSnapshot.Any(source => source.ContentType == "text/plain"))
+            promptVersion = ReceptionRecognition.TextPromptVersion;
         var contract = reception ? ReceptionRecognition.Contract : AiOrderRecognitionVersions.Contract;
         var requestHash = HashStartRequest(importId, selection, sourceSnapshot, promptVersion, contract);
         var attemptQuery = await _attempts.GetQueryableAsync();

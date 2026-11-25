@@ -27,16 +27,16 @@ public class ReceptionSheetsController(IRepository<ReceptionSheet, Guid> sheets,
     public record SheetInput([StringLength(160)] string? Customer, [StringLength(80)] string? Phone,
         DateOnly? PickupDate, [StringLength(ReceptionSheet.MaxInstructions)] string? Instructions, ReceptionPrintLayout? Layout = null,
         decimal? TotalPrice = null, decimal? Deposit = null, InkStroke[]? Handwriting = null, string? Version = null,
-        ReceptionPhotoSource? SourcePhoto = null, bool ReplaceSourcePhoto = false);
+        ReceptionPhotoSource? SourcePhoto = null, bool ReplaceSourcePhoto = false, ReceptionTextSource? SourceText = null, bool ReplaceSourceText = false);
     public record SheetDto(Guid Id, string Customer, string Phone, DateOnly? PickupDate,
         string Instructions, string Stage, DateTime CreationTime, ReceptionPrintLayout? Layout, decimal? TotalPrice,
-        decimal? Deposit, InkStroke[]? Handwriting, string Version, ReceptionPhotoSource? SourcePhoto);
+        decimal? Deposit, InkStroke[]? Handwriting, string Version, ReceptionPhotoSource? SourcePhoto, ReceptionTextSource? SourceText = null);
     public record StageInput([Required] string Stage, string? Version = null);
     private static SheetDto Describe(ReceptionSheet s) =>
         new(s.Id, s.Customer, s.Phone, s.PickupDate, s.Instructions, s.Stage.ToString(), s.CreationTime,
             s.ReadPrintLayout() is { } json ? JsonSerializer.Deserialize<ReceptionPrintLayout>(json) : null,
             s.TotalPrice, s.Deposit, s.HandwritingJson is { } ink ? JsonSerializer.Deserialize<InkStroke[]>(ink) : null,
-            s.ConcurrencyStamp, s.ReadSourcePhoto());
+            s.ConcurrencyStamp, s.ReadSourcePhoto(), s.ReadSourceText());
 
     [HttpGet("recognition/{importId:guid}")]
     public async Task<IActionResult> RecognizedDraft(Guid importId,
@@ -108,21 +108,20 @@ public class ReceptionSheetsController(IRepository<ReceptionSheet, Guid> sheets,
         if (id == Guid.Empty || input.Layout?.IsValid() == false || !ReceptionSheet.ValidAmount(input.TotalPrice) ||
             !ReceptionSheet.ValidAmount(input.Deposit) || (input.Version == null && string.IsNullOrWhiteSpace(input.Customer) &&
             string.IsNullOrWhiteSpace(input.Phone) && input.PickupDate == null && string.IsNullOrWhiteSpace(input.Instructions) &&
-            !(input.Layout?.Groups.Length > 0) && !(strokes?.Length > 0) && input.SourcePhoto == null &&
+            !(input.Layout?.Groups.Length > 0) && !(strokes?.Length > 0) && input.SourcePhoto == null && input.SourceText == null &&
             input.TotalPrice == null && input.Deposit == null))
             return BadRequest();
         var existing = await sheets.FindAsync(id, cancellationToken: ct);
         var previousPhoto = existing?.ReadSourcePhoto();
         var photo = input.SourcePhoto ?? (input.ReplaceSourcePhoto || strokes is { Length: > 0 } ? null : previousPhoto);
+        var previousText = existing?.ReadSourceText();
+        var text = input.SourceText ?? (input.ReplaceSourceText ? null : previousText);
         if (photo != null && strokes is { Length: > 0 }) return BadRequest();
-        if (photo != null && photo != previousPhoto)
-        {
-            var source = await documents.FindAsync(photo.DocumentId, cancellationToken: ct);
-            if (source == null || source.ImportId != photo.ImportId || source.ContentDeletedAt.HasValue ||
-                source.ContentType is not ("image/jpeg" or "image/png") ||
-                (await imports.FindAsync(photo.ImportId, cancellationToken: ct))?.ContractVersion != ReceptionRecognition.Contract)
-                return BadRequest(new { message = "无法关联这张接待照片，请重新选择原稿。" });
-        }
+        if (photo != null && photo != previousPhoto &&
+            await GetSourceContentType(photo.ImportId, photo.DocumentId, ct) is not ("image/jpeg" or "image/png"))
+            return BadRequest(new { message = "无法关联这张接待照片，请重新选择原稿。" });
+        if (text != null && text != previousText && await GetSourceContentType(text.ImportId, text.DocumentId, ct) != "text/plain")
+            return BadRequest(new { message = "无法关联这份文字原稿，请重新提交原文。" });
         var layout = input.Layout == null ? null : JsonSerializer.Serialize(input.Layout);
         var ink = strokes is { Length: > 0 } ? JsonSerializer.Serialize(strokes) : null;
         var customer = input.Customer?.Trim() ?? "";
@@ -132,11 +131,13 @@ public class ReceptionSheetsController(IRepository<ReceptionSheet, Guid> sheets,
         {
             if (existing.Customer == customer && existing.Phone == phone && existing.PickupDate == input.PickupDate &&
                 existing.Instructions == notes && existing.ReadPrintLayout() == layout && existing.HandwritingJson == ink &&
-                existing.TotalPrice == input.TotalPrice && existing.Deposit == input.Deposit && previousPhoto == photo) return Ok(Describe(existing));
+                existing.TotalPrice == input.TotalPrice && existing.Deposit == input.Deposit &&
+                previousPhoto == photo && previousText == text) return Ok(Describe(existing));
             if (input.Version != existing.ConcurrencyStamp)
                 return Conflict(new { message = "工单已在另一处更新。请重新载入后核对修改。" });
             existing.Revise(customer, phone, input.PickupDate, notes, layout, input.TotalPrice, input.Deposit, ink);
             existing.SetSourcePhoto(photo);
+            existing.SetSourceText(text);
             await sheets.UpdateAsync(existing, autoSave: true, cancellationToken: ct);
             return Ok(Describe(existing));
         }
@@ -146,8 +147,17 @@ public class ReceptionSheetsController(IRepository<ReceptionSheet, Guid> sheets,
         var candidate = new ReceptionSheet(id, customer, phone, input.PickupDate, notes);
         candidate.Revise(customer, phone, input.PickupDate, notes, layout, input.TotalPrice, input.Deposit, ink);
         candidate.SetSourcePhoto(photo);
+        candidate.SetSourceText(text);
         await sheets.InsertAsync(candidate, autoSave: true, cancellationToken: ct);
         return Ok(Describe(candidate));
+    }
+
+    private async Task<string?> GetSourceContentType(Guid importId, Guid documentId, CancellationToken ct)
+    {
+        var source = await documents.FindAsync(documentId, cancellationToken: ct);
+        if (source == null || source.ImportId != importId || source.ContentDeletedAt.HasValue) return null;
+        var import = await imports.FindAsync(importId, cancellationToken: ct);
+        return import?.ContractVersion == ReceptionRecognition.Contract ? source.ContentType : null;
     }
 
     [HttpPut("{id:guid}/stage")]

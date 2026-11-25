@@ -100,8 +100,8 @@ public sealed class AiOrderRecognitionCostEstimator :
     {
         // Images are downscaled to a fixed long edge before they are sent, so their token
         // cost is per-image and independent of the upload size — a 15 MB camera capture and
-        // a 1 MB one arrive at the provider the same size. Only PDFs, which pass through
-        // uncompressed, still scale with bytes.
+        // a 1 MB one arrive at the provider the same size. PDFs and plain text pass through
+        // uncompressed and still scale with bytes.
         var imageCount = sources.Count(x =>
             AiOrderRecognitionImageCompressor.IsSupported(x.ContentType));
         var uncompressedBytes = sources
