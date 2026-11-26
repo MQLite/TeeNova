@@ -79,11 +79,6 @@ const nextConfig = {
         source: '/admin/:path*',
         headers: [{ key: 'Cache-Control', value: 'no-store' }],
       },
-      {
-        // The reception desk embeds its authenticated PDF in a same-origin preview.
-        source: '/api/proxy/api/admin/reception-sheets/:sheetId/pdfs/:pdfId',
-        headers: [{ key: 'X-Frame-Options', value: 'SAMEORIGIN' }],
-      },
     ]
   },
 }

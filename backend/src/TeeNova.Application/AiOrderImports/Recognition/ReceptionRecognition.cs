@@ -10,7 +10,8 @@ namespace TeeNova.AiOrderImports.Recognition;
 
 public sealed record ReceptionDraft(string Customer, string Phone, DateOnly? PickupDate,
     string Instructions, ReceptionPrintLayout Layout, decimal? TotalPrice = null, decimal? Deposit = null,
-    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] ReceptionSourceNote[]? SourceNotes = null);
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] ReceptionSourceNote[]? SourceNotes = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] ReceptionPayment[]? Payments = null);
 
 public sealed record ReceptionSourceNote(string Kind, string Field, string Message, string? PreviousValue,
     string? SuggestedValue, ReceptionSourceReference[] References);
@@ -97,7 +98,16 @@ public static class ReceptionRecognition
             written total discrepancies, and original pickup wording in notes. Transcribe the explicitly written
             NZD order total and deposit into totalPrice and deposit as amounts with at most two decimal places.
             Preserve a written zero. Return null for missing or unclear amounts, percentages without a monetary
-            amount, or other currencies, retaining the original wording in notes. Do not infer payment status.
+            amount, or other currencies, retaining the original wording in notes.
+            On handwriting, an NZD amount immediately followed by a circled letter records an actual payment.
+            Read Ⓔ as EFTPOS, Ⓒ as Cash and Ⓣ as Transfer. For example, “150 / 50 Ⓔ”
+            records a payment of 50 by EFTPOS. Never infer the order total or deposit from a payment alone.
+            Return each distinct clearly marked payment once in payments, keeping its amount and method together.
+            Copies and repeated references to the same receipt are one payment. A total, balance or subtotal is
+            not an extra payment. If the amount, circle, letter, or association is unclear, put the original
+            wording in worksheet instructions for staff to check. For batch input also cite ambiguous or
+            possibly duplicated marks in sourceNotes with field "payments". Plain letters and unrelated circled letters
+            are not payment marks. Return an empty payments array when there are no clear payment marks.
             For a non-garment request use empty groups and put the work in instructions.
             Received in Auckland on {{received:yyyy-MM-dd}}. Resolve a clear pickup date relative to that date;
             otherwise return null. Provide plain text, without HTML or Markdown decoration.
@@ -106,10 +116,13 @@ public static class ReceptionRecognition
 
     public const string Schema = """
         {"type":"object","additionalProperties":false,
-         "required":["customer","phone","pickupDate","instructions","layout","totalPrice","deposit"],
+         "required":["customer","phone","pickupDate","instructions","layout","totalPrice","deposit","payments"],
          "properties":{"customer":{"type":"string"},"phone":{"type":"string"},
           "totalPrice":{"type":["number","null"],"minimum":0,"maximum":99999999.99},
           "deposit":{"type":["number","null"],"minimum":0,"maximum":99999999.99},
+          "payments":{"type":"array","maxItems":40,"items":{"type":"object","additionalProperties":false,
+            "required":["amount","method"],"properties":{"amount":{"type":"number","minimum":0,"maximum":99999999.99},
+            "method":{"type":"string","enum":["EFTPOS","Cash","Transfer"]}}}},
           "pickupDate":{"type":["string","null"],"format":"date"},"instructions":{"type":"string"},
           "layout":{"type":"object","additionalProperties":false,"required":["title","groups"],
            "properties":{"title":{"type":"string"},"groups":{"type":"array","maxItems":40,
@@ -156,8 +169,9 @@ public static class ReceptionRecognition
         if (draft is null || draft.Layout?.IsValid() != true || draft.Customer is not { Length: <= 160 } ||
             draft.Phone is not { Length: <= 80 } || draft.Instructions is not { Length: <= ReceptionSheet.MaxInstructions } ||
             !ReceptionSheet.ValidAmount(draft.TotalPrice) || !ReceptionSheet.ValidAmount(draft.Deposit) ||
+            !ReceptionSheet.ValidPayments(draft.Payments) ||
             (draft.Layout.Groups.Length == 0 && string.IsNullOrWhiteSpace(draft.Instructions)
-             && draft.TotalPrice == null && draft.Deposit == null)) throw invalid;
+             && draft.TotalPrice == null && draft.Deposit == null && !(draft.Payments?.Length > 0))) throw invalid;
         if (batchSources == null ? draft.SourceNotes != null : !ValidSourceNotes(draft.SourceNotes, batchSources, preparedSources))
             throw invalid;
         var canonical = JsonSerializer.Serialize(draft, Json);

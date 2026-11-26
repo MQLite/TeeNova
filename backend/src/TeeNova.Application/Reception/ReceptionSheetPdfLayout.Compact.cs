@@ -15,6 +15,7 @@ internal sealed partial class ReceptionSheetPdfLayout
         Cells([$"接单日期：{sheet.Received}", $"预计可取日期：{sheet.PickupDate ?? "待定"}"], Field);
         Cells([$"客户：{Value(sheet.Customer, "未填写")}", $"联系电话：{Value(sheet.Phone, "未填写")}"], Field);
         Cells([$"总价：{Amount(sheet.TotalPrice)}", $"订金：{Amount(sheet.Deposit)}"], Field);
+        WritePayments(sheet.Payments);
         Flow($"关联服装预计费用：{Value(sheet.PrintEstimate, "未随工单保存")}", "关联服装预计费用");
         if (sheet.Layout?.Groups is not { Length: > 0 } groups) return;
 

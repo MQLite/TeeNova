@@ -28,6 +28,22 @@ beforeEach(() => {
   vi.mocked(fetchSheet).mockImplementation(async id => records.find(sheet => sheet.id === id)!)
 })
 
+it('opens the linked artwork independently from the customer and phone on the same ticket', async () => {
+  records[0].phone = '021 555 0199'
+  records[0].artwork = [{ id: 'logo', name: 'logo.png', mime: 'image/png' }]
+  render(<ReceptionDesk />)
+  const ticket = await screen.findByRole('button', { name: /Preparing 1 021 555 0199/ })
+  const thumbnail = within(ticket.parentElement!).getByRole('button', { name: '预览 logo.png' })
+  expect(within(thumbnail).getByRole('img')).toHaveAttribute('src', expect.stringMatching(/logo\/thumbnail$/))
+  fireEvent.click(thumbnail)
+  const preview = await screen.findByRole('dialog', { name: 'logo.png 预览' })
+  expect(within(preview).getByAltText('logo.png 预览图')).toHaveAttribute('src', expect.stringMatching(/attachments\/logo$/))
+  expect(fetchSheet).not.toHaveBeenCalled()
+  fireEvent.click(within(preview).getByRole('button', { name: '关闭预览' }))
+  fireEvent.click(ticket)
+  await screen.findByDisplayValue('021 555 0199')
+})
+
 it('shows opening feedback only on the tapped ticket and ignores an earlier response after switching tickets', async () => {
   const [first, second] = records
   let finishFirst!: (sheet: SavedSheet) => void

@@ -84,6 +84,27 @@ public class ReceptionSheetSourceTextTests
     }
 
     [Fact]
+    public async Task Payment_marks_survive_retries_legacy_edits_and_reopening_until_explicitly_replaced()
+    {
+        var controller = Controller(Document("text/plain"));
+        ReceptionPayment[] marks = [new(50, "EFTPOS"), new(30.45m, "Cash")];
+        var input = new ReceptionSheetsController.SheetInput("Customer", "", null, "", Version: sheet.ConcurrencyStamp,
+            Payments: marks);
+        var saved = await Save(controller, input);
+        Assert.Equal(marks, (await controller.Get(sheet.Id, default)).Payments);
+        Assert.Equal(saved.Version, (await Save(controller, input)).Version);
+        Assert.Null(saved.TotalPrice);
+        Assert.Null(saved.Deposit);
+        var legacy = await Save(controller, input with { Customer = "Corrected", Payments = null, Version = saved.Version });
+        Assert.Equal(marks, legacy.Payments);
+        Assert.IsType<ConflictObjectResult>(await controller.Save(sheet.Id, input with { Payments = [] }, default));
+        Assert.IsType<BadRequestResult>(await controller.Save(sheet.Id, input with { Version = legacy.Version,
+            Payments = [new(20, "X")] }, default));
+        var cleared = await Save(controller, input with { Payments = [], Version = legacy.Version });
+        Assert.Empty(cleared.Payments!);
+    }
+
+    [Fact]
     public async Task Extended_handwriting_round_trips_and_rejects_points_below_the_last_section()
     {
         var controller = Controller(Document("text/plain"));

@@ -3,11 +3,12 @@ import { emptyRecognitionValue, recognitionLabels, type RecognitionDifference, t
 import { garments } from '@/features/reception/estimate'
 import type { QuantityReview } from '@/features/reception/materialQuantityReview'
 import { MaterialTabs, useMaterialTabs } from './ReceptionMaterials'
+import { displayPayment } from './SheetAmounts'
 
 export function WorksheetValue({ value }: { value: RecognitionDifference['current'] }) {
   if (value == null || value === '' || (Array.isArray(value) && !value.length)) return <span>留空，待确认</span>
   if (!Array.isArray(value)) return <span>{value}</span>
-  return <ul>{value.map((group, index) => <li key={index}>
+  return <ul>{value.map((group, index) => 'method' in group ? <li key={index}>{displayPayment(group)}</li> : <li key={index}>
     <strong>{group.heading}</strong>
     <div>{group.presentation === 'matrix' ? '颜色 × 尺码' : '逐行明细'} · {group.pricingKind === 'unlinked'
       ? '单独报价' : group.pricingKind ? garments[group.pricingKind] : '按服装描述估价'}</div>

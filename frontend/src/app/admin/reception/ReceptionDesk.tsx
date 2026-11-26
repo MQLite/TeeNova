@@ -22,7 +22,7 @@ import { ReceptionQueue } from './ReceptionQueue'
 import { RecognitionReview, WorksheetValue } from './RecognitionReview'
 import { OriginalText, StoredOriginalText, TextEditor, useTextOriginal } from './TextOriginal'
 import { advanceSheet, fetchSheet, generateSheetPdf, saveSheet, stages, type SavedSheet, type SheetPdf, type Stage } from './sheets'
-import { displayAmount, SheetAmounts } from './SheetAmounts'
+import { displayAmount, displayPayment, SheetAmounts } from './SheetAmounts'
 import { ApiError } from '@/lib/api-client'
 import { formatNzDate } from '@/lib/datetime'
 import './reception.css'
@@ -33,6 +33,7 @@ const sourceFieldNames: [RegExp, RecognitionField][] = [
   [/layout|group|garment|size|quantity|qty|count|print|服装|尺码|印花|数量|件数|码数|恤|连帽衫/i, 'groups'],
   [/phone|mobile|电话|手机/i, 'phone'],
   [/pickup|取货|自取|日期/i, 'pickupDate'],
+  [/payment|paid|eftpos|cash|transfer|实付|付款|收款/i, 'payments'],
   [/deposit|订金|定金/i, 'deposit'],
   [/amount|total|总价|费用|金额/i, 'totalPrice'],
   [/customer|客户|姓名|顾客/i, 'customer'],
@@ -455,7 +456,7 @@ export function ReceptionDesk({ initialSheet }: { initialSheet?: string } = {}) 
       setRecovered(undefined)
       sheetId.current = next.id
       setSheet({customer: next.customer, phone: next.phone, pickupDate: next.pickupDate ?? '',
-        instructions: next.instructions, totalPrice: next.totalPrice, deposit: next.deposit, layout: next.layout})
+        instructions: next.instructions, totalPrice: next.totalPrice, deposit: next.deposit, payments: next.payments, layout: next.layout})
       strokes.current = next.handwriting ?? []
       setHasInk(strokes.current.length > 0)
       setInitialStrokes(strokes.current)
@@ -498,6 +499,9 @@ export function ReceptionDesk({ initialSheet }: { initialSheet?: string } = {}) 
     finally { setBusy('') }
   }
   const missing = missingSheetHeadings(sheet.layout)
+  sheet.payments?.forEach((p, i) => {
+    if (p.amount == null || !p.method) missing.push(`第 ${i + 1} 笔实际付款的金额和方式`)
+  })
   const hasContent = hasSheetContent(sheet)
   const estimate = useReceptionEstimate(sheet.layout, sheet.instructions)
   const hasOtherContent = hasContent || !!sourcePhotoUrl || !!record || textOriginal.valid || !!materials.items.length
@@ -563,6 +567,7 @@ export function ReceptionDesk({ initialSheet }: { initialSheet?: string } = {}) 
         <dl className="rc-fields">{[
           ['客户姓名', recovered.customer], ['联系电话', recovered.phone], ['预计可取日期', recovered.pickupDate],
           ['总价', displayAmount(recovered.totalPrice)], ['订金', displayAmount(recovered.deposit)],
+          ['实际已付款', recovered.payments?.map(displayPayment).join('、')],
           ['工作单标题', recovered.layout?.title], ['制作说明', recovered.instructions],
         ].map(([label, value]) => <div key={label}><dt>{label}</dt><dd>{value || '未填写'}</dd></div>)}</dl>
         {!!recovered.layout?.groups.length && <details><summary>已保存的服装分组</summary>

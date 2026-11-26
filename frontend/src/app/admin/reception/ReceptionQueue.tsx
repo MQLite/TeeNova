@@ -4,7 +4,6 @@ import { useEffect, useState } from 'react'
 import { todayInAuckland } from '@/features/reception/worksheet'
 import { fetchQueue, type SheetSummary, type Stage } from './sheets'
 import { ArtworkPreview, sheetArtworkPath } from './ArtworkPreview'
-import { displayAmount } from './SheetAmounts'
 
 const headings: Record<Stage, string> = {Preparing: '待完成工单', Ready: '已做完 · 未取走', Collected: '已取走工单'}
 
@@ -33,14 +32,17 @@ function QueueColumn({stage, date, search, onOpen, openingId, disabled}: {
     {page?.items.map((sheet, i) => <div key={sheet.id}>
       {(i === 0 || page.items[i-1].pickupDate !== sheet.pickupDate) && <h4 className="rc-date">{sheet.pickupDate || '可取日期待定'}
         {stage === 'Preparing' && sheet.pickupDate && sheet.pickupDate < today && ' · 逾期'}</h4>}
-      <button className="rc-ticket" aria-busy={sheet.id === openingId || undefined}
-        disabled={openingId ? sheet.id === openingId : disabled} onClick={() => onOpen(sheet.id)}>
-        <span><strong>{sheet.customer || '未填写姓名'}</strong><small>#{sheet.id.slice(0,8)}{sheet.id === openingId && ' · 正在打开…'}</small></span>
-        <span>总价 {displayAmount(sheet.totalPrice)}<small>订金 {displayAmount(sheet.deposit)}</small></span>
-      </button>
-      {!!sheet.artwork?.length && <div className="art-strip" aria-label="关联设计稿">{sheet.artwork.map(file =>
-        <ArtworkPreview key={file.id} file={file} base={sheetArtworkPath(sheet.id)} compact />
-      )}</div>}</div>)}
+      <div className="rc-ticket-row">
+        <button className="rc-ticket" aria-busy={sheet.id === openingId || undefined} title={`打开工单 #${sheet.id.slice(0,8)}`}
+          disabled={openingId ? sheet.id === openingId : disabled} onClick={() => onOpen(sheet.id)}>
+          <strong title={sheet.customer}>{sheet.customer || '未填写姓名'}</strong>
+          <span title={sheet.phone}>{sheet.phone || '未留联系方式'}</span>
+          <span className="sr-only">#{sheet.id.slice(0,8)}{sheet.id === openingId && ' · 正在打开…'}</span>
+        </button>
+        {!!sheet.artwork?.length && <div className="rc-ticket-art" role="group" aria-label="关联设计稿">{sheet.artwork.map(file =>
+          <ArtworkPreview key={file.id} file={file} base={sheetArtworkPath(sheet.id)} compact />
+        )}</div>}
+      </div></div>)}
     {(offset > 0 || page?.hasMore) && <div className="rc-actions">
       <button disabled={disabled || !offset} onClick={() => setOffset(offset - 50)}>上一页</button>
       <button disabled={disabled || !page?.hasMore} onClick={() => setOffset(offset + 50)}>下一页</button></div>}

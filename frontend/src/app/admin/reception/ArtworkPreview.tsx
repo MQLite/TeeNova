@@ -24,7 +24,7 @@ export function ArtworkPreview({ file, base, compact = false }: { file: Artwork;
   return <>
     <button type="button" className={'art-tile' + (compact ? ' art-compact' : '')} aria-label={'预览 ' + file.name}
       title={file.name} onClick={() => { setMissingPreview(false); setOpen(true) }}>
-      {missingThumb ? <span>缩略图不可用</span> : <img loading="lazy" src={isPdf ? url + '/thumbnail' : url}
+      {missingThumb ? <span>{compact ? '预览' : '缩略图不可用'}</span> : <img loading="lazy" src={isPdf || compact ? url + '/thumbnail' : url}
         alt={file.name + ' 缩略图'} onError={() => setMissingThumb(true)} />}
       {!compact && <span className="art-name">{file.name}</span>}
     </button>

@@ -1,7 +1,9 @@
-using System.Diagnostics;
-using System.ComponentModel;
 using PdfSharp.Drawing;
 using PdfSharp.Pdf.IO;
+using SixLabors.ImageSharp;
+using SixLabors.ImageSharp.Formats;
+using SixLabors.ImageSharp.Formats.Png;
+using SixLabors.ImageSharp.Processing;
 
 namespace TeeNova.Reception;
 
@@ -17,24 +19,48 @@ internal static class GmailArtworkPreview
         try
         {
             if (store.CachedPreview(sheet, file, size) is { } ready) return ready;
-            if (store.Read(sheet, file) is not { Mime: "application/pdf" } original) return null;
-            var png = await Pdf(original.Bytes, size, pdfRenderer, ct);
+            if (store.Read(sheet, file) is not { } original) return null;
+            var png = original.Mime switch
+            {
+                "application/pdf" => await Pdf(original.Bytes, size, pdfRenderer, ct),
+                "image/jpeg" or "image/png" or "image/webp" => await ImageThumbnail(original.Bytes, size, ct),
+                _ => null
+            };
+            if (png == null) return null;
             store.CachePreview(file, size, png);
             return png;
         }
         finally { Slots.Release(); }
     }
 
-    private static async Task<byte[]> Pdf(byte[] content, int size, string executable, CancellationToken ct)
+    private static async Task<byte[]?> ImageThumbnail(byte[] content, int size, CancellationToken ct)
     {
-        if (Path.GetFileNameWithoutExtension(executable).Equals("pdftocairo", StringComparison.OrdinalIgnoreCase))
+        using var input = new MemoryStream(content, writable: false);
+        var options = new DecoderOptions { MaxFrames = 1, TargetSize = new Size(size, size) };
+        try
         {
-            try { return await Render(content, size, executable, transparent: true, ct); }
-            catch (Win32Exception e) when (e.NativeErrorCode is 2 or 3)
-            {
-                executable = Path.Combine(Path.GetDirectoryName(executable) ?? "", "pdftoppm" + Path.GetExtension(executable));
-            }
+            var info = await Image.IdentifyAsync(new DecoderOptions { MaxFrames = 1, SkipMetadata = true }, input, ct);
+            if ((long)info.Width * info.Height > 30_000_000) return null;
+            input.Position = 0;
+            using var image = await Image.LoadAsync(options, input, ct);
+            image.Mutate(x => x.AutoOrient());
+            if (Math.Max(image.Width, image.Height) > size)
+                image.Mutate(x => x.Resize(new ResizeOptions { Size = new(size, size), Mode = ResizeMode.Max }));
+            using var output = new MemoryStream();
+            await image.SaveAsync(output, new PngEncoder { SkipMetadata = true }, ct);
+            return output.ToArray();
         }
+        catch (Exception e) when (e is ImageFormatException or NotSupportedException)
+        {
+            return null;
+        }
+    }
+
+    private static Task<byte[]> Pdf(byte[] content, int size, string executable, CancellationToken ct) =>
+        PopplerPageRenderer.Png(content, 1, size, executable, ct, () => OnCheckerboard(content, size));
+
+    private static byte[] OnCheckerboard(byte[] content, int size)
+    {
         // Older Poppler installations flatten to white. Place the same grid behind the artwork
         // on a temporary preview page so white ink stays white and unpainted areas show the grid.
         using var input = new MemoryStream(content);
@@ -54,31 +80,6 @@ internal static class GmailArtworkPreview
         }
         using var buffer = new MemoryStream();
         preview.Save(buffer);
-        return await Render(buffer.ToArray(), size, executable, transparent: false, ct);
-    }
-
-    private static async Task<byte[]> Render(byte[] content, int size, string executable, bool transparent, CancellationToken ct)
-    {
-        var start = new ProcessStartInfo(executable) { UseShellExecute = false, CreateNoWindow = true,
-            RedirectStandardInput = true, RedirectStandardOutput = true, RedirectStandardError = true };
-        foreach (var arg in new[] { "-q", "-f", "1", "-l", "1", "-singlefile", "-scale-to", size.ToString(), "-png" })
-            start.ArgumentList.Add(arg);
-        if (transparent) start.ArgumentList.Add("-transp");
-        start.ArgumentList.Add("-");
-        if (transparent) start.ArgumentList.Add("-");
-        using var process = Process.Start(start) ?? throw new InvalidOperationException("PDF renderer unavailable.");
-        using var limit = CancellationTokenSource.CreateLinkedTokenSource(ct);
-        limit.CancelAfter(TimeSpan.FromSeconds(15));
-        using var kill = limit.Token.Register(() => { try { if (!process.HasExited) process.Kill(true); } catch (InvalidOperationException) { } });
-        async Task WriteInput()
-        {
-            using var input = process.StandardInput.BaseStream;
-            await input.WriteAsync(content, limit.Token);
-        }
-        using var output = new MemoryStream();
-        await Task.WhenAll(WriteInput(), process.StandardOutput.BaseStream.CopyToAsync(output, limit.Token),
-            process.StandardError.BaseStream.CopyToAsync(Stream.Null, limit.Token), process.WaitForExitAsync(limit.Token));
-        if (process.ExitCode != 0 || output.Length == 0) throw new InvalidDataException("PDF preview unavailable.");
-        return output.ToArray();
+        return buffer.ToArray();
     }
 }

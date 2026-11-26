@@ -1,3 +1,4 @@
+using System.ComponentModel;
 using System.ComponentModel.DataAnnotations;
 using System.Data.Common;
 using System.Text.Json;
@@ -5,6 +6,7 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using TeeNova.Auth;
@@ -24,6 +26,7 @@ public class ReceptionSheetPdfsController(IReceptionSheetPdfArchive archive, IRe
     private static readonly TimeSpan GenerationTimeout = TimeSpan.FromMinutes(3);
     private static readonly TimeSpan ClaimLease = TimeSpan.FromMinutes(4);
     private const int MaxPdfBytes = 10 * 1024 * 1024;
+    private static readonly SemaphoreSlim PreviewSlots = new(2);
 
     public sealed record GenerateInput([Required, StringLength(64)] string Version);
 
@@ -75,6 +78,29 @@ public class ReceptionSheetPdfsController(IReceptionSheetPdfArchive archive, IRe
         Response.Headers.XContentTypeOptions = "nosniff";
         if (!download) Response.Headers.ContentDisposition = $"inline; filename=\"{fileName}\"";
         return File(content, "application/pdf", download ? fileName : null, enableRangeProcessing: true);
+    }
+
+    [HttpGet("{pdfId:guid}/pages/{page:int:min(1)}")]
+    public async Task<IActionResult> ReadPage(Guid id, Guid pdfId, int page, [FromServices] IConfiguration config, CancellationToken ct)
+    {
+        Response.Headers.CacheControl = "private, no-store";
+        Response.Headers.XContentTypeOptions = "nosniff";
+        await PreviewSlots.WaitAsync(ct);
+        try
+        {
+            var pdf = await archive.ReadAsync(id, pdfId, ct, page);
+            if (pdf is null) return NotFound();
+            var renderer = config["GmailReception:PdfRenderer"] ?? "pdftocairo";
+            var png = await PopplerPageRenderer.Png(pdf, page, 1800, renderer, ct);
+            return File(png, "image/png");
+        }
+        catch (Exception ex) when (ex is Win32Exception or IOException or InvalidDataException ||
+            ex is OperationCanceledException && !ct.IsCancellationRequested)
+        {
+            logger.LogWarning("Reception PDF page preview failed for archive entry {PdfId} ({ErrorType}).", pdfId, ex.GetType().Name);
+            return StatusCode(StatusCodes.Status503ServiceUnavailable);
+        }
+        finally { PreviewSlots.Release(); }
     }
 
     private async Task<IActionResult> GenerateAndArchive(Guid sheetId, string version, ReceptionSheetPdfReservation.Generate claim)

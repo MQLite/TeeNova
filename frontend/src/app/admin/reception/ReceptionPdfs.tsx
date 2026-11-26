@@ -43,13 +43,37 @@ export function ReceptionPdfs({ sheet, dirty, generated, preview, onPreview }: {
       </section>
     </details>
     {preview && <ReceptionPreview title="工作单 PDF 预览" onClose={() => onPreview()}>
-      <iframe src={sheetPdfUrl(sheet.id, preview.id)} title="工作单 PDF" />
       <div className="rc-preview-links">
         <span>{versionLabel(byId.get(preview.id) ?? preview)} · {preview.pages} 页</span>
         <a href={sheetPdfUrl(sheet.id, preview.id)} target="_blank" rel="noreferrer">打开 PDF 打印</a>
         <a href={sheetPdfUrl(sheet.id, preview.id, true)} download>下载 PDF</a>
       </div>
+      <PdfPages key={preview.id} url={sheetPdfUrl(sheet.id, preview.id)} pages={preview.pages} />
     </ReceptionPreview>}
+  </>
+}
+
+function PdfPages({ url, pages }: { url: string; pages: number }) {
+  const [page, setPage] = useState(1)
+  const [status, setStatus] = useState<'loading' | 'ready' | 'failed'>('loading')
+  function showPage(next: number) {
+    setStatus('loading')
+    setPage(next)
+  }
+  return <>
+    {pages > 1 && <nav aria-label="PDF 翻页" className="rc-preview-links">
+      <button type="button" disabled={page === 1} onClick={() => showPage(page - 1)}>上一页</button>
+      <span aria-live="polite">第 {page} / {pages} 页</span>
+      <button type="button" disabled={page === pages} onClick={() => showPage(page + 1)}>下一页</button>
+    </nav>}
+    <div key={page} className="rc-pdf-page">
+      {status === 'loading' && <p role="status">正在读取第 {page} 页…</p>}
+      {status === 'failed' ? <p role="alert">本页预览读取失败。<button type="button" onClick={() => setStatus('loading')}>重试预览</button></p> :
+        // The browser must send the admin cookie directly to the private proxy.
+        // eslint-disable-next-line @next/next/no-img-element
+        <img src={`${url}/pages/${page}`} alt={`工作单 PDF 第 ${page} 页`}
+          onLoad={() => setStatus('ready')} onError={() => setStatus('failed')} />}
+    </div>
   </>
 }
 

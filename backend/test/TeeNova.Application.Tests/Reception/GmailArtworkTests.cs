@@ -1,4 +1,6 @@
 using Microsoft.Data.Sqlite;
+using SixLabors.ImageSharp;
+using SixLabors.ImageSharp.PixelFormats;
 using TeeNova.Reception;
 
 namespace TeeNova.Tests.Reception;
@@ -50,6 +52,26 @@ public sealed class GmailArtworkTests : IDisposable
         Assert.Equal(Pdf.Bytes, store.Read(first, first)!.Value.Bytes);
         Assert.Equal(Pdf.Bytes, store.Read(colleagueSheet, second)!.Value.Bytes);
         Assert.True(store.Save(Guid.Empty, Mail, "ab", files, origin).Conflict);
+    }
+
+    [Fact]
+    public async Task Queue_thumbnail_is_bounded_and_transparent_and_keeps_the_original_private_to_its_sheet()
+    {
+        var sheet = Guid.NewGuid();
+        var store = new GmailArtworkStore(root);
+        using var original = new Image<Rgba32>(960, 480, new Rgba32(21, 34, 56, 85));
+        using var data = new MemoryStream();
+        original.SaveAsPng(data);
+        store.Save(sheet, Mail, "ab", [new GmailFile(0, "logo.png", "image/png", data.ToArray())]);
+        var file = Guid.Parse(Assert.Single(store.List(sheet)).Id);
+        var bytes = await GmailArtworkPreview.Get(store, sheet, file, 320, "", default);
+        Assert.NotNull(bytes);
+        using var image = Image.Load<Rgba32>(bytes);
+        Assert.Equal(new Size(320, 160), image.Size);
+        Assert.Equal(85, image[50, 50].A);
+        Assert.Equal(bytes, store.CachedPreview(sheet, file, 320));
+        Assert.Null(await GmailArtworkPreview.Get(store, Guid.NewGuid(), file, 320, "", default));
+        Assert.Equal(data.ToArray(), store.Read(sheet, file)!.Value.Bytes);
     }
 
     [Fact]

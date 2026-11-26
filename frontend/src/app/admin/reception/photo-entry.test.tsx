@@ -233,6 +233,34 @@ it('reconciles conflicting values individually and preserves information missing
   expect(screen.getByRole('textbox', { name: '总价（NZD）' })).toHaveValue('100.00')
 })
 
+it('reviews replacement payment marks, edits the amount and saves once per payment', async () => {
+  const saved = { ...savedPhotoSheet, payments: [{ amount: 20, method: 'Cash' as const }] }
+  vi.spyOn(window, 'confirm').mockReturnValue(true)
+  vi.mocked(fetchSheet).mockResolvedValue(saved)
+  vi.mocked(recognizeCapture).mockResolvedValue({ ...blankWorksheet,
+    payments: [{ amount: 20, method: 'EFTPOS' }, { amount: 15, method: 'Transfer' }] })
+  vi.mocked(saveSheet).mockResolvedValue({ ...saved, version: 'v2' })
+  render(<ReceptionDesk initialSheet="saved"/>)
+  expect(await screen.findByRole('combobox', { name: /第 1 笔付款方式/ })).toHaveValue('Cash')
+  fireEvent.click(screen.getByRole('button', { name: '更换原稿' }))
+  fireEvent.click(screen.getByRole('button', { name: '整理成工作单' }))
+  await screen.findByText('EFTPOS · NZ$20.00')
+  const review = screen.getByRole('group', { name: '实际已付款' })
+  expect(within(review).getByText('EFTPOS · NZ$20.00')).toBeVisible()
+  expect(within(review).getByText('Transfer · NZ$15.00')).toBeVisible()
+  fireEvent.click(within(review).getByRole('radio', { name: /使用识别值/ }))
+  fireEvent.click(screen.getByRole('button', { name: '应用核对结果' }))
+  fireEvent.change(screen.getByRole('textbox', { name: '第 2 笔实付金额（NZD）' }), { target: { value: '15.25' } })
+  fireEvent.click(screen.getByRole('button', { name: '添加已付款项' }))
+  expect(screen.getByRole('button', { name: '保存修改' })).toBeDisabled()
+  fireEvent.click(screen.getByRole('button', { name: '移除第 3 笔付款' }))
+  fireEvent.click(screen.getByRole('button', { name: '保存修改' }))
+  await waitFor(() => expect(saveSheet).toHaveBeenCalledWith('saved', expect.objectContaining({
+    payments: [{ amount: 20, method: 'EFTPOS' }, { amount: 15.25, method: 'Transfer' }],
+    totalPrice: undefined, deposit: 10,
+  }), [], 'v1', saved.sourcePhoto, undefined))
+})
+
 it('shows the current handwritten original while reviewing recognition differences', async () => {
   const handwriting = 'data:image/png;base64,AA=='
   vi.spyOn(HTMLCanvasElement.prototype, 'toDataURL').mockReturnValue(handwriting)

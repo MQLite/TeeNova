@@ -13,7 +13,8 @@ public sealed record ReceptionSheetPdfSnapshot(
     ReceptionPrintLayout? Layout,
     decimal? TotalPrice,
     decimal? Deposit,
-    string? PrintEstimate)
+    string? PrintEstimate,
+    ReceptionPayment[]? Payments = null)
 {
     public const string TemplateVersion = "reception-a4-v2";
     private static readonly TimeZoneInfo Auckland = TimeZoneInfo.FindSystemTimeZoneById("Pacific/Auckland");
@@ -31,7 +32,7 @@ public sealed record ReceptionSheetPdfSnapshot(
                 .ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
             return new ReceptionSheetPdfSnapshot(sheet.Id, sheet.Customer, sheet.Phone, received,
                 sheet.PickupDate?.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture),
-                sheet.Instructions, layout, sheet.TotalPrice, sheet.Deposit, sheet.PrintEstimate);
+                sheet.Instructions, layout, sheet.TotalPrice, sheet.Deposit, sheet.PrintEstimate, sheet.ReadPayments());
         }
         catch (JsonException)
         {

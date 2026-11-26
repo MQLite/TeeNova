@@ -41,6 +41,7 @@ internal sealed partial class ReceptionSheetPdfLayout
             Fields(("接单日期", snapshot.Received), ("预计可取日期", snapshot.PickupDate ?? "待定"));
             Fields(("客户", Value(snapshot.Customer, "未填写")), ("联系电话", Value(snapshot.Phone, "未填写")));
             Fields(("总价", Amount(snapshot.TotalPrice)), ("订金", Amount(snapshot.Deposit)));
+            WritePayments(snapshot.Payments);
             TextSection("关联服装预计费用", Value(snapshot.PrintEstimate, "未随工单保存"));
             Rule();
             if (snapshot.Layout is { } layout)
@@ -228,6 +229,13 @@ internal sealed partial class ReceptionSheetPdfLayout
     private static string Quantity(int? quantity) => quantity?.ToString(CultureInfo.InvariantCulture) ?? "待核";
     private static string Amount(decimal? amount) => amount is { } value ?
         $"NZD {value.ToString("N2", CultureInfo.InvariantCulture)}" : "未填写";
+
+    private void WritePayments(ReceptionPayment[]? payments)
+    {
+        if (payments is not { Length: > 0 }) return;
+        foreach (var payment in payments)
+            Flow($"实际已付款：{payment.Method} · {Amount(payment.Amount)}", "实际已付款");
+    }
 
     private static string Area(string code) => code switch
     {

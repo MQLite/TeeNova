@@ -24,7 +24,7 @@ public interface IReceptionSheetPdfArchive
 
     Task<IReadOnlyList<ReceptionSheetPdfInfo>?> ListAsync(Guid sheetId, string currentTemplate, CancellationToken ct);
 
-    Task<byte[]?> ReadAsync(Guid sheetId, Guid id, CancellationToken ct);
+    Task<byte[]?> ReadAsync(Guid sheetId, Guid id, CancellationToken ct, int page = 1);
 
     // Called inside the sheet deletion transaction after its Deleted stage has been persisted.
     Task PurgeAsync(Guid sheetId, CancellationToken ct);

@@ -55,6 +55,35 @@ public class ReceptionRecognitionTests
         Assert.Throws<BusinessException>(() => ReceptionRecognition.Validate(Reply.Replace(original, replacement), 24000));
 
     [Fact]
+    public void Reads_distinct_payment_marks_without_populating_unwritten_amounts()
+    {
+        const string payments = """[{"amount":30.50,"method":"EFTPOS"},{"amount":20,"method":"Cash"},{"amount":15,"method":"Transfer"}]""";
+        var json = Reply.Replace("\"customer\":", $"\"payments\":{payments},\"customer\":");
+        using var doc = JsonDocument.Parse(ReceptionRecognition.Validate(json, 24000).CanonicalJson);
+        Assert.Equal(payments, doc.RootElement.GetProperty("payments").GetRawText());
+        Assert.Equal(JsonValueKind.Null, doc.RootElement.GetProperty("totalPrice").ValueKind);
+        Assert.Equal(JsonValueKind.Null, doc.RootElement.GetProperty("deposit").ValueKind);
+        foreach (var version in new[] { ReceptionRecognition.PromptVersion, ReceptionRecognition.BatchPromptVersion })
+        {
+            var prompt = ReceptionRecognition.Prompt(DateTime.UtcNow, version);
+            Assert.Contains("Ⓔ as EFTPOS, Ⓒ as Cash and Ⓣ as Transfer", prompt);
+            Assert.Contains("Plain letters", prompt);
+        }
+    }
+
+    [Theory]
+    [InlineData("""{"amount":10,"method":"E"}""")]
+    [InlineData("""{"amount":-5,"method":"Cash"}""")]
+    [InlineData("""{"amount":1.234,"method":"Transfer"}""")]
+    [InlineData("""{"method":"EFTPOS"}""")]
+    [InlineData("""{"amount":50}""")]
+    public void Rejects_invalid_or_incomplete_payments(string payment)
+    {
+        var json = Reply.Replace("\"customer\":", $"\"payments\":[{payment}],\"customer\":");
+        Assert.Throws<BusinessException>(() => ReceptionRecognition.Validate(json, 24000));
+    }
+
+    [Fact]
     public void Pricing_inputs_survive_validation_without_becoming_an_agreed_total()
     {
         var reply = Reply.Replace("\"rows\":", """

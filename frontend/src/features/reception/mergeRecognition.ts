@@ -1,11 +1,12 @@
-import type { GarmentGroup, Worksheet } from './worksheet'
+import type { GarmentGroup, Worksheet, WorksheetPayment } from './worksheet'
 
 export const recognitionLabels = {
   customer: '客户姓名', phone: '联系电话', pickupDate: '预计可取日期', instructions: '制作说明',
   totalPrice: '总价（NZD）', deposit: '订金（NZD）', title: '工作单标题', groups: '服装分组明细',
+  payments: '实际已付款',
 }
 export type RecognitionField = keyof typeof recognitionLabels
-type FieldValue = string | number | GarmentGroup[] | null | undefined
+type FieldValue = string | number | GarmentGroup[] | WorksheetPayment[] | null | undefined
 export interface RecognitionDifference {
   field: RecognitionField
   current: FieldValue
@@ -44,6 +45,7 @@ export function mergeRecognition(current: Worksheet, incoming: Worksheet,
     instructions: choose('instructions', current.instructions, incoming.instructions),
     totalPrice: choose('totalPrice', current.totalPrice, incoming.totalPrice),
     deposit: choose('deposit', current.deposit, incoming.deposit),
+    payments: choose('payments', current.payments, incoming.payments ?? (current.payments ? [] : undefined)),
     layout: current.layout,
   }
   if (incoming.layout) {

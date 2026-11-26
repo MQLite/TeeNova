@@ -93,11 +93,12 @@ internal sealed class EfReceptionSheetPdfArchive(
             AsUtc(x.CreatedAtUtc!.Value), x.IsCurrent)).ToArray();
     }
 
-    public async Task<byte[]?> ReadAsync(Guid sheetId, Guid id, CancellationToken ct)
+    public async Task<byte[]?> ReadAsync(Guid sheetId, Guid id, CancellationToken ct, int page = 1)
     {
         using var unit = work.Begin(requiresNew: true, isTransactional: false);
         var db = await dbContexts.GetDbContextAsync();
-        var content = await Available(db, sheetId).Where(x => x.Id == id).Select(x => x.Content).SingleOrDefaultAsync(ct);
+        var content = await Available(db, sheetId).Where(x => x.Id == id && x.Pages >= page)
+            .Select(x => x.Content).SingleOrDefaultAsync(ct);
         await unit.CompleteAsync(ct);
         return content;
     }

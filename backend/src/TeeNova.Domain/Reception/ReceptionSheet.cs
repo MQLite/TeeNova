@@ -1,5 +1,6 @@
 using System.ComponentModel.DataAnnotations;
 using System.Text.Json;
+using System.Text.Json.Serialization;
 using Volo.Abp.Data;
 using Volo.Abp.Domain.Entities.Auditing;
 
@@ -9,6 +10,7 @@ public enum ReceptionStage { Preparing, Ready, Collected, Deleted }
 
 public sealed record ReceptionPhotoSource(Guid ImportId, Guid DocumentId);
 public sealed record ReceptionTextSource(Guid ImportId, Guid DocumentId);
+public sealed record ReceptionPayment([property: JsonRequired] decimal Amount, string Method);
 
 public class ReceptionSheet : AuditedAggregateRoot<Guid>
 {
@@ -30,6 +32,20 @@ public class ReceptionSheet : AuditedAggregateRoot<Guid>
     protected ReceptionSheet() { }
 
     public string? ReadPrintLayout() => this.GetProperty<string>("PrintLayoutV1");
+
+    public static bool ValidPayments(ReceptionPayment[]? payments) => payments is null ||
+        payments.Length <= 40 && payments.All(p => p is not null && ValidAmount(p.Amount) &&
+            p.Method is "EFTPOS" or "Cash" or "Transfer");
+
+    public ReceptionPayment[] ReadPayments() => this.GetProperty<string>("ReceptionPayments") is { } json
+        ? JsonSerializer.Deserialize<ReceptionPayment[]>(json)! : [];
+
+    public void SetPayments(ReceptionPayment[] payments)
+    {
+        if (!ValidPayments(payments)) throw new ArgumentOutOfRangeException(nameof(payments));
+        if (payments.Length == 0) ExtraProperties.Remove("ReceptionPayments");
+        else this.SetProperty("ReceptionPayments", JsonSerializer.Serialize(payments));
+    }
 
     public ReceptionMaterials? ReadMaterials() =>
         this.GetProperty<string>("ReceptionMaterials") is { } json ? JsonSerializer.Deserialize<ReceptionMaterials>(json) : null;

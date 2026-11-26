@@ -32,11 +32,11 @@ public class ReceptionSheetsController(IRepository<ReceptionSheet, Guid> sheets,
         ReceptionPhotoSource? SourcePhoto = null, bool ReplaceSourcePhoto = false,
         ReceptionTextSource? SourceText = null, bool ReplaceSourceText = false,
         [StringLength(ReceptionSheet.MaxPrintEstimateLength)] string? PrintEstimate = null,
-        ReceptionMaterials? Materials = null, bool ReplaceMaterials = false);
+        ReceptionMaterials? Materials = null, bool ReplaceMaterials = false, ReceptionPayment[]? Payments = null);
     public record SheetDto(Guid Id, string Customer, string Phone, DateOnly? PickupDate,
         string Instructions, string Stage, DateTime CreationTime, ReceptionPrintLayout? Layout, decimal? TotalPrice,
         decimal? Deposit, InkStroke[]? Handwriting, string Version, ReceptionPhotoSource? SourcePhoto, ReceptionTextSource? SourceText = null, string? PrintEstimate = null,
-        MaterialDetails? Materials = null);
+        MaterialDetails? Materials = null, ReceptionPayment[]? Payments = null);
     public record MaterialFile(Guid Id, string Name, string ContentType, int? PageCount, bool Expired, long ByteSize);
     public record MaterialDetails(Guid ImportId, Guid[] DocumentIds, string Description, MaterialFile[] Files);
     public record StageInput([Required] string Stage, string? Version = null, bool ManualAdjustment = false);
@@ -55,7 +55,8 @@ public class ReceptionSheetsController(IRepository<ReceptionSheet, Guid> sheets,
         return new(s.Id, s.Customer, s.Phone, s.PickupDate, s.Instructions, s.Stage.ToString(), s.CreationTime,
             s.ReadPrintLayout() is { } json ? JsonSerializer.Deserialize<ReceptionPrintLayout>(json) : null,
             s.TotalPrice, s.Deposit, s.HandwritingJson is { } ink ? JsonSerializer.Deserialize<InkStroke[]>(ink) : null,
-            s.ConcurrencyStamp, s.ReadSourcePhoto(), s.ReadSourceText(), s.PrintEstimate, details);
+            s.ConcurrencyStamp, s.ReadSourcePhoto(), s.ReadSourceText(), s.PrintEstimate, details,
+            s.ReadPayments());
     }
 
     [HttpGet("recognition/{importId:guid}")]
@@ -85,10 +86,10 @@ public class ReceptionSheetsController(IRepository<ReceptionSheet, Guid> sheets,
         }
         var rows = await query.OrderBy(x => x.PickupDate == null).ThenBy(x => x.PickupDate)
             .ThenBy(x => x.CreationTime).ThenBy(x => x.Id).Skip(offset).Take(51)
-            .Select(x => new { x.Id, x.Customer, x.PickupDate, x.CreationTime, x.TotalPrice, x.Deposit }).ToListAsync(ct);
+            .Select(x => new { x.Id, x.Customer, x.Phone, x.PickupDate, x.CreationTime, x.TotalPrice, x.Deposit }).ToListAsync(ct);
         var page = rows.Take(50).ToArray();
         var artwork = page.Length == 0 ? null : GmailArtworkStore.Configured(config, host, storageOptions).ListForSheets(page.Select(s => s.Id));
-        return Ok(new { items = page.Select(s => new { s.Id, s.Customer, s.PickupDate, s.CreationTime, s.TotalPrice, s.Deposit,
+        return Ok(new { items = page.Select(s => new { s.Id, s.Customer, s.Phone, s.PickupDate, s.CreationTime, s.TotalPrice, s.Deposit,
             artwork = artwork?[s.Id] ?? Enumerable.Empty<GmailFileInfo>() }), hasMore = rows.Count > 50 });
     }
 
@@ -127,11 +128,11 @@ public class ReceptionSheetsController(IRepository<ReceptionSheet, Guid> sheets,
             s.Points.Any(p => p == null || p.X is < 0 or > 1800 || p.Y is < 0 or > 3600)) == true ||
             strokes?.Sum(s => (long)s.Points.Length) > 150000)
             return BadRequest(new { message = "手稿超出支持范围。" });
-        if (id == Guid.Empty || input.Layout?.IsValid() == false || !ReceptionSheet.ValidAmount(input.TotalPrice) ||
+        if (id == Guid.Empty || input.Layout?.IsValid() == false || !ReceptionSheet.ValidPayments(input.Payments) || !ReceptionSheet.ValidAmount(input.TotalPrice) ||
             !ReceptionSheet.ValidAmount(input.Deposit) || (input.Version == null && string.IsNullOrWhiteSpace(input.Customer) &&
             string.IsNullOrWhiteSpace(input.Phone) && input.PickupDate == null && string.IsNullOrWhiteSpace(input.Instructions) &&
             !(input.Layout?.Groups.Length > 0) && !(strokes?.Length > 0) && input.SourcePhoto == null && input.SourceText == null &&
-            input.Materials == null && input.TotalPrice == null && input.Deposit == null))
+            input.Materials == null && input.TotalPrice == null && input.Deposit == null && !(input.Payments?.Length > 0)))
             return BadRequest();
         var existing = await sheets.FindAsync(id, cancellationToken: ct);
         var previousMaterials = existing?.ReadMaterials();
@@ -170,13 +171,15 @@ public class ReceptionSheetsController(IRepository<ReceptionSheet, Guid> sheets,
             if (existing.Customer == customer && existing.Phone == phone && existing.PickupDate == input.PickupDate &&
                 existing.Instructions == notes && previousLayout == layout && existing.HandwritingJson == ink &&
                 existing.TotalPrice == input.TotalPrice && existing.Deposit == input.Deposit && existing.PrintEstimate == estimate &&
-                previousPhoto == photo && previousText == text && sameMaterials) return Ok(await DescribeAsync(existing, ct));
+                previousPhoto == photo && previousText == text && sameMaterials &&
+                (input.Payments == null || existing.ReadPayments().SequenceEqual(input.Payments))) return Ok(await DescribeAsync(existing, ct));
             if (input.Version != existing.ConcurrencyStamp)
                 return Conflict(new { message = "工单已在另一处更新。请重新载入后核对修改。" });
             existing.Revise(customer, phone, input.PickupDate, notes, layout, input.TotalPrice, input.Deposit, ink, estimate);
             existing.SetSourcePhoto(photo);
             existing.SetSourceText(text);
             existing.SetMaterials(materials);
+            if (input.Payments != null) existing.SetPayments(input.Payments);
             await sheets.UpdateAsync(existing, autoSave: true, cancellationToken: ct);
             return Ok(await DescribeAsync(existing, ct));
         }
@@ -188,6 +191,7 @@ public class ReceptionSheetsController(IRepository<ReceptionSheet, Guid> sheets,
         candidate.SetSourcePhoto(photo);
         candidate.SetSourceText(text);
         candidate.SetMaterials(materials);
+        if (input.Payments != null) candidate.SetPayments(input.Payments);
         await sheets.InsertAsync(candidate, autoSave: true, cancellationToken: ct);
         return Ok(await DescribeAsync(candidate, ct));
     }

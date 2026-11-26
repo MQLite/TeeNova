@@ -120,6 +120,23 @@ public sealed class ReceptionSheetPdfTests
     }
 
     [Fact]
+    public void Prints_saved_payment_amount_and_method_in_both_layouts()
+    {
+        var sheet = new ReceptionSheet(SheetId, "Customer", "", null, "");
+        sheet.SetPayments([new(123.45m, "EFTPOS"), new(25, "Cash"), new(40, "Transfer")]);
+        var snapshot = ReceptionSheetPdfSnapshot.FromSheet(sheet);
+        var group = Snapshot().Layout!.Groups[0];
+        foreach (var groups in new ReceptionGarmentGroup[][] { [group], [group, group] })
+        {
+            var lines = ReceptionSheetPdfLayout.Build(snapshot with { Layout = new("付款", groups) })
+                .SelectMany(page => page.Lines).Select(line => line.Text).ToArray();
+            Assert.Contains("实际已付款：EFTPOS · NZD 123.45", lines);
+            Assert.Contains("实际已付款：Cash · NZD 25.00", lines);
+            Assert.Contains("实际已付款：Transfer · NZD 40.00", lines);
+        }
+    }
+
+    [Fact]
     public void Keeps_duplicate_entries_unknowns_and_explicit_zero_in_a_shared_list()
     {
         var groups = new ReceptionGarmentGroup[] {

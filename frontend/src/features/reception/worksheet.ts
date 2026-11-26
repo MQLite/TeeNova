@@ -8,6 +8,8 @@ export interface GarmentGroup {
   notes: string
 }
 export interface PrintLayout { title: string; groups: GarmentGroup[] }
+export const paymentMethods = ['EFTPOS', 'Cash', 'Transfer'] as const
+export interface WorksheetPayment { amount: number | null; method: typeof paymentMethods[number] | '' }
 export interface Worksheet {
   customer: string
   phone: string
@@ -16,6 +18,7 @@ export interface Worksheet {
   layout?: PrintLayout | null
   totalPrice?: number | null
   deposit?: number | null
+  payments?: WorksheetPayment[]
 }
 export const blankWorksheet: Worksheet = { customer: '', phone: '', pickupDate: '', instructions: '' }
 export const todayInAuckland = () => new Intl.DateTimeFormat('sv-SE', {
@@ -24,7 +27,8 @@ export const todayInAuckland = () => new Intl.DateTimeFormat('sv-SE', {
 
 export function hasSheetContent(sheet: Worksheet) {
   return Boolean(sheet.customer.trim() || sheet.phone.trim() || sheet.pickupDate ||
-    sheet.instructions.trim() || sheet.layout?.groups.length || sheet.totalPrice != null || sheet.deposit != null)
+    sheet.instructions.trim() || sheet.layout?.groups.length || sheet.totalPrice != null || sheet.deposit != null ||
+    sheet.payments?.length)
 }
 export function missingSheetHeadings(layout?: PrintLayout | null): string[] {
   if (!layout) return []

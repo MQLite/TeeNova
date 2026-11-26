@@ -45,9 +45,47 @@ public sealed class ReceptionSheetPdfArchiveTests
         var file = $"{route}/{Guid.NewGuid()}";
         Assert.Equal(HttpStatusCode.Unauthorized, (await client.GetAsync(route)).StatusCode);
         Assert.Equal(HttpStatusCode.Unauthorized, (await client.GetAsync(file)).StatusCode);
+        Assert.Equal(HttpStatusCode.Unauthorized, (await client.GetAsync(file + "/pages/1")).StatusCode);
         Assert.Equal(HttpStatusCode.Unauthorized, (await client.PostAsJsonAsync(route, new { version = "first" })).StatusCode);
         client.DefaultRequestHeaders.Add("X-Test-User", "staff");
         Assert.Equal(HttpStatusCode.Forbidden, (await client.GetAsync(file)).StatusCode);
+        Assert.Equal(HttpStatusCode.Forbidden, (await client.GetAsync(file + "/pages/1")).StatusCode);
+    }
+
+    [Fact]
+    public async Task Renders_the_selected_archived_page_after_edits_without_regenerating_the_pdf()
+    {
+        await using var fixture = await ArchiveFixture.Create();
+        var sheet = await fixture.Save("Worksheet", null);
+        using var source = PdfSharp.Pdf.IO.PdfReader.Open(
+            Path.Combine(AppContext.BaseDirectory, "Reception", "worksheet.pdf"), PdfSharp.Pdf.IO.PdfDocumentOpenMode.Import);
+        using var document = new PdfSharp.Pdf.PdfDocument();
+        document.AddPage(source.Pages[0]);
+        document.AddPage();
+        using var buffer = new MemoryStream();
+        document.Save(buffer);
+        fixture.Generator.Output = new(buffer.ToArray(), 2);
+        fixture.Generator.Resume.TrySetResult();
+        var pdf = await ReadInfo(await fixture.Generate(sheet.Version));
+        await fixture.Save("Changed worksheet", null, sheet.Version);
+
+        var pages = $"{fixture.ArchiveRoute}/{pdf.Id}/pages";
+        var pageOne = await fixture.Client.GetAsync(pages + "/1");
+        pageOne.EnsureSuccessStatusCode();
+        Assert.Equal("image/png", pageOne.Content.Headers.ContentType?.MediaType);
+        Assert.True(pageOne.Headers.CacheControl?.NoStore);
+        Assert.True(pageOne.Headers.CacheControl?.Private);
+        var first = await pageOne.Content.ReadAsByteArrayAsync();
+        var second = await fixture.Client.GetByteArrayAsync(pages + "/2");
+        byte[] pngSignature = [137, 80, 78, 71, 13, 10, 26, 10];
+        Assert.True(first.AsSpan().StartsWith(pngSignature));
+        Assert.True(second.AsSpan().StartsWith(pngSignature));
+        Assert.False(first.SequenceEqual(second));
+        Assert.Equal(HttpStatusCode.NotFound, (await fixture.Client.GetAsync(pages + "/0")).StatusCode);
+        Assert.Equal(HttpStatusCode.NotFound, (await fixture.Client.GetAsync(pages + "/3")).StatusCode);
+        Assert.Equal(HttpStatusCode.NotFound, (await fixture.Client.GetAsync(
+            $"/api/admin/reception-sheets/{Guid.NewGuid()}/pdfs/{pdf.Id}/pages/1")).StatusCode);
+        Assert.Equal(1, fixture.Generator.Calls);
     }
 
     [Fact]
@@ -295,6 +333,7 @@ public sealed class ReceptionSheetPdfArchiveTests
     {
         private int calls;
         public int Calls => Volatile.Read(ref calls);
+        public GeneratedReceptionSheetPdf? Output { get; set; }
         public TaskCompletionSource Started { get; private set; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
         public TaskCompletionSource Resume { get; private set; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
 
@@ -313,7 +352,7 @@ public sealed class ReceptionSheetPdfArchiveTests
             {
                 Encoder = System.Text.Encodings.Web.JavaScriptEncoder.UnsafeRelaxedJsonEscaping,
             });
-            return new(Encoding.UTF8.GetBytes("%PDF-test\n" + snapshotJson), 1);
+            return Output ?? new(Encoding.UTF8.GetBytes("%PDF-test\n" + snapshotJson), 1);
         }
     }
 
