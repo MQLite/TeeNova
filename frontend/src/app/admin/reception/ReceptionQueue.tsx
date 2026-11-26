@@ -8,8 +8,8 @@ import { displayAmount } from './SheetAmounts'
 
 const headings: Record<Stage, string> = {Preparing: '待完成工单', Ready: '已做完 · 未取走', Collected: '已取走工单'}
 
-function QueueColumn({stage, date, search, onOpen, disabled}: {
-  stage: Stage; date: string; search: string; onOpen: (id: string) => void; disabled: boolean
+function QueueColumn({stage, date, search, onOpen, openingId, disabled}: {
+  stage: Stage; date: string; search: string; openingId?: string; onOpen: (id: string) => void; disabled: boolean
 }) {
   const [offset, setOffset] = useState(0)
   const [retry, setRetry] = useState(0)
@@ -33,8 +33,9 @@ function QueueColumn({stage, date, search, onOpen, disabled}: {
     {page?.items.map((sheet, i) => <div key={sheet.id}>
       {(i === 0 || page.items[i-1].pickupDate !== sheet.pickupDate) && <h4 className="rc-date">{sheet.pickupDate || '可取日期待定'}
         {stage === 'Preparing' && sheet.pickupDate && sheet.pickupDate < today && ' · 逾期'}</h4>}
-      <button className="rc-ticket" disabled={disabled} onClick={() => onOpen(sheet.id)}>
-        <span><strong>{sheet.customer || '未填写姓名'}</strong><small>#{sheet.id.slice(0,8)}</small></span>
+      <button className="rc-ticket" aria-busy={sheet.id === openingId || undefined}
+        disabled={openingId ? sheet.id === openingId : disabled} onClick={() => onOpen(sheet.id)}>
+        <span><strong>{sheet.customer || '未填写姓名'}</strong><small>#{sheet.id.slice(0,8)}{sheet.id === openingId && ' · 正在打开…'}</small></span>
         <span>总价 {displayAmount(sheet.totalPrice)}<small>订金 {displayAmount(sheet.deposit)}</small></span>
       </button>
       {!!sheet.artwork?.length && <div className="art-strip" aria-label="关联设计稿">{sheet.artwork.map(file =>
@@ -46,8 +47,8 @@ function QueueColumn({stage, date, search, onOpen, disabled}: {
   </section>
 }
 
-export function ReceptionQueue({onOpen, onNew, disabled, active}: {
-  onOpen: (id: string) => void; onNew: () => void; disabled: boolean; active: boolean
+export function ReceptionQueue({onOpen, onNew, disabled, active, openingId}: {
+  onOpen: (id: string) => void; onNew: () => void; disabled: boolean; active: boolean; openingId?: string
 }) {
   const [text, setText] = useState('')
   const [search, setSearch] = useState('')
@@ -58,7 +59,7 @@ export function ReceptionQueue({onOpen, onNew, disabled, active}: {
     return () => clearTimeout(timer)
   }, [text])
   const column = (stage: Stage) => <QueueColumn key={JSON.stringify([stage,date,search])} stage={stage}
-    date={date} search={search} onOpen={onOpen} disabled={disabled}/>
+    date={date} search={search} onOpen={onOpen} openingId={openingId} disabled={disabled}/>
   if (!active) return null
   return <section><div className="rc-heading"><h1>工单总览</h1>
     <button className="rc-primary" disabled={disabled} onClick={onNew}>新建接待工单</button></div>

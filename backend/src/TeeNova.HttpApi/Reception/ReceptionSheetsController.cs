@@ -39,7 +39,7 @@ public class ReceptionSheetsController(IRepository<ReceptionSheet, Guid> sheets,
         MaterialDetails? Materials = null);
     public record MaterialFile(Guid Id, string Name, string ContentType, int? PageCount, bool Expired, long ByteSize);
     public record MaterialDetails(Guid ImportId, Guid[] DocumentIds, string Description, MaterialFile[] Files);
-    public record StageInput([Required] string Stage, string? Version = null);
+    public record StageInput([Required] string Stage, string? Version = null, bool ManualAdjustment = false);
     private async Task<SheetDto> DescribeAsync(ReceptionSheet s, CancellationToken ct)
     {
         MaterialDetails? details = null;
@@ -205,9 +205,10 @@ public class ReceptionSheetsController(IRepository<ReceptionSheet, Guid> sheets,
     {
         var sheet = await sheets.GetAsync(id, cancellationToken: ct);
         if (!Enum.TryParse<ReceptionStage>(input.Stage, out var next) || !Enum.IsDefined(next)) return BadRequest();
+        if (input.ManualAdjustment && string.IsNullOrWhiteSpace(input.Version)) return BadRequest();
         if (input.Version != null && sheet.ConcurrencyStamp != input.Version)
             return Conflict(new { message = "工单已更新，请重新载入。" });
-        if (!sheet.TryAdvance(next)) return Conflict(new { message = "Refresh the queue to see this sheet’s current stage." });
+        if (!sheet.TryAdvance(next, input.ManualAdjustment)) return Conflict(new { message = "Refresh the queue to see this sheet’s current stage." });
         await sheets.UpdateAsync(sheet, autoSave: true, cancellationToken: ct);
         return Ok(await DescribeAsync(sheet, ct));
     }

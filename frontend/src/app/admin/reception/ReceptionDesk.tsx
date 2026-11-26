@@ -21,7 +21,7 @@ import { useReceptionMaterials } from './useReceptionMaterials'
 import { ReceptionQueue } from './ReceptionQueue'
 import { RecognitionReview, WorksheetValue } from './RecognitionReview'
 import { OriginalText, StoredOriginalText, TextEditor, useTextOriginal } from './TextOriginal'
-import { advanceSheet, fetchSheet, generateSheetPdf, saveSheet, stages, type SavedSheet, type SheetPdf } from './sheets'
+import { advanceSheet, fetchSheet, generateSheetPdf, saveSheet, stages, type SavedSheet, type SheetPdf, type Stage } from './sheets'
 import { displayAmount, SheetAmounts } from './SheetAmounts'
 import { ApiError } from '@/lib/api-client'
 import { formatNzDate } from '@/lib/datetime'
@@ -58,7 +58,8 @@ function reviewMaterialNotes(notes: RecognitionSourceNote[]) {
 export function ReceptionDesk({ initialSheet }: { initialSheet?: string } = {}) {
   const openedFromLink = useRef<string>()
   const openAttempt = useRef(0)
-  const [deletedMessage, setDeletedMessage] = useState('')
+  const [openingId, setOpeningId] = useState<string>()
+  const [queueMessage, setQueueMessage] = useState('')
   const [view, setView] = useState<'write' | 'review' | 'queue'>('queue')
   const activeView = useRef(view)
   activeView.current = view
@@ -395,11 +396,12 @@ export function ReceptionDesk({ initialSheet }: { initialSheet?: string } = {}) 
   function newSheet() {
     if (dirty &&
         !window.confirm('开始下一张将清空当前未保存的手稿和摘要，是否继续？')) return
-    setDeletedMessage('')
+    setQueueMessage('')
     resetSheet()
   }
   function resetSheet() {
     openAttempt.current++
+    setOpeningId(undefined)
     controller.current?.abort()
     controller.current = undefined
     setPendingRecognition(undefined)
@@ -430,7 +432,7 @@ export function ReceptionDesk({ initialSheet }: { initialSheet?: string } = {}) 
     finally { setBusy('') }
   }
   const open = useCallback(async (id: string) => {
-    setDeletedMessage('')
+    setQueueMessage('')
     if (dirty && !window.confirm('打开已保存版本会替换当前未保存的修改，是否继续？')) return
     const attempt = ++openAttempt.current
     controller.current?.abort()
@@ -439,6 +441,7 @@ export function ReceptionDesk({ initialSheet }: { initialSheet?: string } = {}) 
     pdfAttempt.current = undefined
     setSaveState('idle'); setPdfPending(false); setPdfError(''); setGeneratedPdfs([]); setPreviewPdf(undefined)
     setRecognitionFailed(false)
+    setOpeningId(id)
     setBusy('正在打开工单…')
     setError('')
     try {
@@ -470,20 +473,23 @@ export function ReceptionDesk({ initialSheet }: { initialSheet?: string } = {}) 
     } catch (e) {
       if (openAttempt.current === attempt) setError(e instanceof Error ? e.message : '打开失败。')
     }
-    finally { if (openAttempt.current === attempt) setBusy('') }
+    finally {
+      if (openAttempt.current === attempt) { setOpeningId(undefined); setBusy('') }
+    }
   }, [dirty, openTextSource, openMaterialSource, resetMaterialTabs])
   useEffect(() => {
     if (!initialSheet || openedFromLink.current === initialSheet) return
     openedFromLink.current = initialSheet
     void open(initialSheet)
   }, [initialSheet, open])
-  async function advance() {
-    if (!record || busy || dirty || record.stage === 'Collected') return
+  async function changeStage(stage: Stage) {
+    if (!record || busy || dirty || conflict || stage === record.stage) return
     editRevision.current++
     setBusy('正在更新状态…')
     setError('')
     try {
-      setRecord(await advanceSheet(record.id, record.stage === 'Preparing' ? 'Ready' : 'Collected', record.version))
+      setRecord(await advanceSheet(record.id, stage, record.version))
+      setQueueMessage('工单 #' + record.id.slice(0, 8) + ' 已更新为「' + stages[stage] + '」。')
       setView('queue')
     } catch (e) {
       setError(e instanceof Error ? e.message : '状态更新失败。')
@@ -634,6 +640,8 @@ export function ReceptionDesk({ initialSheet }: { initialSheet?: string } = {}) 
           <div className="rc-detail-title"><h1>{record ? '编辑工作单' : '核对工作单'}</h1>
             <span className="rc-sheet-state" data-tone={saveTone} aria-live="polite">{displayState}</span></div>
           <div className="rc-actions">
+            {record && <StageControl key={record.id + record.version} stage={record.stage}
+              disabled={!!busy || dirty || conflict} dirty={dirty} onChange={changeStage}/>}
             <button disabled={!!busy || !dirty || !canSave} onClick={() => requestSave()}>{record ? '保存修改' : '保存到取货列表'}</button>
             <button className="rc-primary" disabled={!!busy || pdfPending || !canSave} onClick={() => requestSave(true)}>打印 / 保存 A4 PDF</button>
           </div>
@@ -678,17 +686,15 @@ export function ReceptionDesk({ initialSheet }: { initialSheet?: string } = {}) 
           {record && <DeleteSheetButton sheet={record} disabled={!!busy} dirty={dirty}
             onDeleted={() => {
               if (initialSheet === record.id) window.history.replaceState(window.history.state, '', '/admin/reception')
-              setDeletedMessage('已删除工单 #' + record.id.slice(0, 8))
+              setQueueMessage('已删除工单 #' + record.id.slice(0, 8))
               resetSheet(); setView('queue')
             }} />}
           <button disabled={!!busy} onClick={newSheet}>开始下一张</button>
-          {record && record.stage !== 'Collected' && <button disabled={dirty || !!busy} onClick={() => void advance()}>
-            {record.stage === 'Preparing' ? '标为已做好' : '登记已取货'}</button>}
         </div>
       </section>}
-      {view === 'queue' && deletedMessage && <p role="status">{deletedMessage}</p>}
+      {view === 'queue' && queueMessage && <p role="status">{queueMessage}</p>}
       {view === 'queue' && <PendingNotice />}
-      <ReceptionQueue onOpen={id => void open(id)} onNew={newSheet} disabled={!!busy} active={view === 'queue'}/>
+      <ReceptionQueue openingId={openingId} onOpen={id => void open(id)} onNew={newSheet} disabled={!!busy} active={view === 'queue'}/>
     </div>
     {materialPreview && <MaterialPreview target={materialPreview} description={materials.description} onClose={() => setMaterialPreview(undefined)}/>}
   </div>
@@ -722,5 +728,18 @@ function OriginalPhoto({ url, handwriting = false, compact = false }: { url: str
         <img src={src} alt={title} />
       </div>
     </ReceptionPreview>}
+  </div>
+}
+
+function StageControl({stage, disabled, dirty, onChange}: {
+  stage: Stage; disabled: boolean; dirty: boolean; onChange: (next: Stage) => void
+}) {
+  const [next, setNext] = useState(stage)
+  return <div className="rc-stage-control">
+    <label>工单状态<select disabled={disabled} value={next} onChange={e => setNext(e.target.value as Stage)}>
+      {Object.entries(stages).map(([value, label]) => <option key={value} value={value}>{label}</option>)}
+    </select></label>
+    {next !== stage && <button type="button" disabled={disabled} onClick={() => onChange(next)}>确认更改状态</button>}
+    {dirty && <small>请先保存修改，再调整状态。</small>}
   </div>
 }

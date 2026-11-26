@@ -5,6 +5,19 @@ namespace TeeNova.Tests.Reception;
 public class ReceptionSheetTests
 {
     [Fact]
+    public void Manual_adjustment_can_correct_pickup_but_cannot_delete_or_reopen_deleted_sheets()
+    {
+        var sheet = new ReceptionSheet(Guid.NewGuid(), "QA", "", null, "");
+        Assert.True(sheet.TryAdvance(ReceptionStage.Collected, manualAdjustment: true));
+        Assert.True(sheet.TryAdvance(ReceptionStage.Ready, manualAdjustment: true));
+        Assert.True(sheet.TryAdvance(ReceptionStage.Preparing, manualAdjustment: true));
+        Assert.False(sheet.TryAdvance(ReceptionStage.Deleted, manualAdjustment: true));
+        Assert.Equal(ReceptionStage.Preparing, sheet.Stage);
+        sheet.MarkDeleted();
+        Assert.False(sheet.TryAdvance(ReceptionStage.Ready, manualAdjustment: true));
+    }
+
+    [Fact]
     public void Source_photo_can_be_replaced_and_survives_work_order_edits()
     {
         var sheet = new ReceptionSheet(Guid.NewGuid(), "", "", null, "");

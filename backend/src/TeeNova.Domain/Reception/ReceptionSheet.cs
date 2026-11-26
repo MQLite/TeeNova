@@ -84,10 +84,12 @@ public class ReceptionSheet : AuditedAggregateRoot<Guid>
 
     public void MarkDeleted() => Stage = ReceptionStage.Deleted;
 
-    public bool TryAdvance(ReceptionStage next)
+    public bool TryAdvance(ReceptionStage next, bool manualAdjustment = false)
     {
+        if (Stage == ReceptionStage.Deleted || next is not (ReceptionStage.Preparing or ReceptionStage.Ready or ReceptionStage.Collected))
+            return false;
         if (Stage == next) return true;
-        if ((Stage, next) is not ((ReceptionStage.Preparing, ReceptionStage.Ready)
+        if (!manualAdjustment && (Stage, next) is not ((ReceptionStage.Preparing, ReceptionStage.Ready)
             or (ReceptionStage.Ready, ReceptionStage.Collected))) return false;
         Stage = next;
         return true;

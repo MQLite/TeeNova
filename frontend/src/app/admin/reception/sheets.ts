@@ -19,7 +19,7 @@ export const saveSheet = (id: string, sheet: Worksheet & { printEstimate?: strin
 export const fetchQueue = (stage: Stage, pickupDate: string, search: string, offset: number, signal: AbortSignal) =>
   adminApiClient.get<{ items: SheetSummary[]; hasMore: boolean }>(path, { stage, pickupDate: pickupDate || undefined, search: search || undefined, offset }, { signal })
 export const advanceSheet = (id: string, stage: Stage, version: string) =>
-  adminApiClient.put<SavedSheet>(path + '/' + id + '/stage', { stage, version })
+  adminApiClient.put<SavedSheet>(path + '/' + id + '/stage', { stage, version, manualAdjustment: true })
 
 export type SheetPdf = { id: string; version: string; pages: number; createdAt: string; isCurrent: boolean }
 

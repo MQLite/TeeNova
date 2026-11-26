@@ -192,3 +192,8 @@
   .rc-detail .rc-group-actions > :last-child { margin-inline-start: auto; }
   .rc-detail .rc-text-original pre { max-height: 148px; }
 }
+
+.rc-stage-control, .rc-stage-control label { display: inline-flex; align-items: center; flex-wrap: wrap; gap: 6px; }
+.rc-stage-control select { min-height: 44px; padding: 4px 8px; border: 1px solid var(--border-control); border-radius: 8px; background: var(--surface); color: var(--ink); }
+.reception-desk .rc-ticket { touch-action: manipulation; user-select: none; -webkit-user-select: none; }
+.reception-desk .rc-ticket[aria-busy=true] { background: var(--surface-sunken); color: var(--ink); box-shadow: inset 3px 0 var(--action); }
