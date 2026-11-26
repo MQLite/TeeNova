@@ -1,6 +1,7 @@
 using System.ComponentModel.DataAnnotations;
 using System.Text.RegularExpressions;
 using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
@@ -20,9 +21,8 @@ namespace TeeNova.Reception;
 public sealed class GmailReceptionController(IRepository<ReceptionSheet, Guid> sheets, IConfiguration config,
     IHostEnvironment environment, IOptions<PrivateObjectStorageOptions> storageOptions) : TeeNovaControllerBase
 {
-    private const int MaxBytes = 8 * 1024 * 1024;
-    private GmailArtworkStore Store => GmailArtworkStore.Configured(config, environment, storageOptions)
-        ?? throw new InvalidOperationException("Gmail storage is not configured.");
+    private const int MaxBytes = ManualArtworkUpload.MaxBytes;
+    private GmailArtworkStore Store => GmailArtworkStore.Configured(config, environment, storageOptions);
 
     [HttpGet("sheets"), Authorize(Policy = "GmailReception")]
     public Task<IActionResult> Search([FromQuery, Required, StringLength(160, MinimumLength = 2)] string search, CancellationToken ct) => SearchSheets(search, ct);
@@ -50,6 +50,36 @@ public sealed class GmailReceptionController(IRepository<ReceptionSheet, Guid> s
 
     [HttpPost("pending"), Authorize(Policy = "GmailReception"), RequestSizeLimit(MaxBytes + 65536)]
     public Task<IActionResult> ReceivePending(CancellationToken ct) => Receive(Guid.Empty, ct);
+
+    [HttpPost("pending/upload"), Authorize(Roles = TeeNovaRoles.Admin), RequestSizeLimit(MaxBytes + 65536)]
+    public Task<IActionResult> UploadPending(CancellationToken ct) => Upload(Guid.Empty, ct);
+
+    [HttpPost("sheets/{id:guid}/attachments/upload"), Authorize(Roles = TeeNovaRoles.Admin), RequestSizeLimit(MaxBytes + 65536)]
+    public async Task<IActionResult> UploadToSheet(Guid id, CancellationToken ct)
+    {
+        if (id == Guid.Empty || await sheets.FindAsync(id, cancellationToken: ct) == null)
+            return NotFound(new { message = "找不到这张工单，请刷新后重试。" });
+        return await Upload(id, ct);
+    }
+
+    private async Task<IActionResult> Upload(Guid sheet, CancellationToken ct)
+    {
+        if (!Request.HasFormContentType) return BadRequest(new { message = "请选择要上传的文件。" });
+        IFormCollection form;
+        try { form = await Request.ReadFormAsync(ct); }
+        catch (InvalidDataException) { return BadRequest(new { message = "上传数据不完整或过大，请重新选择文件。" }); }
+        catch (BadHttpRequestException e) when (e.StatusCode == StatusCodes.Status413PayloadTooLarge)
+        {
+            return StatusCode(e.StatusCode, new { message = "每次上传的文件合计不能超过 8 MiB。" });
+        }
+        ManualArtworkUpload upload;
+        try { upload = await ManualArtworkUpload.Read(form, ct); }
+        catch (InvalidDataException e) { return BadRequest(new { message = e.Message }); }
+
+        var result = Store.SaveUpload(sheet, upload.Id, upload.Files);
+        if (result.Conflict) return Conflict(new { message = "工单或上传内容已改变，请刷新后重新选择文件。" });
+        return Ok(new { result.SheetId, result.Added, count = upload.Files.Count });
+    }
 
     private async Task<IActionResult> Receive(Guid id, CancellationToken ct)
     {
@@ -101,9 +131,9 @@ public sealed class GmailReceptionController(IRepository<ReceptionSheet, Guid> s
     [HttpGet("pending/notice"), Authorize(Roles = TeeNovaRoles.Admin)]
     public async Task<IActionResult> PendingNotice(CancellationToken ct)
     {
-        var store = GmailArtworkStore.Configured(config, environment, storageOptions);
-        if (store != null) await RecoverReturns(store, ct);
-        var (count, latest) = store?.PendingNotice() ?? (0L, 0L);
+        var store = Store;
+        await RecoverReturns(store, ct);
+        var (count, latest) = store.PendingNotice();
         return Ok(new { count, latest });
     }
 
@@ -175,15 +205,13 @@ public sealed class GmailReceptionController(IRepository<ReceptionSheet, Guid> s
     public async Task<IActionResult> List(Guid id, CancellationToken ct)
     {
         if (await sheets.FindAsync(id, cancellationToken: ct) == null) return NotFound();
-        if (string.IsNullOrWhiteSpace(config["GmailReception:PrivateDirectory"])) return Ok(Array.Empty<GmailFileInfo>());
         return Ok(Store.List(id));
     }
 
     [HttpGet("sheets/{id:guid}/attachments/{fileId:guid}"), Authorize(Roles = TeeNovaRoles.Admin)]
     public async Task<IActionResult> Content(Guid id, Guid fileId, CancellationToken ct)
     {
-        if (string.IsNullOrWhiteSpace(config["GmailReception:PrivateDirectory"]) ||
-            await sheets.FindAsync(id, cancellationToken: ct) == null || Store.Read(id, fileId) is not { } file) return NotFound();
+        if (await sheets.FindAsync(id, cancellationToken: ct) == null || Store.Read(id, fileId) is not { } file) return NotFound();
         return PrivateFile(file.Bytes, file.Mime);
     }
 
@@ -205,7 +233,7 @@ public sealed class GmailReceptionController(IRepository<ReceptionSheet, Guid> s
     private async Task<IActionResult> Preview(Guid sheet, Guid file, string variant, CancellationToken ct)
     {
         var data = await GmailArtworkPreview.Get(Store, sheet, file, variant == "thumbnail" ? 320 : 1440,
-            config["GmailReception:PdfRenderer"] ?? "pdftoppm", ct);
+            config["GmailReception:PdfRenderer"] ?? "pdftocairo", ct);
         return data == null ? NotFound() : PrivateFile(data, "image/png");
     }
 
@@ -217,3 +245,4 @@ public sealed class GmailReceptionController(IRepository<ReceptionSheet, Guid> s
         return File(bytes, mime);
     }
 }
+

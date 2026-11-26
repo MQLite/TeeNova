@@ -8,15 +8,15 @@ import type { Worksheet } from './worksheet'
 export interface PhotoSource { importId: string; documentId: string }
 export const MAX_RECEPTION_TEXT_LENGTH = 20_000
 
-export interface CaptureRequest {
+type RecognitionJob = { recognitionKey?: string; retryAttempt?: number }
+
+export interface CaptureRequest extends RecognitionJob {
   key: string
   file?: File
   text?: string
   method?: 'Camera' | 'Upload'
   source?: PhotoSource
   importId?: string
-  recognitionKey?: string
-  retryAttempt?: number
 }
 
 export async function ensureCaptureSource(job: CaptureRequest, signal?: AbortSignal): Promise<PhotoSource> {
@@ -40,17 +40,27 @@ export async function ensureCaptureSource(job: CaptureRequest, signal?: AbortSig
 }
 
 export async function recognizeCapture(job: CaptureRequest, signal: AbortSignal, progress: (text: string) => void) {
-  const options = await getAiOrderRecognitionOptions()
-  const provider = options.providers.find(p => p.id.toLowerCase() === 'openai')
   const isText = job.text !== undefined
-  const models = provider?.models.filter(m => isText || m.supportsImages)
-  const model = models?.find(m => m.id === 'gpt-6.2-sol') ?? models?.[0]
-  if (!options.recognitionEnabled || !provider || !model) {
+  const selected = await receptionModel({ images: !isText, pdfs: false })
+  if (!selected) {
     throw new Error(isText ? '当前没有启用 OpenAI 识别模型，可以直接填写工作单。' : '当前没有启用 OpenAI 图片模型，可以直接填写工作单。')
   }
   signal.throwIfAborted()
   progress(isText ? '正在保存文字原稿…' : '正在保存手稿…')
   const { importId } = await ensureCaptureSource(job, signal)
+  return recognizeReceptionImport<Worksheet>(job, importId, selected, signal, () => progress(isText ? '正在识别文字原稿…' : '正在识别手稿…'))
+}
+
+export async function receptionModel({ images, pdfs }: { images: boolean; pdfs: boolean }) {
+  const options = await getAiOrderRecognitionOptions()
+  const provider = options.providers.find(p => p.id.toLowerCase() === 'openai')
+  const models = provider?.models.filter(m => (!images || m.supportsImages) && (!pdfs || m.supportsPdf))
+  const model = models?.find(m => m.id === 'gpt-6.2-sol') ?? models?.[0]
+  return options.recognitionEnabled && provider && model ? { provider: provider.id, model: model.id } : undefined
+}
+
+export async function recognizeReceptionImport<T extends Worksheet>(job: RecognitionJob, importId: string,
+  selected: { provider: string; model: string }, signal: AbortSignal, recognizing: () => void) {
   signal.throwIfAborted()
   let record = await getAiOrderImport(importId)
   signal.throwIfAborted()
@@ -61,18 +71,19 @@ export async function recognizeCapture(job: CaptureRequest, signal: AbortSignal,
       job.recognitionKey = 'recognize-' + crypto.randomUUID()
       job.retryAttempt = attempt
     }
-    await startAiOrderRecognition(importId, provider.id, model.id, job.recognitionKey!, record.status === 'Failed')
+    await startAiOrderRecognition(importId, selected.provider, selected.model, job.recognitionKey!, record.status === 'Failed')
   }
-  progress(isText ? '正在识别文字原稿…' : '正在识别手稿…')
+  recognizing()
   const deadline = Date.now() + 120_000
   while (Date.now() < deadline) {
     signal.throwIfAborted()
     record = await getAiOrderImport(importId)
+    signal.throwIfAborted()
     if (record.status === 'NeedsReview' || record.status === 'Draft') {
-      const draft = await adminApiClient.get<Omit<Worksheet, 'pickupDate'> & { pickupDate: string | null }>(
+      const draft = await adminApiClient.get<Omit<T, 'pickupDate'> & { pickupDate: string | null }>(
         '/api/admin/reception-sheets/recognition/' + importId, undefined, { signal },
       )
-      return { ...draft, pickupDate: draft.pickupDate ?? '' }
+      return { ...draft, pickupDate: draft.pickupDate ?? '' } as T
     }
     if (record.status === 'Failed' || record.status === 'Cancelled') throw new Error('识别未完成，可以重试或手动填写。')
     await new Promise(resolve => setTimeout(resolve, 2000))

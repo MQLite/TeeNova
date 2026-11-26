@@ -3,6 +3,8 @@
 import { useId, useRef, useState, type ReactNode } from 'react'
 import { deleteSheet, type SavedSheet } from './sheets'
 import { adminApiClient } from '@/lib/admin-client'
+import { ApiError } from '@/lib/api-client'
+import type { Artwork } from './ArtworkPreview'
 import './desk-notice.css'
 
 export function DeleteSheetButton({ sheet, dirty, disabled, onDeleted }: {
@@ -16,19 +18,19 @@ export function DeleteSheetButton({ sheet, dirty, disabled, onDeleted }: {
   </ConfirmDelete>
 }
 
-export function DeleteArtworkButton({ name, path, onDeleted, disabled }: {
-  name: string; path: string; onDeleted: () => void; disabled?: boolean
+export function DeleteArtworkButton({ name, source, path, onDeleted, onConflict, disabled }: {
+  name: string; source?: Artwork['source']; path: string; onDeleted: () => void; onConflict?: () => void; disabled?: boolean
 }) {
   return <ConfirmDelete label="删除设计稿" heading="确认删除这份设计稿？" disabled={disabled}
-    detail="这份设计稿将从网站移除。Gmail 原邮件和附件会保留。"
-    remove={() => adminApiClient.delete<void>(path)} onDeleted={onDeleted}>
+    detail={source === 'upload' ? '这份设计稿将从网站移除。' : '这份设计稿将从网站移除。Gmail 原邮件和附件会保留。'}
+    remove={() => adminApiClient.delete<void>(path)} onConflict={onConflict} onDeleted={onDeleted}>
     <p><strong>{name}</strong></p>
   </ConfirmDelete>
 }
 
-function ConfirmDelete({ label, heading, disabled, onDeleted, detail, remove, children }: {
+function ConfirmDelete({ label, heading, disabled, onDeleted, onConflict, detail, remove, children }: {
   label: string; heading: string; disabled?: boolean; onDeleted: () => void; detail: string;
-  remove: () => Promise<void>; children: ReactNode
+  remove: () => Promise<void>; onConflict?: () => void; children: ReactNode
 }) {
   const id = useId()
   const dialog = useRef<HTMLDialogElement>(null)
@@ -46,6 +48,7 @@ function ConfirmDelete({ label, heading, disabled, onDeleted, detail, remove, ch
       onDeleted()
     } catch (e) {
       setError(e instanceof Error ? e.message : '删除失败，请稍后重试。')
+      if (e instanceof ApiError && e.status === 409) onConflict?.()
     } finally { pending.current = false; setSaving(false) }
   }
   return <>

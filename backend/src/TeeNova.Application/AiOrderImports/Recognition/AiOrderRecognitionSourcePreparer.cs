@@ -1,3 +1,6 @@
+using System.Text;
+using System.Text.Encodings.Web;
+using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
 using TeeNova.AiOrderImports.PrivateStorage;
@@ -9,6 +12,7 @@ namespace TeeNova.AiOrderImports.Recognition;
 
 public sealed class AiOrderRecognitionSourcePreparer : ITransientDependency
 {
+    private static readonly JsonSerializerOptions TextJson = new(JsonSerializerDefaults.Web) { Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping };
     private readonly IRepository<AiOrderSourceDocument, Guid> _sources;
     private readonly IPrivateObjectStorage _privateStorage;
     private readonly AiOrderRecognitionOptions _options;
@@ -35,6 +39,9 @@ public sealed class AiOrderRecognitionSourcePreparer : ITransientDependency
             .ToListAsync(cancellationToken);
         if (sources.Count == 0)
             throw new BusinessException(AiOrderImportErrorCodes.RecognitionRequiresSources);
+        var batch = import.ContractVersion == ReceptionRecognition.BatchContract;
+        if (batch && sources.All(x => ReceptionBatchLimits.IsSupplement(x.OriginalFileName)))
+            throw new BusinessException(AiOrderImportErrorCodes.RecognitionRequiresSources, "Attach at least one order document before recognition.");
         if (sources.Count > _options.MaximumSources ||
             sources.Sum(x => x.ByteSize) > _options.MaximumSourceBytes)
             throw new BusinessException(AiOrderImportErrorCodes.RecognitionSourceLimitExceeded);
@@ -43,7 +50,8 @@ public sealed class AiOrderRecognitionSourcePreparer : ITransientDependency
         {
             var supported = source.ContentType switch
             {
-                "text/plain" => import.ContractVersion == ReceptionRecognition.Contract && selection.ProviderId == "openai",
+                "text/plain" => ReceptionRecognition.IsReceptionContract(import.ContractVersion) && selection.ProviderId == "openai",
+                "text/csv" => batch && selection.ProviderId == "openai",
                 "application/pdf" => selection.SupportsPdf,
                 "image/jpeg" or "image/png" or "image/webp" => selection.SupportsImages,
                 _ => false,
@@ -59,13 +67,15 @@ public sealed class AiOrderRecognitionSourcePreparer : ITransientDependency
             x.ByteSize,
             x.Sha256,
             x.RotationDegrees,
-            x.PageCount)).ToArray();
+            x.PageCount,
+            batch && ReceptionBatchLimits.IsSupplement(x.OriginalFileName))).ToArray();
     }
 
     public async Task<IReadOnlyList<AiOrderRecognitionSource>> PrepareAsync(
         Guid importId,
         IReadOnlyCollection<AiOrderRecognitionSourceDescriptor> snapshot,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        bool receptionBatch = false)
     {
         var query = await _sources.GetQueryableAsync();
         var ids = snapshot.Select(x => x.Id).ToArray();
@@ -101,6 +111,7 @@ public sealed class AiOrderRecognitionSourcePreparer : ITransientDependency
                 _options.MaximumSourceBytes,
                 cancellationToken);
             var contentType = source.ContentType;
+            IReadOnlySet<int>? referenceLines = null;
             if (AiOrderRecognitionImageCompressor.IsSupported(contentType))
             {
                 // Rotation, downscale, and re-encode happen in one decode pass so the
@@ -114,6 +125,24 @@ public sealed class AiOrderRecognitionSourcePreparer : ITransientDependency
                 bytes = image.Content;
                 contentType = image.ContentType;
             }
+            else if (receptionBatch && contentType is ("text/plain" or "text/csv"))
+            {
+                var text = Encoding.UTF8.GetString(bytes);
+                if (contentType == "text/csv")
+                {
+                    var rows = ReceptionDelimitedText.ParseCsv(text);
+                    referenceLines = rows.Select(x => x.Line).ToHashSet();
+                    bytes = JsonSerializer.SerializeToUtf8Bytes(new { header = rows[0], rows = rows.Skip(1) }, TextJson);
+                    contentType = "text/plain";
+                }
+                else
+                {
+                    var lines = ReceptionDelimitedText.Normalize(text).Split('\n');
+                    var numbered = lines.Select((value, line) => new { line = line + 1, text = value }).ToArray();
+                    referenceLines = numbered.Where(x => !string.IsNullOrWhiteSpace(x.text)).Select(x => x.line).ToHashSet();
+                    bytes = JsonSerializer.SerializeToUtf8Bytes(numbered.Where(x => referenceLines.Contains(x.line)), TextJson);
+                }
+            }
 
             payloadBytes += bytes.LongLength;
             if (payloadBytes > _options.MaximumRequestPayloadBytes)
@@ -126,7 +155,9 @@ public sealed class AiOrderRecognitionSourcePreparer : ITransientDependency
                 contentType,
                 bytes,
                 source.Sha256,
-                source.RotationDegrees));
+                source.RotationDegrees,
+                descriptor.IsSupplement,
+                referenceLines));
         }
 
         return prepared;

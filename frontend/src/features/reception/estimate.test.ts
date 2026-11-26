@@ -35,12 +35,17 @@ describe('reception estimates', () => {
     const lines = estimateLines([group('白色'),group('Ⓗ',10),group('PVC Banner',15)],catalogue)
     expect(lines.map(l => [l.productId,l.tierQuantity,l.quantity])).toEqual([[tee.id,18,8],[hoodie.id,18,10]])
   })
-  it('requires a priceable variant, known quantity and complete print specification', () => {
-    expect(() => estimateLines([{...group('Tee'),prints:[{area:'FRONT_CENTER',size:''}]}],catalogue)).toThrow('印花')
+  it('requires a priceable variant and known quantity', () => {
     expect(() => estimateLines([{...group('Tee'),rows:[{size:'M',colour:'Black',quantity:null}]}],catalogue)).toThrow('数量')
     expect(() => estimateLines([group('Tee')],{...catalogue,products:[]})).toThrow('商品目录')
-    expect(() => estimateLines([{...group('Tee'),prints:null}],catalogue)).toThrow('核对印花')
   })
+  it.each([{prints:null}, {prints:[{area:'UNKNOWN',size:'A3'}]}, {prints:[{area:'FRONT_CENTER',size:''}]}])(
+    'requires an explicit pricing choice for unresolved prints %j', ({prints}) => {
+      const area = {id:'front', code:'FRONT_CENTER', name:'正面', basePrice:0, isActive:true, sortOrder:0}
+      expect(() => estimateLines([{...group('Tee'), prints}], {...catalogue,areas:[area]}))
+        .toThrow(/「Tee」.*仅计衣价（不含印花费）.*单独报价/)
+    },
+  )
   it('uses the pricing API line totals and refuses a partial quote', async () => {
     const api = vi.spyOn(pricingApi,'calculateBatch')
     const groups = [group('Tee'),group('Ⓗ')]

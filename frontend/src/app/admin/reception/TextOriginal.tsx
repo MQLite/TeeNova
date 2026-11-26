@@ -97,3 +97,8 @@ export function OriginalText({ value }: { value: TextView }) {
     </div>
   </section>
 }
+
+export function StoredOriginalText({ source }: { source: PhotoSource }) {
+  const value = useStoredText(source)
+  return <OriginalText value={value}/>
+}

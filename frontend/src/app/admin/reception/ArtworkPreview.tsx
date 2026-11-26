@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from 'react'
 import './artwork.css'
 
-export type Artwork = { id: string; name: string; mime: string }
+export type Artwork = { id: string; name: string; mime: string; source?: 'gmail' | 'upload' }
 export const sheetArtworkPath = (id: string) => '/api/proxy/api/gmail-reception/sheets/' + id + '/attachments'
 
 export function ArtworkPreview({ file, base, compact = false }: { file: Artwork; base: string; compact?: boolean }) {

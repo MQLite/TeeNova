@@ -404,17 +404,27 @@ public sealed class OpenAiOrderRecognitionProvider :
         var provider = ProviderOptions(ProviderId);
         var receptionText = request.ContractVersion == ReceptionRecognition.Contract &&
                             request.PromptVersion == ReceptionRecognition.TextPromptVersion;
+        var receptionBatch = request.ContractVersion == ReceptionRecognition.BatchContract;
         var content = new JsonArray();
-        if (!receptionText)
+        if (!receptionText && !receptionBatch)
             content.Add(new JsonObject { ["type"] = "input_text", ["text"] = request.Prompt });
+        var duplicateSources = new Dictionary<(string Hash, int Rotation, bool Supplement), Guid>();
         foreach (var source in request.OrderedSourceDocuments)
         {
+            var evidenceKey = (source.Sha256, source.RotationDegrees, source.IsSupplement);
+            if (receptionBatch && duplicateSources.TryGetValue(evidenceKey, out var equivalent))
+            {
+                content.Add(new JsonObject { ["type"] = "input_text",
+                    ["text"] = $"Source {source.Sequence} — sourceDocumentId: {source.SourceDocumentId}. Identical content to {equivalent}. Do not count its contents again." });
+                continue;
+            }
+            if (receptionBatch) duplicateSources.Add(evidenceKey, source.SourceDocumentId);
             content.Add(new JsonObject
             {
                 ["type"] = "input_text",
-                ["text"] = AttachmentLabel(source),
+                ["text"] = AttachmentLabel(source) + (source.IsSupplement ? " This is the staff's supplemental description." : ""),
             });
-            if (source.ContentType == "text/plain" && receptionText)
+            if (source.ContentType == "text/plain" && (receptionText || receptionBatch))
             {
                 content.Add(new JsonObject
                 {
@@ -456,14 +466,14 @@ public sealed class OpenAiOrderRecognitionProvider :
                 ["format"] = new JsonObject
                 {
                     ["type"] = "json_schema",
-                    ["name"] = request.ContractVersion == ReceptionRecognition.Contract
+                    ["name"] = receptionBatch ? "tee_nova_reception_batch_v1" : request.ContractVersion == ReceptionRecognition.Contract
                         ? "tee_nova_reception_worksheet_v1" : "tee_nova_ai_order_extraction_v1",
                     ["strict"] = true,
                     ["schema"] = OpenAiStrictSchema.Sanitize(request.JsonSchema),
                 },
             },
         };
-        if (receptionText)
+        if (receptionText || receptionBatch)
             body["instructions"] = request.Prompt;
         var uri = new Uri(new Uri(provider.BaseUrl.TrimEnd('/') + "/"), "v1/responses");
         using var httpRequest = new HttpRequestMessage(HttpMethod.Post, uri);
@@ -471,7 +481,7 @@ public sealed class OpenAiOrderRecognitionProvider :
         httpRequest.Headers.Add("Idempotency-Key", request.AttemptId.ToString("N"));
         httpRequest.Content = JsonContent(body);
         // Provider error bodies can quote the customer's pasted message.
-        var response = await SendAsync(ProviderId, httpRequest, cancellationToken, includeErrorBody: !receptionText);
+        var response = await SendAsync(ProviderId, httpRequest, cancellationToken, includeErrorBody: !receptionText && !receptionBatch);
         using var document = Parse(response.Body);
         var root = document.RootElement;
         var output = ReadAnswer(root);

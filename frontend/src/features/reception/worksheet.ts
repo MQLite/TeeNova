@@ -26,8 +26,13 @@ export function hasSheetContent(sheet: Worksheet) {
   return Boolean(sheet.customer.trim() || sheet.phone.trim() || sheet.pickupDate ||
     sheet.instructions.trim() || sheet.layout?.groups.length || sheet.totalPrice != null || sheet.deposit != null)
 }
-export function validSheetHeadings(sheet: Worksheet) {
-  return !sheet.layout || Boolean(sheet.layout.title.trim() && sheet.layout.groups.every(g => g.heading.trim()))
+export function missingSheetHeadings(layout?: PrintLayout | null): string[] {
+  if (!layout) return []
+  const missing = layout.title.trim() ? [] : ['工作单标题']
+  layout.groups.forEach((group, index) => {
+    if (!group.heading.trim()) missing.push(`第 ${index + 1} 个服装分组的名称`)
+  })
+  return missing
 }
 
 export function totalPieces(rows: SizeRow[]) {

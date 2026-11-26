@@ -1,3 +1,5 @@
+using System.Security.Cryptography;
+using System.Text.Json;
 using Microsoft.Data.Sqlite;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Hosting;
@@ -7,18 +9,25 @@ using TeeNova.AiOrderImports.PrivateStorage;
 namespace TeeNova.Reception;
 
 internal sealed record GmailFile(int Slot, string Name, string Mime, byte[] Bytes);
-internal sealed record GmailFileInfo(string Id, string Name, string Mime);
+internal sealed record GmailFileInfo(string Id, string Name, string Mime, string Source);
 internal sealed record GmailSaveResult(bool Conflict, Guid SheetId, int Added);
 internal sealed record GmailOrigin(string Sender, string Subject, DateTimeOffset Received);
-internal sealed record PendingArtwork(Guid Id, string Name, string Sender, string Subject, string Received, string? NewCustomer, string Mime);
+internal sealed record PendingArtwork(Guid Id, string Name, string Sender, string Subject, string Received, string? NewCustomer, string Mime, string Source);
 
 // One private database per installation. A batch is committed together and one email
 // attachment can belong to at most one sheet, including during concurrent retries.
 internal sealed class GmailArtworkStore(string root)
 {
-    internal static GmailArtworkStore? Configured(IConfiguration config, IHostEnvironment host, IOptions<PrivateObjectStorageOptions> options) =>
-        string.IsNullOrWhiteSpace(config["GmailReception:PrivateDirectory"]) ? null : new(
-            LocalPrivateObjectStorage.PreparePrivateDirectory(host.ContentRootPath, config["GmailReception:PrivateDirectory"]!, options.Value.ForbiddenPathPrefixes));
+    private const string UploadMailbox = "local-upload";
+
+    internal static GmailArtworkStore Configured(IConfiguration config, IHostEnvironment host, IOptions<PrivateObjectStorageOptions> options)
+    {
+        var path = config["GmailReception:PrivateDirectory"];
+        if (string.IsNullOrWhiteSpace(path)) path = "App_Data/private/reception-artwork";
+        return new(LocalPrivateObjectStorage.PreparePrivateDirectory(host.ContentRootPath, path, options.Value.ForbiddenPathPrefixes));
+    }
+
+    private static string Source(string mailbox) => mailbox == UploadMailbox ? "upload" : "gmail";
 
     private SqliteConnection Open()
     {
@@ -38,6 +47,8 @@ internal sealed class GmailArtworkStore(string root)
                     Mime TEXT NOT NULL, Content BLOB NOT NULL, UNIQUE(Mailbox, Message, Slot));
                 CREATE INDEX IF NOT EXISTS ArtworkSheet ON Artwork(Sheet);
                 CREATE TABLE IF NOT EXISTS RetiredSheet(Id TEXT PRIMARY KEY);
+                CREATE TABLE IF NOT EXISTS ManualUpload(
+                    Id TEXT PRIMARY KEY, Sheet TEXT NOT NULL, Fingerprint BLOB NOT NULL);
                 CREATE TABLE IF NOT EXISTS ArtworkPreview(
                     FileId TEXT NOT NULL, Width INTEGER NOT NULL, Png BLOB NOT NULL, PRIMARY KEY(FileId,Width));
                 CREATE TABLE IF NOT EXISTS PendingMail(
@@ -51,10 +62,40 @@ internal sealed class GmailArtworkStore(string root)
     }
 
     public GmailSaveResult Save(Guid sheet, string mailbox, string message, IReadOnlyList<GmailFile> files, GmailOrigin? origin = null)
+        => SaveBatch(sheet, mailbox, message, files, origin, null);
+
+    public GmailSaveResult SaveUpload(Guid sheet, Guid uploadId, IReadOnlyList<GmailFile> files)
     {
-        if ((sheet == Guid.Empty) != (origin != null)) throw new ArgumentException("Pending artwork requires email details.");
+        var manifest = files.OrderBy(f => f.Slot).Select(f => new { f.Slot, f.Name, f.Mime, Hash = SHA256.HashData(f.Bytes) });
+        var fingerprint = SHA256.HashData(JsonSerializer.SerializeToUtf8Bytes(manifest));
+        var origin = sheet == Guid.Empty ? new GmailOrigin("本地上传", "", DateTimeOffset.UtcNow) : null;
+        return SaveBatch(sheet, UploadMailbox, uploadId.ToString(), files, origin, fingerprint);
+    }
+
+    private GmailSaveResult SaveBatch(Guid sheet, string mailbox, string message, IReadOnlyList<GmailFile> files, GmailOrigin? origin, byte[]? fingerprint)
+    {
+        if ((sheet == Guid.Empty) != (origin != null)) throw new ArgumentException("Pending artwork requires origin details.");
         using var db = Open();
         using var tx = db.BeginTransaction(deferred: false);
+        if (fingerprint != null)
+        {
+            // Keep the receipt after a file is linked, returned or removed. A delayed retry
+            // can acknowledge its original upload without recreating or moving any artwork.
+            using var receipt = db.CreateCommand();
+            receipt.Transaction = tx;
+            receipt.Parameters.AddWithValue("$id", message);
+            receipt.Parameters.AddWithValue("$sheet", sheet.ToString());
+            receipt.Parameters.AddWithValue("$hash", fingerprint);
+            receipt.CommandText = "INSERT OR IGNORE INTO ManualUpload(Id,Sheet,Fingerprint) VALUES($id,$sheet,$hash)";
+            if (receipt.ExecuteNonQuery() == 0)
+            {
+                receipt.CommandText = "SELECT Sheet, Fingerprint=$hash FROM ManualUpload WHERE Id=$id";
+                using var existing = receipt.ExecuteReader();
+                existing.Read();
+                var initialSheet = Guid.Parse(existing.GetString(0));
+                return new(initialSheet != sheet || !existing.GetBoolean(1), initialSheet, 0);
+            }
+        }
         using var retired = db.CreateCommand();
         retired.Transaction = tx;
         retired.CommandText = "SELECT 1 FROM RetiredSheet WHERE Id=$sheet";
@@ -113,14 +154,15 @@ internal sealed class GmailArtworkStore(string root)
         using var db = Open();
         using var cmd = db.CreateCommand();
         cmd.CommandText = """
-            SELECT Id,Name,Sender,Subject,Received,NewCustomer,Mime FROM Artwork
+            SELECT Id,Name,Sender,Subject,Received,NewCustomer,Mime,Mailbox FROM Artwork
             JOIN PendingMail ON ArtworkId=Id WHERE Sheet=$pending ORDER BY Received DESC,Id
             """;
         cmd.Parameters.AddWithValue("$pending", Guid.Empty.ToString());
         using var rows = cmd.ExecuteReader();
         var result = new List<PendingArtwork>();
         while (rows.Read()) result.Add(new(Guid.Parse(rows.GetString(0)), rows.GetString(1),
-            rows.GetString(2), rows.GetString(3), rows.GetString(4), rows.IsDBNull(5) ? null : rows.GetString(5), rows.GetString(6)));
+            rows.GetString(2), rows.GetString(3), rows.GetString(4), rows.IsDBNull(5) ? null : rows.GetString(5), rows.GetString(6),
+            rows.GetString(2).Length == 0 ? "return" : Source(rows.GetString(7))));
         return result;
     }
 
@@ -162,11 +204,11 @@ internal sealed class GmailArtworkStore(string root)
     {
         using var db = Open();
         using var cmd = db.CreateCommand();
-        cmd.CommandText = "SELECT Id,Name,Mime FROM Artwork WHERE Sheet=$sheet ORDER BY rowid";
+        cmd.CommandText = "SELECT Id,Name,Mime,Mailbox FROM Artwork WHERE Sheet=$sheet ORDER BY rowid";
         cmd.Parameters.AddWithValue("$sheet", sheet.ToString());
         using var rows = cmd.ExecuteReader();
         var files = new List<GmailFileInfo>();
-        while (rows.Read()) files.Add(new(rows.GetString(0), rows.GetString(1), rows.GetString(2)));
+        while (rows.Read()) files.Add(new(rows.GetString(0), rows.GetString(1), rows.GetString(2), Source(rows.GetString(3))));
         return files;
     }
 
@@ -205,12 +247,15 @@ internal sealed class GmailArtworkStore(string root)
         using (var rows = cmd.ExecuteReader()) while (rows.Read()) files.Add(rows.GetString(0));
         cmd.Parameters.AddWithValue("$subject", $"从已删除工单 #{sheet.ToString()[..8]} 退回");
         cmd.Parameters.AddWithValue("$now", DateTime.UtcNow.ToString("O"));
+        cmd.Parameters.AddWithValue("$uploadMailbox", UploadMailbox);
         var old = cmd.Parameters.Add("$old", SqliteType.Text);
         var next = cmd.Parameters.Add("$next", SqliteType.Text);
         // A fresh intake ID invalidates stale actions and allows opening another new order
         // even when the previous order was originally created from this same attachment.
         cmd.CommandText = """
             INSERT OR IGNORE INTO PendingMail(ArtworkId,Sender,Subject,Received) VALUES($old,'',$subject,$now);
+            UPDATE PendingMail SET Sender='',Subject=$subject,Received=$now WHERE ArtworkId=$old
+                AND EXISTS(SELECT 1 FROM Artwork WHERE Id=$old AND Mailbox=$uploadMailbox);
             UPDATE PendingMail SET ArtworkId=$next,NewCustomer=NULL WHERE ArtworkId=$old;
             UPDATE ArtworkPreview SET FileId=$next WHERE FileId=$old;
             UPDATE Artwork SET rowid=(SELECT max(rowid)+1 FROM Artwork), Id=$next,Sheet=$pending WHERE Id=$old;
@@ -248,9 +293,9 @@ internal sealed class GmailArtworkStore(string root)
         var files = new List<(Guid Sheet, GmailFileInfo File)>();
         if (keys.Length > 0)
         {
-            cmd.CommandText = $"SELECT Sheet,Id,Name,Mime FROM Artwork WHERE Sheet IN ({string.Join(",", keys)}) ORDER BY rowid";
+            cmd.CommandText = $"SELECT Sheet,Id,Name,Mime,Mailbox FROM Artwork WHERE Sheet IN ({string.Join(",", keys)}) ORDER BY rowid";
             using var rows = cmd.ExecuteReader();
-            while (rows.Read()) files.Add((Guid.Parse(rows.GetString(0)), new(rows.GetString(1), rows.GetString(2), rows.GetString(3))));
+            while (rows.Read()) files.Add((Guid.Parse(rows.GetString(0)), new(rows.GetString(1), rows.GetString(2), rows.GetString(3), Source(rows.GetString(4)))));
         }
         return files.ToLookup(x => x.Sheet, x => x.File);
     }
@@ -262,7 +307,8 @@ internal sealed class GmailArtworkStore(string root)
         cmd.CommandText = "SELECT Png FROM ArtworkPreview JOIN Artwork ON Id=FileId WHERE Sheet=$sheet AND Id=$file AND Width=$width";
         cmd.Parameters.AddWithValue("$sheet", sheet.ToString());
         cmd.Parameters.AddWithValue("$file", file.ToString());
-        cmd.Parameters.AddWithValue("$width", width);
+        // Negative widths identify transparency-aware renders. Old opaque thumbnails use positive widths.
+        cmd.Parameters.AddWithValue("$width", -width);
         return cmd.ExecuteScalar() as byte[];
     }
 
@@ -272,7 +318,7 @@ internal sealed class GmailArtworkStore(string root)
         using var cmd = db.CreateCommand();
         cmd.CommandText = "INSERT OR IGNORE INTO ArtworkPreview(FileId,Width,Png) SELECT Id,$width,$png FROM Artwork WHERE Id=$file AND Sheet<>'removed'";
         cmd.Parameters.AddWithValue("$file", file.ToString());
-        cmd.Parameters.AddWithValue("$width", width);
+        cmd.Parameters.AddWithValue("$width", -width);
         cmd.Parameters.AddWithValue("$png", png);
         cmd.ExecuteNonQuery();
     }
@@ -288,3 +334,4 @@ internal sealed class GmailArtworkStore(string root)
         return row.Read() ? ((byte[])row[0], row.GetString(1)) : null;
     }
 }
+

@@ -8,6 +8,7 @@ public sealed class CreateAiOrderImportInput
 {
     public string? CaptureSessionId { get; set; }
     public bool ReceptionWorksheet { get; set; }
+    public bool ReceptionBatch { get; set; }
 }
 
 public sealed class ReorderAiOrderDocumentsInput

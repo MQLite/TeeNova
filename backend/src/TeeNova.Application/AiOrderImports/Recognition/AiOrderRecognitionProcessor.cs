@@ -367,6 +367,7 @@ public sealed class AiOrderRecognitionProcessor : ITransientDependency
             // one that loaded the attempt above is already completed and its DbContext
             // disposed, and this runs on the worker rather than inside a request scope.
             IReadOnlyList<AiOrderRecognitionSource> sources;
+            var batch = attempt.ContractVersion == ReceptionRecognition.BatchContract;
             using (var preparation = _unitOfWorkManager.Begin(
                        requiresNew: true,
                        isTransactional: false))
@@ -374,10 +375,11 @@ public sealed class AiOrderRecognitionProcessor : ITransientDependency
                 sources = await _sourcePreparer.PrepareAsync(
                     attempt.ImportId,
                     sourceSnapshot,
-                    cancellationToken);
+                    cancellationToken,
+                    receptionBatch: batch);
                 await preparation.CompleteAsync(cancellationToken);
             }
-            var reception = attempt.ContractVersion == ReceptionRecognition.Contract;
+            var reception = ReceptionRecognition.IsReceptionContract(attempt.ContractVersion);
             var request = new AiOrderRecognitionRequest(
                 attempt.ImportId,
                 attempt.Id,
@@ -391,7 +393,7 @@ public sealed class AiOrderRecognitionProcessor : ITransientDependency
                     _options.CurrencyContext,
                     _options.LocaleContext,
                     sourceSnapshot),
-                reception ? ReceptionRecognition.Schema : _validator.JsonSchema,
+                batch ? ReceptionRecognition.BatchSchema : reception ? ReceptionRecognition.Schema : _validator.JsonSchema,
                 sources);
             var provider = _providers.Resolve(selection.ProviderId);
             var aggregateUsage = new AiOrderRecognitionUsage(0, 0, 0);
@@ -404,7 +406,8 @@ public sealed class AiOrderRecognitionProcessor : ITransientDependency
                 try
                 {
                     if (reception)
-                        validated = ReceptionRecognition.Validate(result.StructuredOutputJson, _options.MaximumOutputCharacters);
+                        validated = ReceptionRecognition.Validate(result.StructuredOutputJson, _options.MaximumOutputCharacters,
+                            batch ? sourceSnapshot : null, batch ? sources : null);
                     else
                     {
                         validated = _validator.ValidateAndCanonicalize(result.StructuredOutputJson);
@@ -446,7 +449,7 @@ public sealed class AiOrderRecognitionProcessor : ITransientDependency
                 attempt.ImportId,
                 attempt.LeaseToken,
                 import.CurrentRevision,
-                reception ? ReceptionRecognition.Contract : AiOrderRecognitionVersions.StructuralValidation,
+                reception ? attempt.ContractVersion! : AiOrderRecognitionVersions.StructuralValidation,
                 validated.CanonicalJson,
                 validated.CanonicalSha256,
                 import.CreatedByAdminId,

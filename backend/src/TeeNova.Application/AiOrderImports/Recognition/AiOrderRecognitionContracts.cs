@@ -1,4 +1,5 @@
 using System.Net;
+using System.Text.Json.Serialization;
 
 namespace TeeNova.AiOrderImports.Recognition;
 
@@ -16,7 +17,9 @@ public sealed record AiOrderRecognitionSource(
     string ContentType,
     byte[] Content,
     string Sha256,
-    int RotationDegrees);
+    int RotationDegrees,
+    bool IsSupplement = false,
+    IReadOnlySet<int>? ReferenceLines = null);
 
 public sealed record AiOrderRecognitionRequest(
     Guid ImportId,
@@ -139,7 +142,8 @@ public sealed record AiOrderRecognitionSourceDescriptor(
     long ByteSize,
     string Sha256,
     int RotationDegrees,
-    int? PageCount);
+    int? PageCount,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)] bool IsSupplement = false);
 
 public sealed record AiOrderRecognitionCostEstimate(
     long EstimatedInputTokens,

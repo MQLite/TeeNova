@@ -204,6 +204,69 @@ it('ignores recognition from the prior draft when navigation opens a different w
   expect(screen.getByRole('button', { name: '保存修改' })).toBeDisabled()
 })
 
+it('reconciles conflicting values individually and preserves information missing from recognition', async () => {
+  vi.mocked(fetchSheet).mockResolvedValue(savedPhotoSheet)
+  vi.mocked(recognizeCapture).mockResolvedValue({ ...blankWorksheet, customer: '原稿姓名', phone: ' ',
+    instructions: '周三取件', totalPrice: 100, deposit: 0 })
+  vi.spyOn(window, 'confirm').mockReturnValue(true)
+  render(<ReceptionDesk />)
+  fireEvent.click(screen.getByRole('button', { name: '打开已存工单' }))
+  fireEvent.click(await screen.findByRole('button', { name: '更换原稿' }))
+  fireEvent.click(screen.getByRole('button', { name: '整理成工作单' }))
+  const deposit = await screen.findByRole('group', { name: '订金（NZD）' })
+  fireEvent.click(within(deposit).getByRole('radio', { name: /使用识别值/ }))
+  fireEvent.click(screen.getByRole('button', { name: '查看原稿', expanded: false }))
+  const source = '/api/admin/ai-order-imports/i/documents/d/content'
+  expect(screen.getByRole('img')).toHaveAttribute('src', source)
+  fireEvent.error(screen.getByRole('img'))
+  fireEvent.click(screen.getByRole('button', { name: '重试加载' }))
+  expect(screen.getByRole('img')).toHaveAttribute('src', source + '?retry=1')
+  fireEvent.click(screen.getByRole('button', { name: '收起原稿', expanded: true }))
+  expect(screen.queryByRole('img')).toBeNull()
+  expect(within(deposit).getByRole('radio', { name: /使用识别值/ })).toBeChecked()
+  fireEvent.click(screen.getByRole('button', { name: '应用核对结果' }))
+  expect(screen.getByLabelText('客户姓名')).toHaveValue('店内姓名')
+  expect(screen.getByLabelText('联系电话')).toHaveValue('021234')
+  expect(screen.getByLabelText('预计可取日期')).toHaveValue('2026-12-02')
+  expect(screen.getByLabelText('制作说明')).toHaveValue('周三取件')
+  expect(screen.getByRole('textbox', { name: '订金（NZD）' })).toHaveValue('0.00')
+  expect(screen.getByRole('textbox', { name: '总价（NZD）' })).toHaveValue('100.00')
+})
+
+it('shows the current handwritten original while reviewing recognition differences', async () => {
+  const handwriting = 'data:image/png;base64,AA=='
+  vi.spyOn(HTMLCanvasElement.prototype, 'toDataURL').mockReturnValue(handwriting)
+  vi.spyOn(HTMLCanvasElement.prototype, 'toBlob').mockImplementation(callback => callback(new Blob(['ink'])))
+  vi.spyOn(window, 'confirm').mockReturnValue(true)
+  vi.mocked(recognizeCapture).mockResolvedValue({ ...blankWorksheet, customer: '原稿姓名' })
+  render(<ReceptionDesk />)
+  fireEvent.click(screen.getByRole('button', { name: '新建接待工单' }))
+  fireEvent.click(screen.getByLabelText('手写接单纸'))
+  fireEvent.click(screen.getByRole('button', { name: '手动填写' }))
+  fireEvent.change(screen.getByLabelText('客户姓名'), { target: { value: '店内姓名' } })
+  fireEvent.click(screen.getByRole('button', { name: '编辑手稿' }))
+  fireEvent.click(screen.getByRole('button', { name: '整理成工作单' }))
+  fireEvent.click(await screen.findByRole('button', { name: '查看原稿' }))
+  expect(screen.getByRole('img', { name: '当前工作单的手写原稿' })).toHaveAttribute('src', handwriting)
+  fireEvent.click(screen.getByRole('button', { name: '放弃本次结果' }))
+  expect(screen.getByLabelText('客户姓名')).toHaveValue('店内姓名')
+})
+
+it('retries the stored photo in both views without replacing its source or dirtying the sheet', async () => {
+  vi.mocked(fetchSheet).mockResolvedValue(savedPhotoSheet)
+  render(<ReceptionDesk />)
+  fireEvent.click(screen.getByRole('button', { name: '打开已存工单' }))
+  const original = '/api/admin/ai-order-imports/i/documents/d/content'
+  for (const tab of ['核对工作单', '接单录入']) {
+    await screen.findByRole('img')
+    fireEvent.click(screen.getByRole('button', { name: tab }))
+    fireEvent.error(screen.getByRole('img'))
+    fireEvent.click(screen.getByRole('button', { name: '重试加载' }))
+    expect(new URL((screen.getByRole('img') as HTMLImageElement).src).pathname).toBe(original)
+    expect(screen.getByRole('button', { name: '保存修改' })).toBeDisabled()
+  }
+})
+
 it('recognizes the replacement photo, saves its reference, and shows the stored original on reopen', async () => {
   const saved = { ...blankWorksheet, id: 'saved', creationTime: new Date().toISOString(), pickupDate: null,
     customer: 'C', stage: 'Preparing' as const, version: 'v1', sourcePhoto: { importId: 'i', documentId: 'd' } }
@@ -235,4 +298,32 @@ it('recognizes the replacement photo, saves its reference, and shows the stored 
   fireEvent.click(within(screen.getByRole('navigation')).getByRole('button', { name: '工单总览' }))
   fireEvent.click(screen.getByRole('button', { name: '打开已存工单' }))
   await waitFor(() => expect(screen.getByRole('img')).toHaveAttribute('src', '/api/admin/ai-order-imports/i/documents/d/content'))
+})
+
+it('explains blocked actions on both tabs when editing a saved photo worksheet', async () => {
+  const group = { heading: '短袖', presentation: 'rows' as const, notes: '', rows: [] }
+  vi.mocked(fetchSheet).mockResolvedValue({ ...blankWorksheet, id: 'saved', pickupDate: null,
+    creationTime: new Date().toISOString(), stage: 'Preparing', version: 'v1',
+    sourcePhoto: { importId: 'i', documentId: 'd' },
+    layout: { title: '门店订单', groups: [group, { ...group, heading: '童装' }] } })
+  render(<ReceptionDesk />)
+  fireEvent.click(screen.getByRole('button', { name: '打开已存工单' }))
+  const title = await screen.findByRole('textbox', { name: '工作单标题' })
+  const groups = screen.getAllByRole('textbox', { name: '服装分组' })
+  fireEvent.change(title, { target: { value: ' ' } })
+  fireEvent.change(groups[1], { target: { value: '' } })
+  expect(title).toHaveAttribute('aria-invalid', 'true')
+  expect(groups[1]).toHaveAttribute('aria-invalid', 'true')
+  expect(groups[0]).toBeValid()
+  expect(screen.getByRole('button', { name: '保存修改' })).toBeDisabled()
+  expect(screen.getByRole('button', { name: /打印/ })).toBeDisabled()
+  expect(screen.getByRole('status')).toHaveTextContent(/工作单标题.*第 2 个服装分组/)
+  fireEvent.click(screen.getByRole('button', { name: '接单录入' }))
+  expect(screen.getByRole('status')).toHaveTextContent(/核对工作单.*第 2 个服装分组/)
+  fireEvent.click(screen.getByRole('button', { name: '核对工作单' }))
+  fireEvent.change(screen.getByRole('textbox', { name: '工作单标题' }), { target: { value: '新标题' } })
+  fireEvent.change(screen.getAllByRole('textbox', { name: '服装分组' })[1], { target: { value: '童装' } })
+  expect(screen.queryByRole('status')).toBeNull()
+  expect(screen.getByRole('button', { name: '保存修改' })).toBeEnabled()
+  expect(screen.getByRole('button', { name: /打印/ })).toBeEnabled()
 })

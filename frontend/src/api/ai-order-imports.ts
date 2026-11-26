@@ -540,6 +540,7 @@ export async function createAiOrderImport(
   idempotencyKey: string,
   captureSessionId: string,
   receptionWorksheet = false,
+  receptionBatch = false,
 ): Promise<AiOrderImport> {
   const response = await fetch('/api/proxy/api/admin/ai-order-imports', {
     method: 'POST',
@@ -547,7 +548,7 @@ export async function createAiOrderImport(
       'Content-Type': 'application/json',
       'Idempotency-Key': idempotencyKey,
     },
-    body: JSON.stringify(receptionWorksheet ? { captureSessionId, receptionWorksheet } : { captureSessionId }),
+    body: JSON.stringify({ captureSessionId, ...(receptionWorksheet && { receptionWorksheet }), ...(receptionBatch && { receptionBatch }) }),
   })
   if (!response.ok) throw await toApiError(response)
   return response.json() as Promise<AiOrderImport>
@@ -710,8 +711,10 @@ export function uploadAiOrderSource(
   captureMethod: 'Camera' | 'Upload',
   uploadIdempotencyKey: string,
   onProgress: (percentage: number) => void,
+  signal?: AbortSignal,
 ): Promise<AiOrderSourceUploadResult> {
   return new Promise((resolve, reject) => {
+    signal?.throwIfAborted()
     const request = new XMLHttpRequest()
     request.open('POST', `/api/proxy/api/admin/ai-order-imports/${importId}/documents`)
     request.setRequestHeader('Upload-Idempotency-Key', uploadIdempotencyKey)
@@ -722,6 +725,10 @@ export function uploadAiOrderSource(
       }
     }
     request.onerror = () => reject(new ApiError(0, 'Upload failed. Check your connection and retry.'))
+    const abort = () => request.abort()
+    request.onabort = () => reject(signal?.reason ?? new DOMException('Upload aborted', 'AbortError'))
+    request.onloadend = () => signal?.removeEventListener('abort', abort)
+    signal?.addEventListener('abort', abort, { once: true })
     request.onload = () => {
       const body = request.response
       if (request.status >= 200 && request.status < 300) {

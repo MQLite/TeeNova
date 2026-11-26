@@ -3250,6 +3250,10 @@ namespace TeeNova.Migrations
                     b.Property<DateOnly?>("PickupDate")
                         .HasColumnType("date");
 
+                    b.Property<string>("PrintEstimate")
+                        .HasMaxLength(10000)
+                        .HasColumnType("nvarchar(max)");
+
                     b.Property<int>("Stage")
                         .HasColumnType("int");
 
@@ -3262,6 +3266,51 @@ namespace TeeNova.Migrations
                     b.HasIndex("Stage", "PickupDate");
 
                     b.ToTable("ReceptionSheets", "teenova");
+                });
+
+            modelBuilder.Entity("TeeNova.Reception.ReceptionSheetPdf", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("Attempt")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<byte[]>("Content")
+                        .HasColumnType("varbinary(max)");
+
+                    b.Property<DateTime?>("CreatedAtUtc")
+                        .HasColumnType("datetime2");
+
+                    b.Property<DateTime?>("LeaseUntilUtc")
+                        .HasColumnType("datetime2");
+
+                    b.Property<int?>("Pages")
+                        .HasColumnType("int");
+
+                    b.Property<Guid>("SheetId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("SnapshotJson")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("Template")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
+
+                    b.Property<string>("Version")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("SheetId", "Version", "Template")
+                        .IsUnique();
+
+                    b.ToTable("ReceptionSheetPdfs", "teenova");
                 });
 
             modelBuilder.Entity("TeeNova.AiOrderImports.AiOrderImportRevision", b =>
@@ -3537,6 +3586,15 @@ namespace TeeNova.Migrations
                         .WithMany()
                         .HasForeignKey("PrintSizeId")
                         .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("TeeNova.Reception.ReceptionSheetPdf", b =>
+                {
+                    b.HasOne("TeeNova.Reception.ReceptionSheet", null)
+                        .WithMany()
+                        .HasForeignKey("SheetId")
+                        .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
                 });
 

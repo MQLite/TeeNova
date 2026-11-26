@@ -20,6 +20,7 @@ using TeeNova.Payments;
 using TeeNova.Payments.Mock;
 using TeeNova.Portfolio;
 using TeeNova.Payments.Stripe;
+using TeeNova.Reception;
 using Volo.Abp;
 using Volo.Abp.Application;
 using Volo.Abp.BackgroundWorkers;
@@ -99,6 +100,20 @@ public class TeeNovaApplicationModule : AbpModule
         context.Services.AddTransient<
             IAiOrderRecognitionProvider,
             ClaudeAiOrderRecognitionProvider>();
+        context.Services.AddOptions<ReceptionSheetPdfOptions>()
+            .Bind(configuration.GetSection(ReceptionSheetPdfOptions.SectionName))
+            .PostConfigure(options =>
+            {
+                if (string.IsNullOrWhiteSpace(options.ApiKey))
+                    options.ApiKey = configuration["AiOrderRecognition:Providers:openai:ApiKey"] ?? "";
+                if (string.IsNullOrWhiteSpace(options.ApiKey))
+                    options.ApiKey = configuration["OPENAI_API_KEY"] ?? "";
+            });
+        context.Services.AddHttpClient<IReceptionSheetPdfGenerator, OpenAiReceptionSheetPdfGenerator>(client =>
+        {
+            client.BaseAddress = new Uri("https://api.openai.com/v1/");
+            client.Timeout = System.Threading.Timeout.InfiniteTimeSpan;
+        }).ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler { AllowAutoRedirect = false });
 
         context.Services.Configure<AdminLogsOptions>(configuration.GetSection(AdminLogsOptions.SectionName));
         context.Services.AddSingleton<IValidateOptions<AdminLogsOptions>, AdminLogsOptionsValidator>();

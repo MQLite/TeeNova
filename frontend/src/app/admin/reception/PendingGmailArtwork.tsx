@@ -1,41 +1,41 @@
 'use client'
-import { useEffect, useState } from 'react'
+import { useState } from 'react'
 import { adminApiClient } from '@/lib/admin-client'
-import { ArtworkPreview, type Artwork } from './ArtworkPreview'
+import { ApiError } from '@/lib/api-client'
+import { ArtworkPreview } from './ArtworkPreview'
+import { ArtworkUpload } from './ArtworkUpload'
 import { DeleteArtworkButton } from './DeleteSheetButton'
+import { pendingArtworkDetails, pendingArtworkPath as endpoint, useArtworkList, type PendingArtwork } from './useArtworkList'
 
-type Pending = Artwork & { sender: string; subject: string; received: string; newCustomer: string | null }
 type Match = { id: string; customer: string; phoneEnd: string; pickupDate: string | null }
-const endpoint = '/api/gmail-reception/pending'
 
 export function PendingGmailArtwork({ onOpen = id => window.location.assign('/admin/reception?sheet=' + encodeURIComponent(id)) }: { onOpen?: (id: string) => void }) {
-  const [items, setItems] = useState<Pending[]>([])
-  const [selected, setSelected] = useState<Pending>()
+  const list = useArtworkList<PendingArtwork>(endpoint)
+  const [selected, setSelected] = useState<PendingArtwork>()
   const [mode, setMode] = useState<'create' | 'link'>('create')
   const [text, setText] = useState('')
   const [matches, setMatches] = useState<Match[]>([])
   const [chosen, setChosen] = useState<Match>()
   const [message, setMessage] = useState('')
-  const [busy, setBusy] = useState(true)
-  useEffect(() => {
-    const request = new AbortController()
-    adminApiClient.get<Pending[]>(endpoint, {}, { signal: request.signal })
-      .then(rows => { if (!request.signal.aborted) setItems(rows) })
-      .catch(() => { if (!request.signal.aborted) setMessage('读取失败，请刷新待关联列表。') })
-      .finally(() => { if (!request.signal.aborted) setBusy(false) })
-    return () => request.abort()
-  }, [])
+  const [busy, setBusy] = useState(false)
 
   async function perform(fn: () => Promise<void>) {
     setBusy(true); setMessage('')
-    try { await fn() } catch (e) { setMessage(e instanceof Error ? e.message : '操作失败，请重试。') }
+    try { await fn() } catch (e) {
+      setMessage(e instanceof Error ? e.message : '操作失败，请重试。')
+      if (e instanceof ApiError && (e.status === 409 || e.status === 404)) {
+        setSelected(undefined)
+        list.refresh()
+      }
+    }
     finally { setBusy(false) }
   }
   function load() {
     setSelected(undefined)
-    void perform(async () => setItems(await adminApiClient.get<Pending[]>(endpoint)))
+    setMessage('')
+    list.refresh()
   }
-  function choose(item: Pending, next: typeof mode) {
+  function choose(item: PendingArtwork, next: typeof mode) {
     setSelected(item); setMode(next); setText(item.newCustomer || ''); setMatches([]); setChosen(undefined); setMessage('')
   }
   function search() {
@@ -52,21 +52,25 @@ export function PendingGmailArtwork({ onOpen = id => window.location.assign('/ad
       const suffix = mode === 'create' ? '/create' : '/link/' + chosen!.id
       const result = await adminApiClient.post<{sheetId: string}>(endpoint + '/' + selected.id + suffix,
         mode === 'create' ? {customer: text.trim()} : undefined)
-      setItems(current => current.filter(item => item.id !== selected.id))
+      list.remove(selected.id)
       setSelected(undefined); onOpen(result.sheetId)
     })
   }
   return <section aria-label="待关联设计稿">
-    <fieldset disabled={busy}>
-      <div className="rc-heading"><h1>待关联设计稿</h1><button onClick={load}>刷新待关联列表</button></div>
-      {!busy && !items.length && !message && <p>暂无待关联设计稿。</p>}
-      <div className="art-grid">{items.map(item => <article key={item.id} className="art-card">
+    <fieldset disabled={busy || list.loading}>
+      <h1 className="text-2xl font-semibold">待关联设计稿</h1>
+      <ArtworkUpload path={endpoint} onChanged={list.refresh}>
+        <button type="button" onClick={load}>刷新待关联列表</button>
+      </ArtworkUpload>
+      {list.failed && <p role="alert">读取失败，请刷新待关联列表。</p>}
+      {!list.loading && !list.failed && !list.items.length && <p>暂无待关联设计稿。</p>}
+      <div className="art-grid">{!list.failed && list.items.map(item => <article key={item.id} className="art-card">
         <ArtworkPreview file={item} base={'/api/proxy' + endpoint} />
-        <p>{item.subject}</p><small>{item.sender ? item.sender + ' · ' : '退回时间 · '}{new Date(item.received).toLocaleString('zh-NZ',{timeZone:'Pacific/Auckland'})}</small>
+        {item.subject && <p>{item.subject}</p>}<small>{pendingArtworkDetails(item)}</small>
         <div className="rc-actions"><button onClick={() => choose(item,'create')}>{item.newCustomer ? '继续开单' : '用此稿开新单'}</button>
           {!item.newCustomer && <><button onClick={() => choose(item,'link')}>关联已有工单</button>
-            <DeleteArtworkButton name={item.name} path={endpoint + '/' + item.id} onDeleted={() => {
-              setItems(current => current.filter(row => row.id !== item.id))
+            <DeleteArtworkButton name={item.name} source={item.source} path={endpoint + '/' + item.id} onConflict={load} onDeleted={() => {
+              list.remove(item.id)
               if (selected?.id === item.id) setSelected(undefined)
             }} /></>}</div>
       {selected?.id === item.id && <div className="space-y-2 border-t py-3">
@@ -84,6 +88,7 @@ export function PendingGmailArtwork({ onOpen = id => window.location.assign('/ad
       </div>}
       </article>)}</div>
     </fieldset>
-    {busy && <p role="status">正在处理…</p>}{message && <p role="status">{message}</p>}
+    {(busy || list.loading) && <p role="status">正在处理…</p>}{message && <p role="status">{message}</p>}
   </section>
 }
+

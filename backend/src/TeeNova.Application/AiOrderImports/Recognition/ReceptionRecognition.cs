@@ -1,6 +1,7 @@
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
+using System.Text.Json.Nodes;
 using System.Text.Json.Serialization;
 using TeeNova.Reception;
 using Volo.Abp;
@@ -8,13 +9,22 @@ using Volo.Abp;
 namespace TeeNova.AiOrderImports.Recognition;
 
 public sealed record ReceptionDraft(string Customer, string Phone, DateOnly? PickupDate,
-    string Instructions, ReceptionPrintLayout Layout, decimal? TotalPrice = null, decimal? Deposit = null);
+    string Instructions, ReceptionPrintLayout Layout, decimal? TotalPrice = null, decimal? Deposit = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] ReceptionSourceNote[]? SourceNotes = null);
+
+public sealed record ReceptionSourceNote(string Kind, string Field, string Message, string? PreviousValue,
+    string? SuggestedValue, ReceptionSourceReference[] References);
+
+public sealed record ReceptionSourceReference(Guid DocumentId, int? Page, int? Line, string Quote);
 
 public static class ReceptionRecognition
 {
     public const string Contract = "reception-worksheet-v1";
+    public const string BatchContract = "reception-batch-v1";
     public const string PromptVersion = "reception-print-prompt-v2";
     public const string TextPromptVersion = "reception-text-prompt-v1";
+    public const string BatchPromptVersion = "reception-batch-prompt-v1";
+    public static bool IsReceptionContract(string? contract) => contract is Contract or BatchContract;
     private static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web)
     {
         RespectRequiredConstructorParameters = true,
@@ -26,7 +36,30 @@ public static class ReceptionRecognition
     {
         var received = TimeZoneInfo.ConvertTimeFromUtc(DateTime.SpecifyKind(createdAt, DateTimeKind.Utc),
             TimeZoneInfo.FindSystemTimeZoneById("Pacific/Auckland"));
-        var sourceInstructions = promptVersion == TextPromptVersion
+        var sourceInstructions = promptVersion == BatchPromptVersion
+            ? """
+              Compose one reception worksheet from the supplied batch of order documents. Read every page of each
+              PDF, including photos or scans. Text and pasted descriptions are marked with physical line numbers.
+              CSV sources have a parsed header and rows with physical starting line numbers and ordered cells;
+              bind every colour, size and quantity to the correct header and garment. Read the optional staff
+              supplemental description as order evidence. A clearly stated correction in that description overrides
+              the prior value for that exact customer, garment, colour and size; leave all other entries intact.
+              If sources may belong to distinct customers, do not combine them. Use clearly identified intended
+              order evidence if there is any, leave uncertain fields unset, and record multipleCustomers notes.
+              Corroborating sources and explicit identical copies count once. Mark uncertain duplicate rows with
+              possibleDuplicate and leave disputed quantities unset; do not assume copies are additional units.
+              Return sourceNotes alongside the worksheet. Add evidence for significant values (customer/phone,
+              pickup, amounts, garment quantities, print placements and notes) grouped where useful, plus explicit
+              correction, conflict, uncertain, multipleCustomers and possibleDuplicate notes. Use a short Chinese
+              message and a recognizable field or garment/colour/size description. For a correction give the old
+              and proposed value in previousValue and suggestedValue, and cite both the original and correction.
+              Cite conflicting sources in separate references and leave disputed dates, amounts and quantities null.
+              Each reference uses its exact sourceDocumentId under documentId. Use 1-based page for PDFs, original
+              line for CSV/text/description, and null for unused coordinates. Quote a brief relevant part of the
+              evidence in its original language; leave quote empty for an image detail with no text. Explain partial
+              or unresolved information so staff can choose safely. Do not add notes without a source reference.
+              """
+            : promptVersion == TextPromptVersion
             ? """
               Compose one printable A4 reception worksheet from the supplied order, which may include
               a chat transcript, an email or a pasted table. Read tabs and line breaks as table structure
@@ -87,7 +120,29 @@ public static class ReceptionRecognition
                "quantity":{"type":["integer","null"],"minimum":0,"maximum":999999}}}}}}}}}}}
         """;
 
-    public static AiOrderStructuralValidationResult Validate(string json, int maxCharacters)
+    public static string BatchSchema { get; } = BuildBatchSchema();
+
+    private static string BuildBatchSchema()
+    {
+        var root = JsonNode.Parse(Schema)!;
+        root["required"]!.AsArray().Add("sourceNotes");
+        root["properties"]!["sourceNotes"] = JsonNode.Parse("""
+            {"type":"array","maxItems":120,"items":{"type":"object","additionalProperties":false,
+             "required":["kind","field","message","previousValue","suggestedValue","references"],"properties":{
+              "kind":{"type":"string","enum":["evidence","correction","conflict","uncertain","multipleCustomers","possibleDuplicate"]},
+              "field":{"type":"string"},"message":{"type":"string"},
+              "previousValue":{"type":["string","null"]},"suggestedValue":{"type":["string","null"]},
+              "references":{"type":"array","minItems":1,"maxItems":12,"items":{"type":"object","additionalProperties":false,
+               "required":["documentId","page","line","quote"],"properties":{"documentId":{"type":"string"},
+                "page":{"type":["integer","null"],"minimum":1},"line":{"type":["integer","null"],"minimum":1},
+                "quote":{"type":"string"}}}}}}}
+            """);
+        return root.ToJsonString();
+    }
+
+    public static AiOrderStructuralValidationResult Validate(string json, int maxCharacters,
+        IReadOnlyCollection<AiOrderRecognitionSourceDescriptor>? batchSources = null,
+        IReadOnlyCollection<AiOrderRecognitionSource>? preparedSources = null)
     {
         var invalid = new BusinessException("TeeNova:Reception:InvalidWorksheet");
         if (string.IsNullOrWhiteSpace(json) || json.Length > maxCharacters) throw invalid;
@@ -99,8 +154,35 @@ public static class ReceptionRecognition
             !ReceptionSheet.ValidAmount(draft.TotalPrice) || !ReceptionSheet.ValidAmount(draft.Deposit) ||
             (draft.Layout.Groups.Length == 0 && string.IsNullOrWhiteSpace(draft.Instructions)
              && draft.TotalPrice == null && draft.Deposit == null)) throw invalid;
+        if (batchSources == null ? draft.SourceNotes != null : !ValidSourceNotes(draft.SourceNotes, batchSources, preparedSources))
+            throw invalid;
         var canonical = JsonSerializer.Serialize(draft, Json);
         var hash = Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(canonical)));
         return new(canonical, hash);
     }
+
+    private static bool ValidSourceNotes(ReceptionSourceNote[]? notes,
+        IReadOnlyCollection<AiOrderRecognitionSourceDescriptor> sources,
+        IReadOnlyCollection<AiOrderRecognitionSource>? preparedSources)
+    {
+        if (notes is not { Length: <= 120 }) return false;
+        var descriptors = sources.ToDictionary(x => x.Id);
+        var lines = preparedSources?.ToDictionary(x => x.SourceDocumentId, x => x.ReferenceLines);
+        return notes.All(note => note is not null &&
+            note.Kind is "evidence" or "correction" or "conflict" or "uncertain" or "multipleCustomers" or "possibleDuplicate" &&
+            note.Field is { Length: > 0 and <= 200 } && note.Message is { Length: > 0 and <= 800 } &&
+            note.PreviousValue?.Length is null or <= 500 && note.SuggestedValue?.Length is null or <= 500 &&
+            note.References is { Length: > 0 and <= 12 } && note.References.All(reference =>
+                reference is not null && reference.Quote is { Length: <= 500 } &&
+                descriptors.TryGetValue(reference.DocumentId, out var source) && ValidLocation(reference, source, lines)));
+    }
+
+    private static bool ValidLocation(ReceptionSourceReference reference, AiOrderRecognitionSourceDescriptor source,
+        IReadOnlyDictionary<Guid, IReadOnlySet<int>?>? lines) => source.ContentType switch
+    {
+        "application/pdf" => reference.Line is null && reference.Page is > 0 && reference.Page <= source.PageCount,
+        "text/plain" or "text/csv" => reference.Page is null && reference.Line is { } line &&
+            lines != null && lines.TryGetValue(source.Id, out var validLines) && validLines?.Contains(line) == true,
+        _ => reference.Line is null && reference.Page is null or 1,
+    };
 }

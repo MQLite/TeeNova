@@ -71,8 +71,11 @@ async function proxyRequest(
   const responseBody = await backendRes.arrayBuffer()
   const responseContentType = backendRes.headers.get('content-type') ?? 'application/json'
   const fileHeaders: Record<string, string> = {}
-  if (backendPath.startsWith('/api/gmail-reception/') && backendRes.ok && responseContentType !== 'application/json') {
-    for (const name of ['content-security-policy', 'x-content-type-options']) {
+  const receptionPdf = /^\/api\/admin\/reception-sheets\/[^/]+\/pdfs\/[^/]+$/.test(backendPath)
+  if ((backendPath.startsWith('/api/gmail-reception/') || receptionPdf) && backendRes.ok && responseContentType !== 'application/json') {
+    const names = ['content-security-policy', 'x-content-type-options']
+    if (receptionPdf) names.push('content-disposition')
+    for (const name of names) {
       const value = backendRes.headers.get(name)
       if (value) fileHeaders[name] = value
     }

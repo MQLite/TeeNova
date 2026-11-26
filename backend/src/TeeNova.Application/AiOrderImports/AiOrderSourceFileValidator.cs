@@ -17,7 +17,7 @@ namespace TeeNova.AiOrderImports;
 
 public sealed class AiOrderSourceFileValidator : ITransientDependency
 {
-    private const int MaxTextLength = 20_000;
+    internal const int MaxTextLength = 20_000;
     private static readonly UTF8Encoding StrictUtf8 = new(false, true);
     private static readonly IReadOnlyDictionary<string, DeclaredSourceFormat> Formats =
         new Dictionary<string, DeclaredSourceFormat>(StringComparer.OrdinalIgnoreCase)
@@ -40,7 +40,8 @@ public sealed class AiOrderSourceFileValidator : ITransientDependency
         string fileName,
         string declaredContentType,
         long declaredLength,
-        bool allowReceptionText = false)
+        bool allowReceptionText = false,
+        bool allowReceptionCsv = false)
     {
         if (declaredLength <= 0)
             throw Safe(AiOrderImportErrorCodes.EmptyFile, "The selected file is empty.");
@@ -48,10 +49,19 @@ public sealed class AiOrderSourceFileValidator : ITransientDependency
             throw Safe(AiOrderImportErrorCodes.FileTooLarge, "The selected file is too large.");
 
         var extension = Path.GetExtension(Path.GetFileName(fileName));
+        if (allowReceptionCsv && string.Equals(extension, ".csv", StringComparison.OrdinalIgnoreCase))
+        {
+            if (!MediaTypeHeaderValue.TryParse(declaredContentType, out var mediaType) ||
+                mediaType.MediaType?.ToLowerInvariant() is not ("text/csv" or "application/vnd.ms-excel" or "text/plain" or "application/octet-stream") ||
+                (mediaType.CharSet is { } charset && !string.Equals(charset.Trim('"'), "utf-8", StringComparison.OrdinalIgnoreCase)))
+                throw Safe(AiOrderImportErrorCodes.FileTypeMismatch, "Reception CSV must be valid UTF-8 text.");
+            return new("csv", "text/csv");
+        }
         if (allowReceptionText && string.Equals(extension, ".txt", StringComparison.OrdinalIgnoreCase))
         {
             if (!MediaTypeHeaderValue.TryParse(declaredContentType, out var mediaType) ||
-                !string.Equals(mediaType.MediaType, "text/plain", StringComparison.OrdinalIgnoreCase) ||
+                (!string.Equals(mediaType.MediaType, "text/plain", StringComparison.OrdinalIgnoreCase) &&
+                 (!allowReceptionCsv || !string.Equals(mediaType.MediaType, "application/octet-stream", StringComparison.OrdinalIgnoreCase))) ||
                 (mediaType.CharSet is { } charset &&
                  !string.Equals(charset.Trim('"'), "utf-8", StringComparison.OrdinalIgnoreCase)))
                 throw Safe(AiOrderImportErrorCodes.FileTypeMismatch, "Reception text must be UTF-8 plain text.");
@@ -61,21 +71,23 @@ public sealed class AiOrderSourceFileValidator : ITransientDependency
         {
             throw Safe(
                 AiOrderImportErrorCodes.UnsupportedFileType,
-                "Supported formats are JPEG, PNG, WebP, and PDF.");
+                allowReceptionCsv ? "Supported formats are JPEG, PNG, WebP, PDF, UTF-8 TXT, and CSV. Save DOCX as PDF or XLSX as CSV first."
+                    : "Supported formats are JPEG, PNG, WebP, and PDF.");
         }
 
         var normalizedContentType = declaredContentType
             .Split(';', 2)[0]
             .Trim()
             .ToLowerInvariant();
-        if (!string.Equals(normalizedContentType, format.ContentType, StringComparison.Ordinal))
+        if (!string.Equals(normalizedContentType, format.ContentType, StringComparison.Ordinal) &&
+            (!allowReceptionCsv || normalizedContentType is not ("" or "application/octet-stream")))
         {
             throw Safe(
                 AiOrderImportErrorCodes.FileTypeMismatch,
                 "The file extension and declared content type do not match.");
         }
 
-        return format;
+        return format with { RequireUnencryptedPdf = allowReceptionCsv };
     }
 
     public async Task<InspectedSourceFile> InspectAsync(
@@ -87,7 +99,7 @@ public sealed class AiOrderSourceFileValidator : ITransientDependency
         if (!content.CanSeek)
             throw new InvalidOperationException("Stored private content must be seekable.");
 
-        if (expected.Kind == "text")
+        if (expected.Kind is "text" or "csv")
         {
             // A UTF-16 code unit takes at most three UTF-8 bytes, bounding the decode allocation.
             if (content.Length > MaxTextLength * 3)
@@ -102,9 +114,12 @@ public sealed class AiOrderSourceFileValidator : ITransientDependency
             }
             if (text.Length > MaxTextLength)
                 throw Safe(AiOrderImportErrorCodes.FileTooLarge, "Reception text exceeds the 20,000-character limit.");
+            if (text.Contains('\0'))
+                throw Safe(AiOrderImportErrorCodes.InvalidSourceContent, "Reception text contains a binary control character.");
             // Match ECMAScript trim() in the reception editor, including BOM and excluding NEL.
             if (text.All(ch => (char.IsWhiteSpace(ch) && ch != '\u0085') || ch == '\ufeff'))
                 throw Safe(AiOrderImportErrorCodes.InvalidSourceContent, "Reception text is blank.");
+            if (expected.Kind == "csv") ReceptionDelimitedText.ParseCsv(text);
             return new(null, null, null, []);
         }
 
@@ -119,15 +134,19 @@ public sealed class AiOrderSourceFileValidator : ITransientDependency
         }
 
         return expected.Kind == "pdf"
-            ? InspectPdf(content)
+            ? InspectPdf(content, expected.RequireUnencryptedPdf)
             : await InspectImageAsync(content, cancellationToken);
     }
 
-    private InspectedSourceFile InspectPdf(Stream content)
+    private InspectedSourceFile InspectPdf(Stream content, bool requireUnencrypted)
     {
         try
         {
-            using var document = PdfReader.Open(content, PdfDocumentOpenMode.Import);
+            // Import mode strips encryption metadata after opening a PDF with the default user password.
+            var mode = requireUnencrypted ? PdfDocumentOpenMode.Modify : PdfDocumentOpenMode.Import;
+            using var document = PdfReader.Open(content, mode);
+            if (requireUnencrypted && document.SecuritySettings.IsEncrypted)
+                throw Safe(AiOrderImportErrorCodes.InvalidSourceContent, "Remove the PDF password or export an unencrypted PDF first.");
             var pageCount = document.PageCount;
             if (pageCount < 1)
                 throw Safe(
@@ -155,7 +174,7 @@ public sealed class AiOrderSourceFileValidator : ITransientDependency
         {
             throw Safe(
                 AiOrderImportErrorCodes.InvalidSourceContent,
-                "The PDF is malformed or cannot be read safely.");
+                "The PDF is unreadable, malformed, or password-protected. Export an unencrypted PDF or rescan it.");
         }
     }
 
@@ -268,7 +287,7 @@ public sealed class AiOrderSourceFileValidator : ITransientDependency
         new(code, message);
 }
 
-public sealed record DeclaredSourceFormat(string Kind, string ContentType);
+public sealed record DeclaredSourceFormat(string Kind, string ContentType, bool RequireUnencryptedPdf = false);
 
 public sealed record SourceQualityWarning(string Code, string Message);
 

@@ -2,7 +2,7 @@ import { catalogApi } from '@/api/catalog'
 import { printConfigApi } from '@/api/print-config'
 import { pricingApi } from '@/api/pricing'
 import type { PriceCalculationRequest, Product, PrintArea, PrintSize } from '@/types'
-import type { GarmentGroup } from './worksheet'
+import type { GarmentGroup, PrintLayout } from './worksheet'
 
 export const garments = {
   tee: 'Gildan Cotton Tee', hoodie: 'Gildan Hoodie',
@@ -10,6 +10,7 @@ export const garments = {
 } as const
 type Kind = NonNullable<GarmentGroup['pricingKind']>
 export interface EstimateCatalogue { products: Product[]; areas: PrintArea[]; sizes: PrintSize[] }
+export const garmentOnlyLabel = '仅计衣价（不含印花费）'
 
 export function garmentKind(group: GarmentGroup): Kind {
   if (/\bbanners?\b|横幅|横额|旗帜/i.test(group.heading)) return 'unlinked'
@@ -19,6 +20,16 @@ export function garmentKind(group: GarmentGroup): Kind {
   const hoodie = /Ⓗ|[Hh]\u20DD|hoodie|连帽/i.test(heading)
   const kids = /童|kids?|youth/i.test(heading)
   return hoodie ? (kids ? 'kidsHoodie' : 'hoodie') : (kids ? 'kidsTee' : 'tee')
+}
+
+export const hasSeparateBanner = (layout: PrintLayout | null | undefined, instructions: string) =>
+  /banner|横幅|横额/i.test([instructions, layout?.title].join(' '))
+
+export function receptionPricingInputs(layout: PrintLayout | null | undefined, instructions: string) {
+  return JSON.stringify([hasSeparateBanner(layout, instructions), layout?.groups.map(group => [
+    garmentKind(group), group.heading, group.rows.map(row => [row.colour, row.size, row.quantity]),
+    group.prints?.map(spec => [spec.area, spec.size]),
+  ]) ?? []])
 }
 
 export function defaultDoubleSidedPrintSize(group: GarmentGroup, area: string) {
@@ -60,13 +71,14 @@ export function estimateLines(groups: GarmentGroup[], catalogue: EstimateCatalog
     const matches = catalogue.products.filter(p => p.isActive && norm(p.name) === norm(name))
     if (matches.length !== 1) throw new Error(`请检查商品目录中的 ${name}。`)
     const product = matches[0]
-    if (group.prints == null) throw new Error(`请在「${group.heading}」核对印花，或选择仅计衣价。`)
-    const prints = (group.prints ?? []).map(spec => {
+    const printGuidance = `请在「核对工作单」的「${group.heading}」组选择「${garmentOnlyLabel}」，或在「估价商品」选择单独报价。`
+    if (group.prints == null) throw new Error(`印花规格待确认。${printGuidance}`)
+    const prints = group.prints.map(spec => {
       const area = catalogue.areas.find(a => a.code === spec.area)
-      if (!area) throw new Error(`请核对「${group.heading}」的印花位置。`)
+      if (!area) throw new Error(`现有印花位置无法估价。${printGuidance}`)
       const sizeCode = spec.size.trim() || defaultDoubleSidedPrintSize(group, spec.area)
       const size = catalogue.sizes.find(s => s.code === sizeCode)
-      if (!size) throw new Error(`「${group.heading}」的${area.name}缺少可用的印花大小，暂时无法估价。`)
+      if (!size) throw new Error(`${area.name}缺少可用的印花大小。${printGuidance}`)
       return {printAreaId:area.id, printSizeId:size.id}
     })
     const scope = product.printPricingGroupId ?? product.id
@@ -96,7 +108,7 @@ export async function quoteEstimate(groups: GarmentGroup[], catalogue: EstimateC
     for (const item of items) {
       const quote = prices.get(item.correlationKey)
       if (!quote || quote.currency !== 'NZD' || !Number.isFinite(quote.lineTotal)) {
-        throw new Error('系统未能为全部服装报价，请核对尺码和印花选项。')
+        throw new Error('系统未能为全部服装报价。请刷新估价，或核价后手动填写总价。')
       }
       cents += Math.round(quote.lineTotal * 100)
     }

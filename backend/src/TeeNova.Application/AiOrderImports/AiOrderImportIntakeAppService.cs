@@ -39,6 +39,7 @@ public class AiOrderImportIntakeAppService : ApplicationService
     private readonly IPrivateObjectStorage _privateStorage;
     private readonly AiOrderSourceFileValidator _fileValidator;
     private readonly AiOrderIntakeOptions _options;
+    private readonly ReceptionBatchLimits _batchLimits;
     private readonly TimeProvider _timeProvider;
     private readonly ILogger<AiOrderImportIntakeAppService> _logger;
     private readonly AiOrderOperationsOptions _operations;
@@ -52,6 +53,7 @@ public class AiOrderImportIntakeAppService : ApplicationService
         IPrivateObjectStorage privateStorage,
         AiOrderSourceFileValidator fileValidator,
         IOptions<AiOrderIntakeOptions> options,
+        IOptions<AiOrderRecognitionOptions> recognitionOptions,
         IOptions<AiOrderOperationsOptions> operations,
         IOptions<AiOrderRetentionOptions> retention,
         TimeProvider timeProvider,
@@ -64,11 +66,14 @@ public class AiOrderImportIntakeAppService : ApplicationService
         _privateStorage = privateStorage;
         _fileValidator = fileValidator;
         _options = options.Value;
+        _batchLimits = ReceptionBatchLimits.FromOptions(_options, recognitionOptions.Value);
         _operations = operations.Value;
         _retention = retention.Value;
         _timeProvider = timeProvider;
         _logger = logger;
     }
+
+    public ReceptionBatchLimits GetReceptionBatchLimits() => _batchLimits;
 
     [UnitOfWork(IsDisabled = true)]
     public virtual async Task<AiOrderImportDto> CreateAsync(
@@ -95,8 +100,11 @@ public class AiOrderImportIntakeAppService : ApplicationService
 
         var canonicalRequest =
             $"ai-order-import-create:v1\ncapture-session-length:{captureSessionId.Length}\ncapture-session:{captureSessionId}";
-        var contract = input?.ReceptionWorksheet == true ? ReceptionRecognition.Contract : ContractVersion;
-        if (contract == ReceptionRecognition.Contract) canonicalRequest += "\n" + contract;
+        if (input is { ReceptionBatch: true, ReceptionWorksheet: false })
+            throw Safe(AiOrderImportErrorCodes.InvalidRequest, "Batch mode is available for reception worksheets.");
+        var contract = input?.ReceptionBatch == true ? ReceptionRecognition.BatchContract
+            : input?.ReceptionWorksheet == true ? ReceptionRecognition.Contract : ContractVersion;
+        if (ReceptionRecognition.IsReceptionContract(contract)) canonicalRequest += "\n" + contract;
         var requestHash = Convert
             .ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(canonicalRequest)))
             .ToLowerInvariant();
@@ -151,7 +159,7 @@ public class AiOrderImportIntakeAppService : ApplicationService
     {
         var query = await _imports.GetQueryableAsync();
         var imports = await query
-            .Where(x => x.ContractVersion != ReceptionRecognition.Contract)
+            .Where(x => x.ContractVersion != ReceptionRecognition.Contract && x.ContractVersion != ReceptionRecognition.BatchContract)
             .OrderByDescending(x => x.CreationTime)
             .Take(50)
             .ToListAsync(cancellationToken);
@@ -229,6 +237,12 @@ public class AiOrderImportIntakeAppService : ApplicationService
             throw Safe(AiOrderImportErrorCodes.InvalidRequest, "Capture method is invalid.");
 
         var import = await FindImportOrThrowAsync(importId, cancellationToken);
+        var batch = import.ContractVersion == ReceptionRecognition.BatchContract;
+        var safeName = SanitizeOriginalFileName(originalFileName);
+        var supplement = batch && ReceptionBatchLimits.IsSupplement(safeName);
+        var maxFileBytes = batch ? _batchLimits.MaxFileBytes : _options.MaxFileBytes;
+        var maxTotalBytes = batch ? _batchLimits.MaxTotalBytes : _options.MaxTotalBytesPerImport;
+        var maxFiles = batch ? _batchLimits.MaxFiles : _options.MaxFilesPerImport;
         var sourceQuery = await _sources.GetQueryableAsync();
         var replay = await sourceQuery.SingleOrDefaultAsync(
             x => x.ImportId == importId &&
@@ -238,22 +252,20 @@ public class AiOrderImportIntakeAppService : ApplicationService
         if (replay is null)
         {
             EnsureModifiable(import);
-            if (activeSources.Count >= _options.MaxFilesPerImport)
-                throw Safe(
-                    AiOrderImportErrorCodes.TooManyDocuments,
-                    $"An import may contain at most {_options.MaxFilesPerImport} source documents.");
-            if (activeSources.Sum(x => x.ByteSize) + declaredLength > _options.MaxTotalBytesPerImport)
-                throw Safe(
-                    AiOrderImportErrorCodes.TotalBytesExceeded,
-                    "The import exceeds the configured total source-byte limit.");
+            ValidateUploadCapacity(activeSources, declaredLength, maxFiles, maxTotalBytes, supplement);
         }
 
         var expected = _fileValidator.ValidateDeclaration(
             originalFileName,
             declaredContentType,
             declaredLength,
-            allowReceptionText: import.ContractVersion == ReceptionRecognition.Contract &&
-                                captureMethod == AiOrderCaptureMethod.Upload);
+            allowReceptionText: ReceptionRecognition.IsReceptionContract(import.ContractVersion) &&
+                                captureMethod == AiOrderCaptureMethod.Upload,
+            allowReceptionCsv: batch && captureMethod == AiOrderCaptureMethod.Upload);
+        if (supplement) maxFileBytes = _batchLimits.MaxDescriptionBytes;
+        else if (batch && expected.Kind is ("text" or "csv")) maxFileBytes = _batchLimits.MaxTextBytes;
+        if (declaredLength > maxFileBytes)
+            throw Safe(AiOrderImportErrorCodes.FileTooLarge, $"The selected source exceeds its {maxFileBytes}-byte limit.");
 
         string objectKey;
         long actualBytes;
@@ -262,7 +274,7 @@ public class AiOrderImportIntakeAppService : ApplicationService
         {
             using var hashingStream = new HashingLimitedReadStream(
                 sourceStream,
-                _options.MaxFileBytes);
+                maxFileBytes);
             objectKey = await _privateStorage.SaveAsync(
                 hashingStream,
                 PrivateObjectCategory.SourceDocument,
@@ -285,20 +297,29 @@ public class AiOrderImportIntakeAppService : ApplicationService
         {
             if (actualBytes <= 0)
                 throw Safe(AiOrderImportErrorCodes.EmptyFile, "The selected file is empty.");
-            if (replay is null &&
-                activeSources.Sum(x => x.ByteSize) + actualBytes > _options.MaxTotalBytesPerImport)
-                throw Safe(
-                    AiOrderImportErrorCodes.TotalBytesExceeded,
-                    "The import exceeds the configured total source-byte limit.");
-
             InspectedSourceFile inspected;
             await using (var stored = await _privateStorage.OpenReadAsync(objectKey, cancellationToken))
                 inspected = await _fileValidator.InspectAsync(stored, expected, cancellationToken);
 
+            // Check again in the metadata transaction after private storage has accepted the bytes.
+            using var batchMetadata = batch ? UnitOfWorkManager.Begin(new AbpUnitOfWorkOptions
+            {
+                IsTransactional = true, IsolationLevel = IsolationLevel.Serializable,
+            }, requiresNew: true) : null;
+            if (batchMetadata != null)
+            {
+                import = await FindImportOrThrowAsync(importId, cancellationToken);
+                var latest = await _sources.GetQueryableAsync();
+                replay = await latest.SingleOrDefaultAsync(x => x.ImportId == importId &&
+                    x.UploadIdempotencyKey == normalizedUploadKey, cancellationToken);
+                activeSources = await GetActiveSourcesAsync(importId, cancellationToken);
+            }
+
             if (replay is not null)
             {
                 await _privateStorage.DeleteAsync(objectKey, cancellationToken);
-                if (!string.Equals(replay.Sha256, sha256, StringComparison.Ordinal))
+                if (!string.Equals(replay.Sha256, sha256, StringComparison.Ordinal) ||
+                    (batch && (replay.OriginalFileName != safeName || replay.ContentType != expected.ContentType)))
                     throw Safe(
                         AiOrderImportErrorCodes.UploadIdempotencyConflict,
                         "This upload retry key was already used for different content.");
@@ -308,6 +329,9 @@ public class AiOrderImportIntakeAppService : ApplicationService
                     WasIdempotentReplay = true,
                 };
             }
+
+            EnsureModifiable(import);
+            ValidateUploadCapacity(activeSources, actualBytes, maxFiles, maxTotalBytes, supplement);
 
             var warnings = inspected.Warnings.ToList();
             if (activeSources.Any(x => string.Equals(x.Sha256, sha256, StringComparison.Ordinal)))
@@ -345,7 +369,7 @@ public class AiOrderImportIntakeAppService : ApplicationService
                     actualBytes,
                     inspected.PageCount,
                     sha256,
-                    SanitizeOriginalFileName(originalFileName),
+                    safeName,
                     actorId,
                     retentionUntil: import.RetentionUntil,
                     uploadIdempotencyKey: normalizedUploadKey,
@@ -365,6 +389,8 @@ public class AiOrderImportIntakeAppService : ApplicationService
                     "The source document metadata could not be saved.");
             }
 
+            // A successful metadata insert must remain usable even if its upload response is lost.
+            if (batchMetadata != null) await batchMetadata.CompleteAsync(CancellationToken.None);
             _logger.LogInformation(
                 "AI order source attached to import {ImportId}; source {SourceDocumentId}; bytes {ByteSize}; pages {PageCount}; warnings {WarningCount}.",
                 importId,
@@ -384,6 +410,17 @@ public class AiOrderImportIntakeAppService : ApplicationService
             await DeleteStoredObjectBestEffortAsync(objectKey);
             throw;
         }
+    }
+
+    private static void ValidateUploadCapacity(IReadOnlyCollection<AiOrderSourceDocument> activeSources, long incomingBytes,
+        int maxFiles, long maxTotalBytes, bool supplement)
+    {
+        if (activeSources.Count >= maxFiles)
+            throw Safe(AiOrderImportErrorCodes.TooManyDocuments, $"An import may contain at most {maxFiles} source documents.");
+        if (incomingBytes > maxTotalBytes - activeSources.Sum(x => x.ByteSize))
+            throw Safe(AiOrderImportErrorCodes.TotalBytesExceeded, "The import exceeds the configured total source-byte limit.");
+        if (supplement && activeSources.Any(x => ReceptionBatchLimits.IsSupplement(x.OriginalFileName)))
+            throw Safe(AiOrderImportErrorCodes.InvalidRequest, "A batch can include only one supplemental description.");
     }
 
     public virtual async Task ReorderAsync(
@@ -708,6 +745,7 @@ public class AiOrderImportIntakeAppService : ApplicationService
             "image/webp" => ".webp",
             "application/pdf" => ".pdf",
             "text/plain" => ".txt",
+            "text/csv" => ".csv",
             _ => ".bin",
         };
         return $"ai-order-source-{documentId:N}{extension}";

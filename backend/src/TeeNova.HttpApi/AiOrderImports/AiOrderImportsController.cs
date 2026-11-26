@@ -148,6 +148,9 @@ public sealed class AiOrderImportsController : TeeNovaControllerBase
     public Task<AiOrderRecognitionOptionsDto> GetRecognitionOptionsAsync() =>
         _recognition.GetOptionsAsync();
 
+    [HttpGet("reception-batch-limits")]
+    public ReceptionBatchLimits GetReceptionBatchLimits() => _appService.GetReceptionBatchLimits();
+
     [HttpPost("{id:guid}/recognition")]
     public Task<AiOrderRecognitionStatusDto> StartRecognitionAsync(
         Guid id,

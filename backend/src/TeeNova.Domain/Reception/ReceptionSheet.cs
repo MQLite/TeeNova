@@ -13,6 +13,7 @@ public sealed record ReceptionTextSource(Guid ImportId, Guid DocumentId);
 public class ReceptionSheet : AuditedAggregateRoot<Guid>
 {
     public const int MaxInstructions = 24000;
+    public const int MaxPrintEstimateLength = 10000;
     [MaxLength(160)] public string Customer { get; private set; } = "";
     [MaxLength(80)] public string Phone { get; private set; } = "";
     public DateOnly? PickupDate { get; private set; }
@@ -20,6 +21,7 @@ public class ReceptionSheet : AuditedAggregateRoot<Guid>
     public ReceptionStage Stage { get; private set; }
     public decimal? TotalPrice { get; private set; }
     public decimal? Deposit { get; private set; }
+    public string? PrintEstimate { get; private set; }
     public string? HandwritingJson { get; private set; }
 
     public static bool ValidAmount(decimal? value) => value is null ||
@@ -28,6 +30,15 @@ public class ReceptionSheet : AuditedAggregateRoot<Guid>
     protected ReceptionSheet() { }
 
     public string? ReadPrintLayout() => this.GetProperty<string>("PrintLayoutV1");
+
+    public ReceptionMaterials? ReadMaterials() =>
+        this.GetProperty<string>("ReceptionMaterials") is { } json ? JsonSerializer.Deserialize<ReceptionMaterials>(json) : null;
+
+    public void SetMaterials(ReceptionMaterials? materials)
+    {
+        if (materials is null) ExtraProperties.Remove("ReceptionMaterials");
+        else this.SetProperty("ReceptionMaterials", JsonSerializer.Serialize(materials));
+    }
 
     public ReceptionPhotoSource? ReadSourcePhoto() =>
         this.GetProperty<string>("SourcePhoto") is { } json ? JsonSerializer.Deserialize<ReceptionPhotoSource>(json) : null;
@@ -55,9 +66,10 @@ public class ReceptionSheet : AuditedAggregateRoot<Guid>
     }
 
     public void Revise(string customer, string phone, DateOnly? pickupDate, string instructions,
-        string? printLayoutJson, decimal? totalPrice, decimal? deposit, string? handwritingJson)
+        string? printLayoutJson, decimal? totalPrice, decimal? deposit, string? handwritingJson, string? printEstimate = null)
     {
         if (!ValidAmount(totalPrice) || !ValidAmount(deposit)) throw new ArgumentOutOfRangeException(nameof(totalPrice));
+        if (printEstimate?.Length > MaxPrintEstimateLength) throw new ArgumentOutOfRangeException(nameof(printEstimate));
         Customer = customer.Trim();
         Phone = phone.Trim();
         PickupDate = pickupDate;
@@ -66,6 +78,7 @@ public class ReceptionSheet : AuditedAggregateRoot<Guid>
         else this.SetProperty("PrintLayoutV1", printLayoutJson);
         TotalPrice = totalPrice;
         Deposit = deposit;
+        PrintEstimate = string.IsNullOrWhiteSpace(printEstimate) ? null : printEstimate.Trim();
         HandwritingJson = handwritingJson;
     }
 

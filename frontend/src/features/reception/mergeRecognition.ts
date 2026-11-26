@@ -12,6 +12,8 @@ export interface RecognitionDifference {
   incoming: FieldValue
 }
 
+export const emptyRecognitionValue = (value: FieldValue) => comparable(value) === undefined
+
 function comparable(value: FieldValue) {
   if (Array.isArray(value)) {
     if (!value.length) return undefined
@@ -24,14 +26,14 @@ function comparable(value: FieldValue) {
 }
 
 export function mergeRecognition(current: Worksheet, incoming: Worksheet,
-    accepted: ReadonlySet<RecognitionField> = new Set(), reviewMissing = false) {
+    accepted: ReadonlySet<RecognitionField> = new Set(), reviewMissing = false, reviewFields?: ReadonlySet<RecognitionField>) {
   const differences: RecognitionDifference[] = []
   function choose<T extends FieldValue>(field: RecognitionField, existing: T, recognized: T): T {
     const next = comparable(recognized)
     if (next === undefined && !reviewMissing) return existing
     const previous = comparable(existing)
     if (previous === next) return existing
-    if (previous === undefined) return recognized
+    if (previous === undefined && !reviewFields?.has(field)) return recognized
     differences.push({ field, current: existing, incoming: recognized })
     return accepted.has(field) ? recognized : existing
   }

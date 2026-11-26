@@ -54,10 +54,11 @@ export const adminApiClient = {
   },
 
   async post<T>(path: string, body?: unknown): Promise<T> {
+    const multipart = body instanceof FormData
     const res = await fetch(`${PROXY_BASE}${path}`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: body !== undefined ? JSON.stringify(body) : undefined,
+      headers: multipart ? undefined : { 'Content-Type': 'application/json' },
+      body: multipart ? body : JSON.stringify(body),
     })
     return handleResponse<T>(res)
   },
