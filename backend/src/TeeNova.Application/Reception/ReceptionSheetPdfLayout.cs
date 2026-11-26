@@ -1,5 +1,6 @@
 using System.Globalization;
 using System.Text;
+using System.Text.RegularExpressions;
 
 namespace TeeNova.Reception;
 
@@ -57,7 +58,11 @@ internal sealed partial class ReceptionSheetPdfLayout
 
     public static IReadOnlyList<ReceptionPdfPage> Build(ReceptionSheetPdfSnapshot snapshot)
     {
-        var standard = snapshot.Layout?.Groups.Length > 1 ? null :
+        var groups = snapshot.Layout?.Groups ?? [];
+        var hasGarmentDetails = groups.Any(group =>
+            !Regex.IsMatch(group.Heading, @"\bbanners?\b|横幅|横额|旗帜", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant) &&
+            group.Rows.Any(row => row.Quantity.HasValue || !string.IsNullOrWhiteSpace(row.Colour) || !string.IsNullOrWhiteSpace(row.Size)));
+        var standard = groups.Length > 1 || hasGarmentDetails ? null :
             new ReceptionSheetPdfLayout(snapshot, Density.Standard)._pages;
         if (standard?.Count == 1) return standard;
         var compact = new ReceptionSheetPdfLayout(snapshot, Density.Compact)._pages;

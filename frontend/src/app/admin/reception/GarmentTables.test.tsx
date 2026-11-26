@@ -18,6 +18,22 @@ function rowValues(table: HTMLElement, label: string) {
   return within(header.closest('tr')!).getAllByRole('cell').map(cell => cell.textContent?.trim())
 }
 
+it.each([
+  {groups: [adult, orange], subtotal: '成人小计', total: '8'},
+  {groups: [child], subtotal: '童装小计', total: '2'},
+  {groups: [{...child, heading: '短袖', pricingKind: undefined}], subtotal: '其他小计', total: '2'},
+])('prints one combined list with $subtotal for a single audience', ({groups, subtotal, total}) => {
+  render(<PrintSheet sheet={{...blankWorksheet, layout: {...layout, groups}}} received="2026-11-26" estimate="待核"/>)
+  const table = screen.getByRole('table', {name: '服装数量明细（件）'})
+  expect(rowValues(table, subtotal).at(-1)).toBe(total)
+  expect(rowValues(table, '整单合计').at(-1)).toBe(total)
+})
+
+it('omits the combined table for a text-only worksheet', () => {
+  render(<GarmentTables layout={{title: '备注', groups: []}}/>)
+  expect(screen.queryByRole('table')).toBeNull()
+})
+
 it('prints adults and kids together with separate garment colours, designs, size totals and group notes', () => {
   render(<PrintSheet sheet={{...blankWorksheet, layout}} received="2026-11-26" estimate="待核"/>)
   const table = screen.getByRole('table', {name: '服装数量明细（件）'})

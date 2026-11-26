@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { missingSheetHeadings, totalPieces, type GarmentGroup, type PrintLayout, type SizeRow } from '@/features/reception/worksheet'
-import { mixedGarmentSections } from '@/features/reception/garmentSummary'
+import { garmentSections } from '@/features/reception/garmentSummary'
 import { defaultDoubleSidedPrintSize, garmentKind, garmentOnlyLabel, garments, type EstimateCatalogue } from '@/features/reception/estimate'
 import { CombinedGarmentTable, printRequirements } from './GarmentTables'
 
@@ -12,8 +12,8 @@ export function GarmentEditor({layout, catalogue, onChange}: {
 }) {
   const draft = layout ?? {title: '接待工作单', groups: []}
   const [editing, setEditing] = useState(false)
-  const sections = mixedGarmentSections(layout)
-  const canShowSummary = sections && !missingSheetHeadings(layout).length
+  const sections = garmentSections(layout)
+  const needsHeadings = missingSheetHeadings(layout).length > 0
   function changeDraft(value: PrintLayout) {
     // Adding or reclassifying a group must not replace the editor while someone is typing.
     setEditing(true)
@@ -36,13 +36,14 @@ export function GarmentEditor({layout, catalogue, onChange}: {
     if (group.prints?.length && !window.confirm(`清除「${group.heading}」已有的印花规格？本组估价将仅含衣价，印花费需另计。`)) return
     update(i, {prints: []})
   }
-  if (canShowSummary && !editing) return <>
+  if (sections && !needsHeadings && !editing) return <>
     <div className="rc-garment-view-actions"><h2>{draft.title}</h2>
       <button type="button" onClick={() => setEditing(true)}>编辑服装明细</button></div>
     <CombinedGarmentTable sections={sections} catalogue={catalogue}/>
   </>
   return <div className="rc-editor">
-    {canShowSummary && <div className="rc-garment-view-actions">
+    {sections && needsHeadings && <CombinedGarmentTable sections={sections} catalogue={catalogue}/>}
+    {sections && !needsHeadings && <div className="rc-garment-view-actions">
       <button type="button" onClick={() => setEditing(false)}>查看合并清单</button></div>}
     {layout && <label>工作单标题<input required aria-invalid={!draft.title.trim()} value={draft.title} maxLength={160} onChange={e => changeDraft({...draft, title: e.target.value})}/></label>}
     {draft.groups.map((g, i) => <section key={i} aria-label={g.heading || '服装明细'}>

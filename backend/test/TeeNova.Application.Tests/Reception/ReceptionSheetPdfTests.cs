@@ -204,6 +204,18 @@ public sealed class ReceptionSheetPdfTests
         Assert.Contains(page.Lines, line => line.Text == "30");
     }
 
+    [Theory]
+    [InlineData("tee", "成人小计")]
+    [InlineData("kidsTee", "童装小计")]
+    public void Prints_the_subtotal_and_order_total_for_a_single_garment_group(string kind, string subtotal)
+    {
+        var group = new ReceptionGarmentGroup("短袖", "matrix", "", [new("White", "M", 4)], kind, []);
+        var page = Assert.Single(ReceptionSheetPdfLayout.Build(Snapshot() with { Layout = new("工单", [group]) }));
+        var rows = page.Lines.GroupBy(line => line.Y).Select(row => row.Select(line => line.Text).ToArray());
+        Assert.Contains(rows, row => row.First() == subtotal && row.Last() == "4");
+        Assert.Contains(rows, row => row.First() == "总件数" && row.Last() == "4");
+    }
+
     [Fact]
     public async Task Rejects_a_successful_response_without_a_pdf_citation()
     {

@@ -39,7 +39,10 @@ it.each([false, true])('keeps the frozen quote during live pricing only while pr
   vi.mocked(useReceptionEstimate).mockReturnValue({ text: '正在估价…', printText: '待估价', catalogue: undefined, retry: undefined })
   render(<ReceptionDesk initialSheet={quoted.id} />)
   fireEvent.change(await screen.findByLabelText('客户姓名'), { target: { value: 'Updated customer' } })
-  if (changePrice) fireEvent.change(screen.getByLabelText('第1行数量'), { target: { value: '3' } })
+  if (changePrice) {
+    fireEvent.click(screen.getByRole('button', {name: '编辑服装明细'}))
+    fireEvent.change(screen.getByLabelText('第1行数量'), { target: { value: '3' } })
+  }
   fireEvent.click(screen.getByRole('button', { name: '保存修改' }))
   await waitFor(() => expect(saveSheet).toHaveBeenCalledWith(quoted.id, expect.objectContaining({
     printEstimate: changePrice ? '待估价' : quoted.printEstimate,

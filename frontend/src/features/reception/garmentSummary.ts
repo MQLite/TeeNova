@@ -1,9 +1,10 @@
 import type { GarmentGroup, PrintLayout, SizeRow } from './worksheet'
 
 type Audience = '成人' | '童装' | '其他'
+const bannerHeading = /\bbanners?\b|横幅|横额|旗帜/i
 
 function audience(group: GarmentGroup): Audience {
-  if (group.pricingKind === 'unlinked' || /\bbanners?\b|横幅|横额|旗帜/i.test(group.heading)) return '其他'
+  if (group.pricingKind === 'unlinked' || bannerHeading.test(group.heading)) return '其他'
   if (group.pricingKind) {
     return group.pricingKind === 'kidsTee' || group.pricingKind === 'kidsHoodie' ? '童装' : '成人'
   }
@@ -15,8 +16,9 @@ function audience(group: GarmentGroup): Audience {
 
 type IndexedGroup = {group: GarmentGroup; index: number; label: string}
 
-export function mixedGarmentSections(layout?: PrintLayout | null) {
-  if (!layout) return null
+export function garmentSections(layout?: PrintLayout | null) {
+  if (!layout?.groups.some(group => !bannerHeading.test(group.heading) &&
+    group.rows.some(row => row.quantity != null || row.colour.trim() || row.size.trim()))) return null
   const buckets: Record<Audience, IndexedGroup[]> = {'成人': [], '童装': [], '其他': []}
   layout.groups.forEach((group, index) => {
     const heading = group.heading.trim()
@@ -24,12 +26,11 @@ export function mixedGarmentSections(layout?: PrintLayout | null) {
     const label = heading && duplicate ? `${heading}（第 ${index + 1} 组）` : heading || `第 ${index + 1} 组`
     buckets[audience(group)].push({group, index, label})
   })
-  if (!buckets['成人'].length || !buckets['童装'].length) return null
   return (Object.keys(buckets) as Audience[]).filter(label => buckets[label].length)
     .map(label => ({label, groups: buckets[label]}))
 }
 
-export type GarmentSection = NonNullable<ReturnType<typeof mixedGarmentSections>>[number]
+export type GarmentSection = NonNullable<ReturnType<typeof garmentSections>>[number]
 
 // Keep source size order and group identities. Ambiguous cells and wide grids use detail rows.
 export function garmentSizeMatrix({groups}: GarmentSection) {

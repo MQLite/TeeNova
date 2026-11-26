@@ -1,6 +1,6 @@
 import { Fragment, useId } from 'react'
 import { garments, garmentOnlyLabel, type EstimateCatalogue } from '@/features/reception/estimate'
-import { alignAudienceMatrices, garmentSizeMatrix, mixedGarmentSections, type GarmentSection, type SizeMatrix } from '@/features/reception/garmentSummary'
+import { alignAudienceMatrices, garmentSections, garmentSizeMatrix, type GarmentSection, type SizeMatrix } from '@/features/reception/garmentSummary'
 import { matrixColumns, totalPieces, type GarmentGroup, type PrintLayout, type SizeRow } from '@/features/reception/worksheet'
 
 export function printRequirements(group: GarmentGroup, catalogue?: EstimateCatalogue) {
@@ -61,8 +61,10 @@ function DetailRows({section}: {section: GarmentSection}) {
 }
 
 export function CombinedGarmentTable({sections, catalogue}: {sections: GarmentSection[]; catalogue?: EstimateCatalogue}) {
-  const matrices = sections.map(garmentSizeMatrix)
-  const aligned = matrices[0] && matrices[1] && alignAudienceMatrices(matrices[0], matrices[1])
+  const mixedAudience = sections[0]?.label === '成人' && sections[1]?.label === '童装'
+  const matrices = sections.map(section => !mixedAudience && section.groups.some(({group}) => group.presentation === 'rows')
+    ? null : garmentSizeMatrix(section))
+  const aligned = mixedAudience && matrices[0] && matrices[1] && alignAudienceMatrices(matrices[0], matrices[1])
   if (aligned) [matrices[0], matrices[1]] = aligned
   const useMatrix = matrices.every(matrix => matrix !== null)
   const width = useMatrix ? Math.max(...matrices.map(matrix => matrix.columnCount)) : 2
@@ -90,7 +92,7 @@ export function CombinedGarmentTable({sections, catalogue}: {sections: GarmentSe
 
 export function GarmentTables({layout}: {layout?: PrintLayout | null}) {
   if (!layout?.groups.length) return null
-  const sections = mixedGarmentSections(layout)
+  const sections = garmentSections(layout)
   if (sections) return <CombinedGarmentTable sections={sections}/>
   return <div className="rc-tables">{layout.groups.map((group, i) => {
     const columns = matrixColumns(group)

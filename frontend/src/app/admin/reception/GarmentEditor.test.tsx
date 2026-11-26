@@ -12,6 +12,23 @@ const group: GarmentGroup = {
 const sibling = {...group, heading: '童装'}
 const layout: PrintLayout = {title: '门店工单', groups: [group, sibling]}
 
+it.each(['hoodie', 'kidsHoodie'] as const)('opens a %s worksheet with its combined total', pricingKind => {
+  render(<GarmentEditor layout={{...layout, groups: [{...group, pricingKind}]}} onChange={vi.fn()}/>)
+  expect(screen.getByRole('row', {name: /整单合计/})).toHaveTextContent('7')
+})
+
+it('keeps a blank garment row editable and displays the summary once a size is entered', () => {
+  function Editor() {
+    const [draft, setDraft] = useState<PrintLayout>({...layout, groups: [{...group, rows: [{colour: '', size: '', quantity: null}]}]})
+    return <GarmentEditor layout={draft} onChange={setDraft}/>
+  }
+  render(<Editor/>)
+  expect(screen.queryByRole('table', {name: '服装数量明细（件）'})).toBeNull()
+  fireEvent.change(screen.getByLabelText('第1行尺码'), {target: {value: 'S'}})
+  fireEvent.click(screen.getByRole('button', {name: '查看合并清单'}))
+  expect(screen.getByRole('row', {name: /整单合计/})).toHaveTextContent('待核')
+})
+
 it('keeps group metadata and one editable blank row after removing the final size', () => {
   const changed = vi.fn()
   function Editor() {
@@ -19,6 +36,7 @@ it('keeps group metadata and one editable blank row after removing the final siz
     return <GarmentEditor layout={draft} onChange={next => { setDraft(next); changed(next) }}/>
   }
   render(<Editor/>)
+  fireEvent.click(screen.getByRole('button', {name: '编辑服装明细'}))
   const section = within(screen.getByRole('region', {name: group.heading}))
   fireEvent.click(section.getByRole('button', {name: '删除第1行'}))
   expect(section.getByLabelText('第1行尺码')).toHaveValue('L')
@@ -34,6 +52,7 @@ it('removes only the selected group after explicit confirmation', () => {
   const changed = vi.fn()
   const confirm = vi.spyOn(window, 'confirm').mockReturnValueOnce(false).mockReturnValueOnce(true)
   render(<GarmentEditor layout={layout} onChange={changed}/>)
+  fireEvent.click(screen.getByRole('button', {name: '编辑服装明细'}))
   const remove = within(screen.getByRole('region', {name: group.heading})).getByRole('button', {name: '删除整个分组'})
   fireEvent.click(remove)
   expect(confirm).toHaveBeenCalledWith(expect.stringContaining(group.heading))
@@ -47,6 +66,7 @@ it('keeps recognized prints until the operator confirms a garment-only estimate'
   const confirm = vi.spyOn(window, 'confirm').mockReturnValueOnce(false).mockReturnValueOnce(true)
   const invalid = {...group, prints: [{area: 'UNAVAILABLE', size: ''}]}
   const {rerender} = render(<GarmentEditor layout={{...layout, groups: [invalid]}} onChange={changed}/>)
+  fireEvent.click(screen.getByRole('button', {name: '编辑服装明细'}))
   expect(screen.queryByLabelText('印花位置')).toBeNull()
   expect(screen.queryByLabelText('印花大小')).toBeNull()
   const garmentOnly = screen.getByRole('button', {name: '选择仅计衣价（不含印花费）'})
@@ -90,6 +110,7 @@ it('continues editing when a change creates a mixed order and exposes missing re
   const section = within(screen.getByRole('region', {name: sibling.heading}))
   fireEvent.change(section.getByLabelText('估价商品'), {target: {value: 'kidsHoodie'}})
   const title = screen.getByLabelText('工作单标题')
+  expect(screen.getByRole('table', {name: '服装数量明细（件）'})).toBeVisible()
   expect(title).toHaveAttribute('aria-invalid', 'true')
   expect(screen.queryByText('查看合并清单')).toBeNull()
   fireEvent.change(title, {target: {value: '新工单'}})
