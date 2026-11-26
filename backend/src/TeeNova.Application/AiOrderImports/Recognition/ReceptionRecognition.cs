@@ -78,6 +78,10 @@ public static class ReceptionRecognition
             Choose matrix for comparing sizes across colours, or rows for a long or irregular list.
             Within one garment/design group keep different colours as separate rows. Split distinct garment styles,
             print placements and designs into clearly named groups. Never mix garment colour with ink colour.
+            When adult and kids sizes appear in the same source table, keep the same design wording and garment
+            colours across their pricing groups so they can be displayed together. Read each quantity at its
+            size, garment-colour and design intersection. Adult/kids subtotals and the overall total are checks,
+            not additional items. Keep production notes concise and avoid repeating the size grid in notes.
             For catalogue estimates, an unmarked garment is a Gildan Cotton Tee (pricingKind tee).
             A hand-drawn circle enclosing the letter H (Ⓗ) or an explicit hoodie denotes a Gildan Hoodie.
             Use kidsTee or kidsHoodie only for clearly identified children's versions.

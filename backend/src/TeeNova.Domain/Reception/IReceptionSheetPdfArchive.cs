@@ -22,7 +22,7 @@ public interface IReceptionSheetPdfArchive
 
     Task ReleaseAsync(Guid id, Guid attempt, CancellationToken ct);
 
-    Task<IReadOnlyList<ReceptionSheetPdfInfo>?> ListAsync(Guid sheetId, CancellationToken ct);
+    Task<IReadOnlyList<ReceptionSheetPdfInfo>?> ListAsync(Guid sheetId, string currentTemplate, CancellationToken ct);
 
     Task<byte[]?> ReadAsync(Guid sheetId, Guid id, CancellationToken ct);
 

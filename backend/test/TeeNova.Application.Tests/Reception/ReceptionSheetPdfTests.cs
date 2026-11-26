@@ -78,6 +78,116 @@ public sealed class ReceptionSheetPdfTests
     }
 
     [Fact]
+    public void Fits_both_designs_and_age_ranges_of_a_sixty_shirt_order_on_one_page()
+    {
+        var colours = new[] { "Pink", "Purple", "Daisy Yellow" };
+        ReceptionGarmentGroup Group(string heading, string kind, string[] sizes, int[,] counts, string area)
+        {
+            var rows = (from s in Enumerable.Range(0, sizes.Length)
+                        from c in Enumerable.Range(0, colours.Length)
+                        where counts[s, c] > 0
+                        select new ReceptionSizeRow(colours[c], sizes[s], counts[s, c])).ToArray();
+            return new(heading, "matrix", heading + " 说明", rows, kind, [new(area, "A4")]);
+        }
+        string[] adult = ["5XL", "3XL", "2XL", "XL", "L", "S"];
+        string[] kids = ["12K", "8K", "6K", "4K", "2K"];
+        var groups = new[] {
+            Group("成人 T恤 | White 图案", "tee", adult, new[,] {{1,0,1},{2,1,2},{0,4,2},{1,3,2},{1,0,2},{0,2,0}}, "FRONT_CENTER"),
+            Group("成人 T恤 | Orange 图案", "tee", adult, new[,] {{1,0,1},{2,1,3},{0,4,2},{1,3,2},{1,0,3},{0,2,0}}, "BACK_CENTER"),
+            Group("儿童 T恤 | White 图案", "kidsTee", kids, new[,] {{0,0,1},{0,0,0},{0,0,1},{0,1,0},{0,1,0}}, "LEFT_CHEST"),
+            Group("儿童 T恤 | Orange 图案", "kidsTee", kids, new[,] {{0,0,1},{0,0,1},{0,0,2},{0,1,0},{0,1,0}}, "RIGHT_CHEST")
+        };
+        var snapshot = Snapshot() with { Layout = new("Piula's Order", groups), TotalPrice = 1770, Deposit = 750 };
+        var page = Assert.Single(ReceptionSheetPdfLayout.Build(snapshot));
+        var bands = page.Lines.GroupBy(line => line.Y).Select(row => row.OrderBy(line => line.X)
+            .Select(line => line.Text).ToArray()).ToArray();
+        string[] expectedRows = [
+            "5XL 1 1 1 1 — — 4", "3XL 2 2 2 3 1 1 11", "2XL — — 2 2 4 4 12",
+            "XL 1 1 2 2 3 3 12", "L 1 1 2 3 — — 7", "S — — — — 2 2 4",
+            "成人小计 5 5 9 11 10 10 50", "12K — — 1 1 — — 2", "8K — — — 1 — — 1",
+            "6K — — 1 2 — — 3", "4K — — — — 1 1 2", "2K — — — — 1 1 2",
+            "童装小计 — — 2 4 2 2 10"
+        ];
+        Assert.Contains(bands, row => row.Contains("#1 White") && row.Contains("#2 Orange"));
+        Assert.Contains(bands, row => row.Contains("#3 White") && row.Contains("#4 Orange"));
+        Assert.Equal(expectedRows, bands.Where(row => row.Length == 8 && row[0] != "图案/分组")
+            .Select(row => string.Join(" ", row)));
+        Assert.Contains(bands, row => row.First() == "总件数" && row.Last() == "60");
+        foreach (var group in groups)
+            Assert.Contains(group.Notes, string.Concat(page.Lines.Select(line => line.Text)));
+        foreach (var value in new[] { "正面中央", "背面中央", "左胸", "右胸", "1,770.00", "750.00" })
+            Assert.Contains(value, string.Concat(page.Lines.Select(line => line.Text)));
+    }
+
+    [Fact]
+    public void Keeps_duplicate_entries_unknowns_and_explicit_zero_in_a_shared_list()
+    {
+        var groups = new ReceptionGarmentGroup[] {
+            new("Adult shirts", "matrix", "", [new("Red", "XS", 7), new("Red", "XS", null)], null, null),
+            new("Kids shirts", "rows", "", [new("Blue", "2K", 0)], null, [])
+        };
+        var page = Assert.Single(ReceptionSheetPdfLayout.Build(Snapshot() with { Layout = new("明细", groups) }));
+        var rows = page.Lines.GroupBy(line => line.Y).Select(row => row.Select(line => line.Text).ToArray());
+        Assert.Contains(rows, row => row.Contains("XS") && row.Last() == "7");
+        Assert.Contains(rows, row => row.Contains("XS") && row.Last() == "待核");
+        Assert.Contains(rows, row => row.First() == "童装小计" && row.Last() == "0");
+        Assert.Contains(rows, row => row.First() == "总件数" && row.Last() == "待核");
+    }
+
+    [Fact]
+    public void Repeats_headers_and_preserves_each_entry_when_a_mixed_list_spans_pages()
+    {
+        var rows = Enumerable.Range(1, 100)
+            .Select(i => new ReceptionSizeRow($"Colour {i:D3}", "XL", i)).ToArray();
+        var groups = new ReceptionGarmentGroup[] {
+            new("Adult shirts", "rows", "", rows, "tee", []),
+            new("Kids shirts", "rows", "", [new("Blue", "2K", 3)], "kidsTee", [])
+        };
+        var pages = ReceptionSheetPdfLayout.Build(Snapshot() with { Layout = new("订单", groups) });
+        Assert.True(pages.Count > 1);
+        var printed = new List<string>();
+        foreach (var page in pages)
+        {
+            var detail = page.Lines.Where(line => line.Text.StartsWith("Colour ")).ToArray();
+            if (detail.Length == 0) continue;
+            var header = Assert.Single(page.Lines, line => line.Text == "衣服颜色" && line.Y < detail[0].Y);
+            foreach (var line in detail)
+            {
+                Assert.InRange(line.Y, header.Y + 1, ReceptionSheetPdfLayout.Height - 60);
+                Assert.Equal(11, line.Size);
+                printed.Add(line.Text);
+            }
+        }
+        Assert.Equal(rows.Select(row => row.Colour), printed);
+        Assert.Contains(pages.SelectMany(p => p.Lines), line => line.Text == "5053");
+    }
+
+    [Fact]
+    public void Fits_a_borderline_mixed_list_without_shrinking_multipage_orders()
+    {
+        var rows = Enumerable.Range(1, 28).Select(i => new ReceptionSizeRow($"Colour {i}", "L", 1)).ToArray();
+        var groups = new ReceptionGarmentGroup[] {
+            new("Adult shirts", "rows", "", rows, "tee", []),
+            new("Kids shirts", "rows", "", [new("Blue", "2K", 3)], "kidsTee", [])
+        };
+        var page = Assert.Single(ReceptionSheetPdfLayout.Build(Snapshot() with { Layout = new("订单", groups) }));
+        var colours = page.Lines.Where(line => line.Text.StartsWith("Colour ")).ToArray();
+        Assert.Equal(28, colours.Length);
+        Assert.All(colours, line => Assert.InRange(line.Size, 10, 11));
+    }
+
+    [Fact]
+    public void Fits_a_regular_single_group_matrix_before_paginating()
+    {
+        var rows = (from colour in new[] { "Blue", "Red", "White", "Purple", "Pink" }
+                    from size in new[] { "S", "M", "L", "XL", "2XL", "3XL" }
+                    select new ReceptionSizeRow(colour, size, 1)).ToArray();
+        var layout = new ReceptionPrintLayout("工作单", [new("成人", "matrix", "", rows, "tee", [])]);
+        var page = Assert.Single(ReceptionSheetPdfLayout.Build(Snapshot() with { Layout = layout }));
+        Assert.Contains(page.Lines, line => line.Text == "30");
+    }
+
+    [Fact]
     public async Task Rejects_a_successful_response_without_a_pdf_citation()
     {
         using var responses = new OpenAiHandler("""{"status":"completed","output":[]}""");

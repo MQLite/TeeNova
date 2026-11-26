@@ -5,10 +5,21 @@ import { adminApiClient } from '@/lib/admin-client'
 const acceptedTypes = ['image/png', 'application/pdf', 'image/jpeg', 'image/webp']
 const accept = [...acceptedTypes, '.png', '.pdf', '.jpg', '.jpeg', '.webp'].join(',')
 type Batch = { files: File[]; id: string }
+type UploadResult = { originalBytes: number; storedBytes: number; compressedFiles: string[] }
+const mib = 1024 * 1024
+
+function batchSize(files: File[]) {
+  return files.reduce((total, file) => total + file.size, 0)
+}
+
+function displaySize(bytes: number) {
+  if (bytes < 1024) return `${bytes} B`
+  return bytes < mib ? `${(bytes / 1024).toFixed(1)} KiB` : `${(bytes / mib).toFixed(1)} MiB`
+}
 
 function validate(files: File[]) {
   if (files.length > 10) return '每次最多可上传 10 份设计稿。'
-  if (files.reduce((total, file) => total + file.size, 0) > 8 * 1024 * 1024) return '这批文件合计超过 8 MiB，请分批上传。'
+  if (batchSize(files) > 48 * mib) return '每批原文件合计最多 48 MiB，请分批上传或缩小单个文件。'
   for (const file of files) {
     if (!file.size) return file.name + ' 是空文件，请重新选择。'
     const genericType = !file.type || file.type === 'application/octet-stream'
@@ -32,14 +43,20 @@ export function ArtworkUpload({ path, onChanged, children }: {
     sending.current = true
     setBusy(true)
     setError('')
-    setStatus(`正在上传 ${selected.files.length} 份设计稿…`)
+    setStatus(batchSize(selected.files) > 8 * mib
+      ? `正在上传 ${selected.files.length} 份设计稿并自动压缩，请稍候…`
+      : `正在上传 ${selected.files.length} 份设计稿…`)
     try {
       const form = new FormData()
       form.append('uploadId', selected.id)
       selected.files.forEach((file, index) => form.append('file' + index, file))
-      await adminApiClient.post(path + '/upload', form)
+      const result = await adminApiClient.post<UploadResult>(path + '/upload', form)
       setBatch(undefined)
-      setStatus(`已上传 ${selected.files.length} 份设计稿。`)
+      let message = `已上传 ${selected.files.length} 份设计稿。`
+      if (result?.compressedFiles?.length) {
+        message += `已压缩 ${result.compressedFiles.join('、')}，本批从 ${displaySize(result.originalBytes)} 减至 ${displaySize(result.storedBytes)}。`
+      }
+      setStatus(message)
       onChanged()
     } catch (e) {
       setStatus('')
@@ -47,6 +64,8 @@ export function ArtworkUpload({ path, onChanged, children }: {
       if (e instanceof ApiError && e.status === 409) {
         setBatch(undefined)
         onChanged()
+      } else if (e instanceof ApiError && [400, 413].includes(e.status)) {
+        setBatch(undefined)
       }
     } finally {
       sending.current = false
@@ -74,7 +93,7 @@ export function ArtworkUpload({ path, onChanged, children }: {
       <button type="button" disabled={busy} onClick={() => input.current?.click()}>上传本地设计稿</button>
       {children}
     </div>
-    <small>PNG、PDF、JPEG、WebP · 每批最多 10 份，合计 8 MiB</small>
+    <small>PNG、PDF、JPEG、WebP · 每批最多 10 份，原文件合计最多 48 MiB，超过 8 MiB 自动尝试压缩。</small>
     {status && <p role="status">{status}</p>}
     {error && <p role="alert" className="rc-error">{error}
       {batch && <button type="button" onClick={() => void upload(batch)}>重试上传</button>}</p>}

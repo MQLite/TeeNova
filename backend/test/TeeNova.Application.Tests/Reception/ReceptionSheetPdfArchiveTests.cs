@@ -90,6 +90,24 @@ public sealed class ReceptionSheetPdfArchiveTests
     }
 
     [Fact]
+    public async Task New_print_template_regenerates_even_when_the_saved_sheet_is_unchanged()
+    {
+        await using var fixture = await ArchiveFixture.Create();
+        var sheet = await fixture.Save("Worksheet", null);
+        fixture.Generator.Resume.TrySetResult();
+        var previous = await ReadInfo(await fixture.Generate(sheet.Version));
+        fixture.ExecuteSql("UPDATE ReceptionSheetPdfs SET Template = 'previous-template'");
+        var current = await ReadInfo(await fixture.Generate(sheet.Version));
+
+        Assert.NotEqual(previous.Id, current.Id);
+        var history = await fixture.Client.GetFromJsonAsync<ReceptionSheetPdfInfo[]>(fixture.ArchiveRoute);
+        Assert.NotNull(history);
+        Assert.True(history.Single(pdf => pdf.Id == current.Id).IsCurrent);
+        Assert.False(history.Single(pdf => pdf.Id == previous.Id).IsCurrent);
+        Assert.Equal(HttpStatusCode.OK, (await fixture.Client.GetAsync($"{fixture.ArchiveRoute}/{previous.Id}")).StatusCode);
+    }
+
+    [Fact]
     public async Task Stale_unarchived_version_and_cross_sheet_file_access_are_rejected()
     {
         await using var fixture = await ArchiveFixture.Create();

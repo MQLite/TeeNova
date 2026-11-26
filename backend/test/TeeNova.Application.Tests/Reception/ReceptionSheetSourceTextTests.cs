@@ -83,6 +83,19 @@ public class ReceptionSheetSourceTextTests
         Assert.Null(edited.SourcePhoto);
     }
 
+    [Fact]
+    public async Task Extended_handwriting_round_trips_and_rejects_points_below_the_last_section()
+    {
+        var controller = Controller(Document("text/plain"));
+        ReceptionSheetsController.InkPoint[] points = [new(20, 20), new(40, 1450), new(1800, 3600)];
+        var input = new ReceptionSheetsController.SheetInput("Customer", "", null, "", Version: sheet.ConcurrencyStamp,
+            Handwriting: [new(false, points)]);
+        var saved = await Save(controller, input);
+        var invalid = input with { Version = saved.Version, Handwriting = [new(false, [new(100, 3601)])] };
+        Assert.IsType<BadRequestObjectResult>(await controller.Save(sheet.Id, invalid, default));
+        Assert.Equal(points, Assert.Single((await controller.Get(sheet.Id, default)).Handwriting!).Points);
+    }
+
     private async Task<ReceptionSheetsController.SheetDto> Save(ReceptionSheetsController controller,
         ReceptionSheetsController.SheetInput input) =>
         Assert.IsType<ReceptionSheetsController.SheetDto>(

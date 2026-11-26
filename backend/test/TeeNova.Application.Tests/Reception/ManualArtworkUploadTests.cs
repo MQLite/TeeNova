@@ -8,6 +8,7 @@ using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Options;
 using Microsoft.Extensions.Primitives;
 using SixLabors.ImageSharp;
+using SixLabors.ImageSharp.Formats.Png;
 using SixLabors.ImageSharp.PixelFormats;
 using TeeNova.AiOrderImports.PrivateStorage;
 using TeeNova.Auth;
@@ -61,6 +62,53 @@ public sealed class ManualArtworkUploadTests : IDisposable
         Assert.Single(store.List(sheet.Id));
         store.ReturnFromDeletedSheet(sheet.Id);
         Assert.Contains(store.Pending(), file => file.Source == "return" && file.Subject.Contains(sheet.Id.ToString()[..8]));
+    }
+
+    [Fact]
+    public async Task Oversized_mixed_batch_archives_only_the_large_file_compressed_and_remembers_its_original()
+    {
+        using var image = new Image<Rgba32>(1600, 1500, new Rgba32(90, 130, 74, 128));
+        using var encoded = new MemoryStream();
+        image.SaveAsPng(encoded, new PngEncoder { CompressionLevel = PngCompressionLevel.NoCompression });
+        var png = encoded.ToArray();
+        Assert.True(png.Length > ManualArtworkUpload.MaxBytes);
+        var pdf = await File.ReadAllBytesAsync(Path.Combine(AppContext.BaseDirectory, "Reception", "worksheet.pdf"));
+        var (controller, store) = Controller();
+        controller.Request.Form = Form(("proof.pdf", pdf), ("shirt.png", png));
+        Assert.IsType<OkObjectResult>(await controller.UploadToSheet(sheet.Id, default));
+        var files = store.List(sheet.Id);
+        Assert.Equal(2, files.Count);
+        Assert.Equal(pdf, store.Read(sheet.Id, Guid.Parse(files.Single(f => f.Name == "proof.pdf").Id))!.Value.Bytes);
+        var stored = store.Read(sheet.Id, Guid.Parse(files.Single(f => f.Name == "shirt.png").Id))!.Value.Bytes;
+        Assert.InRange(stored.Length, 1, ManualArtworkUpload.MaxBytes - pdf.Length);
+        using var decoded = Image.Load<Rgba32>(stored);
+        Assert.Equal(image.Size, decoded.Size);
+        Assert.Equal(image[100, 100], decoded[100, 100]);
+        Assert.IsType<OkObjectResult>(await controller.UploadToSheet(sheet.Id, default));
+        Assert.Equal(2, store.List(sheet.Id).Count);
+        controller.Request.Form = Form(("proof.pdf", pdf), ("shirt.png", stored));
+        Assert.IsType<ConflictObjectResult>(await controller.UploadToSheet(sheet.Id, default));
+    }
+
+    [Fact]
+    public async Task A_batch_that_cannot_fit_without_losing_animation_is_rejected_atomically()
+    {
+        using var image = new Image<Rgba32>(1200, 1100, Color.Red);
+        using var second = new Image<Rgba32>(image.Width, image.Height, Color.Blue);
+        image.Frames.AddFrame(second.Frames.RootFrame);
+        using var encoded = new MemoryStream();
+        image.SaveAsPng(encoded, new PngEncoder { CompressionLevel = PngCompressionLevel.NoCompression });
+        var animation = encoded.ToArray();
+        Assert.True(animation.Length > ManualArtworkUpload.MaxBytes);
+        var pdf = await File.ReadAllBytesAsync(Path.Combine(AppContext.BaseDirectory, "Reception", "worksheet.pdf"));
+        var (controller, store) = Controller();
+        controller.Request.Form = Form(("proof.pdf", pdf), ("animated.png", animation));
+        var rejection = Assert.IsType<BadRequestObjectResult>(await controller.UploadPending(default));
+        Assert.Contains("自动压缩后仍超过 8 MiB", rejection.Value!.ToString());
+        Assert.Empty(store.Pending());
+        controller.Request.Form = Form(("proof.pdf", pdf));
+        Assert.IsType<OkObjectResult>(await controller.UploadPending(default));
+        Assert.Single(store.Pending());
     }
 
     [Fact]

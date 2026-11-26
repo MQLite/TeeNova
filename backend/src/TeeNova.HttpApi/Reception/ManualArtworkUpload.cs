@@ -5,9 +5,12 @@ using SixLabors.ImageSharp.Formats;
 
 namespace TeeNova.Reception;
 
-internal sealed record ManualArtworkUpload(Guid Id, IReadOnlyList<GmailFile> Files)
+internal sealed record ManualArtworkUpload(Guid Id, IReadOnlyList<GmailFile> Files,
+    byte[] SourceFingerprint, int OriginalBytes, int StoredBytes, IReadOnlyList<string> CompressedFiles)
 {
     internal const int MaxBytes = 8 * 1024 * 1024;
+    internal const int MaxSourceBytes = 48 * 1024 * 1024;
+    internal const string SourceLimitMessage = "每批原文件合计最多 48 MiB，请分批上传或缩小单个文件。";
     private static readonly SemaphoreSlim Decoders = new(2);
 
     internal static async Task<ManualArtworkUpload> Read(IFormCollection form, CancellationToken ct)
@@ -16,8 +19,8 @@ internal sealed record ManualArtworkUpload(Guid Id, IReadOnlyList<GmailFile> Fil
             throw new InvalidDataException("上传编号无效，请重新选择文件。");
         if (form.Files.Count is 0 or > 10)
             throw new InvalidDataException("每次请选择 1 至 10 个设计稿。");
-        if (form.Files.Sum(f => f.Length) > MaxBytes)
-            throw new InvalidDataException("每次上传的文件合计不能超过 8 MiB。");
+        if (form.Files.Sum(f => f.Length) > MaxSourceBytes)
+            throw new InvalidDataException(SourceLimitMessage);
 
         var files = new List<GmailFile>(form.Files.Count);
         for (var slot = 0; slot < form.Files.Count; slot++)
@@ -45,7 +48,35 @@ internal sealed record ManualArtworkUpload(Guid Id, IReadOnlyList<GmailFile> Fil
                 throw new InvalidDataException(error);
             files.Add(new(slot, name, mime, bytes));
         }
-        return new(id, files);
+        var fingerprint = GmailArtworkStore.UploadFingerprint(files);
+        var original = files.Sum(f => f.Bytes.Length);
+        var total = original;
+        var compressed = new List<string>();
+        if (total > MaxBytes)
+        {
+            await Decoders.WaitAsync(ct);
+            try
+            {
+                foreach (var file in files.OrderByDescending(f => f.Bytes.Length).ToArray())
+                {
+                    ct.ThrowIfCancellationRequested();
+                    var available = MaxBytes - (total - file.Bytes.Length);
+                    var target = available > 0 ? available : (int)((long)MaxBytes * file.Bytes.Length / total);
+                    var bytes = file.Mime == "application/pdf"
+                        ? ArtworkPdfCompression.Compress(file.Bytes, target, ct)
+                        : await ArtworkImageCompression.Compress(file.Bytes, file.Mime, target, ct);
+                    if (bytes == null || bytes.Length >= file.Bytes.Length) continue;
+                    files[file.Slot] = file with { Bytes = bytes };
+                    total -= file.Bytes.Length - bytes.Length;
+                    compressed.Add(file.Name);
+                    if (total <= MaxBytes) break;
+                }
+            }
+            finally { Decoders.Release(); }
+            if (total > MaxBytes)
+                throw new InvalidDataException("为保留设计稿质量，自动压缩后仍超过 8 MiB。请分批上传，或优化单个文件后再试。");
+        }
+        return new(id, files, fingerprint, original, total, compressed);
     }
 
     private static async Task<string?> ContentError(byte[] bytes, string mime, CancellationToken ct)

@@ -45,7 +45,7 @@ it('rejects excessive file count, combined size, empty files and unsupported typ
   const picker = screen.getByLabelText('选择本地设计稿')
   for (const [files, expected] of [
     [Array(11).fill(pdf), /10/],
-    [[new File([new Uint8Array(8 * 1024 * 1024)], 'large.png', { type: 'image/png' }), pdf], /8 MiB/],
+    [[Object.defineProperty(new File(['large'], 'large.png', { type: 'image/png' }), 'size', { value: 48 * 1024 * 1024 }), pdf], /48 MiB/],
     [[new File([], 'empty.pdf', { type: 'application/pdf' })], /空/],
     [[new File(['hello'], 'hello.txt', { type: 'text/plain' })], /PNG/],
   ] as [File[], RegExp][]) {
@@ -53,6 +53,22 @@ it('rejects excessive file count, combined size, empty files and unsupported typ
     expect(screen.getByRole('alert')).toHaveTextContent(expected)
   }
   expect(fetch).toHaveBeenCalledTimes(1)
+})
+
+it.each([['pending', pending], ['linked', sheet]])('reports automatic compression for a large %s batch', async (where, endpoint) => {
+  const large = Object.defineProperty(new File(['art'], 'poster.png', { type: 'image/png' }), 'size', { value: 12 * 1024 * 1024 })
+  let finish!: (response: Response) => void
+  vi.stubGlobal('fetch', vi.fn(async (url: string, init: RequestInit) => {
+    if (url === endpoint) return json([])
+    expect(url).toBe(endpoint + '/upload')
+    expect((init.body as FormData).get('file0')).toBe(large)
+    return new Promise<Response>(resolve => { finish = resolve })
+  }))
+  await act(async () => { render(where === 'pending' ? <PendingGmailArtwork /> : <GmailArtwork sheetId="sheet-a" />) })
+  fireEvent.change(screen.getByLabelText('选择本地设计稿'), { target: { files: [large] } })
+  expect(screen.getByRole('status')).toHaveTextContent('自动压缩')
+  await act(async () => { finish(json({ originalBytes: large.size, storedBytes: 6 * 1024 * 1024, compressedFiles: ['poster.png'] })) })
+  expect(screen.getByRole('status')).toHaveTextContent('已压缩 poster.png，本批从 12.0 MiB 减至 6.0 MiB')
 })
 
 it('keeps the work order usable when its attachment list cannot be read', async () => {

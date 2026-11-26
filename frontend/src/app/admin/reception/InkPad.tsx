@@ -9,6 +9,15 @@ export type Stroke = { points: Point[]; erase: boolean }
 // ReceptionSheetsController.Save validates the complete history, including eraser strokes.
 const maxStrokes = 10_000
 const maxPoints = 150_000
+const sectionHeight = 900
+const maxHeight = 4 * sectionHeight
+
+function heightForStrokes(strokes: Stroke[]) {
+  let bottom = 0
+  for (const stroke of strokes)
+    for (const point of stroke.points) bottom = Math.max(bottom, point.y)
+  return Math.min(maxHeight, Math.max(1, Math.ceil(bottom / sectionHeight)) * sectionHeight)
+}
 
 function capacityNotice(strokes: number, points: number) {
   if (points >= maxPoints) return '手稿已达书写点数上限。可保存已有手稿，或撤销后继续书写。'
@@ -37,15 +46,17 @@ export function InkPad({ initialStrokes, onReady, onStrokeStart, onChange, disab
   const scrollDrag = useRef<{ id: number; y: number }>()
   const [eraser, setEraser] = useState(false)
   const [allowTouch, setAllowTouch] = useState(false)
+  const [height, setHeight] = useState(() => heightForStrokes(initialStrokes))
   const [count, setCount] = useState(initialStrokes.length)
   const [hasInk, setHasInk] = useState(false)
   const [notice, setNotice] = useState(() => capacityNotice(history.length, drawing.pointCount))
 
   function position(e: PointerEvent<HTMLCanvasElement>) {
     const box = e.currentTarget.getBoundingClientRect()
+    const { width, height } = e.currentTarget
     return {
-      x: Math.min(1800, Math.max(0, Math.round((e.clientX - box.left) * 1800 / box.width))),
-      y: Math.min(900, Math.max(0, Math.round((e.clientY - box.top) * 900 / box.height))),
+      x: Math.min(width, Math.max(0, Math.round((e.clientX - box.left) * width / box.width))),
+      y: Math.min(height, Math.max(0, Math.round((e.clientY - box.top) * height / box.height))),
     }
   }
   const segment = useCallback((a: Point, b: Point, erase: boolean) => {
@@ -118,7 +129,7 @@ export function InkPad({ initialStrokes, onReady, onStrokeStart, onChange, disab
     const ctx = paper.current!.getContext('2d')!
     inkColor.current = getComputedStyle(ctx.canvas).color
     ctx.fillStyle = 'white'
-    ctx.fillRect(0, 0, 1800, 900)
+    ctx.fillRect(0, 0, ctx.canvas.width, ctx.canvas.height)
     for (const stroke of history) {
       stroke.points.forEach((p, index) => segment(stroke.points[Math.max(0, index - 1)], p, stroke.erase))
     }
@@ -128,7 +139,7 @@ export function InkPad({ initialStrokes, onReady, onStrokeStart, onChange, disab
     const ink = history.length > 0 && containsInk()
     setHasInk(ink)
     onReady(paper.current!, ink)
-  }, [history, onReady, redraw])
+  }, [history, height, onReady, redraw])
   function undo() {
     if (pointer.current !== undefined) return
     const removed = history.pop()
@@ -140,9 +151,14 @@ export function InkPad({ initialStrokes, onReady, onStrokeStart, onChange, disab
   }
   return <>
     <div className="rc-paper"><div className="rc-paperhead">客户原稿 <span>自由手写</span></div>
-      <canvas ref={paper} width={1800} height={900} aria-label="手写接单纸" aria-disabled={disabled} onPointerDown={start}
+      <canvas ref={paper} width={1800} height={height} aria-label="手写接单纸" aria-disabled={disabled} onPointerDown={start}
         onPointerMove={move} onPointerUp={end} onPointerCancel={end} onLostPointerCapture={end} />
       {!hasInk && <span className="rc-prompt">用手写笔直接写，例如 White B&amp;F、M 8、L 10</span>}
+      {!disabled && <div className="rc-paper-extension">
+        <button type="button" disabled={height >= maxHeight} onClick={() => {
+          if (pointer.current === undefined) setHeight(h => Math.min(maxHeight, h + sectionHeight))
+        }}>{height >= maxHeight ? '已达最大纸长' : '向下加长手写纸'}</button>
+      </div>}
     </div>
     {notice && <p role="status" className="rc-error">{notice}</p>}
     {toolbarHost && createPortal(<div className="rc-tools rc-ink-tools" role="group" aria-label="手写工具">

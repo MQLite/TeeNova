@@ -60,7 +60,7 @@ public class ReceptionSheetPdfsController(IReceptionSheetPdfArchive archive, IRe
     public async Task<IActionResult> List(Guid id, CancellationToken ct)
     {
         Response.Headers.CacheControl = "private, no-store";
-        var files = await archive.ListAsync(id, ct);
+        var files = await archive.ListAsync(id, ReceptionSheetPdfSnapshot.TemplateVersion, ct);
         return files is null ? NotFound() : Ok(files);
     }
 

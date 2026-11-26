@@ -77,7 +77,7 @@ internal sealed class EfReceptionSheetPdfArchive(
         await tx.CompleteAsync(ct);
     }
 
-    public async Task<IReadOnlyList<ReceptionSheetPdfInfo>?> ListAsync(Guid sheetId, CancellationToken ct)
+    public async Task<IReadOnlyList<ReceptionSheetPdfInfo>?> ListAsync(Guid sheetId, string currentTemplate, CancellationToken ct)
     {
         using var unit = work.Begin(requiresNew: true, isTransactional: false);
         var db = await dbContexts.GetDbContextAsync();
@@ -85,7 +85,8 @@ internal sealed class EfReceptionSheetPdfArchive(
 
         var entries = await Available(db, sheetId).OrderByDescending(x => x.CreatedAtUtc).ThenByDescending(x => x.Id)
             .Select(x => new { x.Id, x.Version, x.Pages, x.CreatedAtUtc,
-                IsCurrent = db.ReceptionSheets.Any(sheet => sheet.Id == x.SheetId && sheet.ConcurrencyStamp == x.Version) })
+                IsCurrent = x.Template == currentTemplate &&
+                    db.ReceptionSheets.Any(sheet => sheet.Id == x.SheetId && sheet.ConcurrencyStamp == x.Version) })
             .ToListAsync(ct);
         await unit.CompleteAsync(ct);
         return entries.Select(x => new ReceptionSheetPdfInfo(x.Id, x.Version, x.Pages!.Value,

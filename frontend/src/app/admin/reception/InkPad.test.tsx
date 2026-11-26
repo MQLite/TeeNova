@@ -18,7 +18,7 @@ function setup(initialStrokes: Stroke[] = []) {
     onReady={vi.fn()} onChange={change} disabled={false} />)
   const canvas = screen.getByLabelText('手写接单纸') as HTMLCanvasElement
   canvas.setPointerCapture = vi.fn()
-  vi.spyOn(canvas, 'getBoundingClientRect').mockReturnValue(new DOMRect(0, 0, 1800, 900))
+  vi.spyOn(canvas, 'getBoundingClientRect').mockImplementation(() => new DOMRect(0, 0, canvas.width, canvas.height))
   function pointer(type: string, x = 20, y = 20, pointerType = 'pen', pointerId = 1) {
     fireEvent(canvas, Object.assign(new MouseEvent(type, { bubbles: true, clientX: x, clientY: y }),
       { pointerId, pointerType }))
@@ -36,6 +36,28 @@ it('reports a pen dot without reading back the whole canvas', () => {
   expect(readPixels).not.toHaveBeenCalled()
   expect(change).toHaveBeenLastCalledWith(canvas, true, [dot])
   expect(screen.queryByText(prompt)).toBeNull()
+})
+
+it('keeps the existing coordinates when extending and records strokes on the added paper', () => {
+  const { canvas, tap, pointer, change } = setup()
+  tap()
+  fireEvent.click(screen.getByRole('button', { name: '向下加长手写纸' }))
+  expect(canvas.height).toBe(1800)
+  vi.mocked(canvas.getBoundingClientRect).mockReturnValue(new DOMRect(20, -180, 900, 900))
+  pointer('pointerdown', 70, 400)
+  pointer('pointerup', 80, 420)
+  expect(change.mock.lastCall?.[2]).toEqual([dot, { points: [{ x: 100, y: 1160 }, { x: 120, y: 1200 }], erase: false }])
+  fireEvent.click(screen.getByRole('button', { name: '撤销' }))
+  expect(change.mock.lastCall?.[2]).toEqual([dot])
+})
+
+it('restores the used paper height from saved strokes and limits further extension', () => {
+  const { canvas, drawn } = setup([dot, { points: [{ x: 50, y: 2300 }], erase: false }])
+  expect(canvas.height).toBe(2700)
+  expect(drawn()).toBe(2)
+  fireEvent.click(screen.getByRole('button', { name: '向下加长手写纸' }))
+  expect(canvas.height).toBe(3600)
+  expect(screen.getByRole('button', { name: '已达最大纸长' })).toBeDisabled()
 })
 
 it('distinguishes partial and complete erasure and keeps the eraser undoable', () => {

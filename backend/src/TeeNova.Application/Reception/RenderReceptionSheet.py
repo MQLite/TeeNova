@@ -27,7 +27,7 @@ def render(input_path, output_path):
                 y = rule["y"]
                 right = layout["width"] - 36
                 if rule["filled"]:
-                    page.draw_rect((36, y, right, y + 18), color=None, fill=heading_fill)
+                    page.draw_rect((36, y, right, y + rule["height"]), color=None, fill=heading_fill)
                 else:
                     page.draw_line((36, y), (right, y), color=divider, width=0.5)
             for line in planned["lines"]:

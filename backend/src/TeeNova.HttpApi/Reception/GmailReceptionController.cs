@@ -51,10 +51,10 @@ public sealed class GmailReceptionController(IRepository<ReceptionSheet, Guid> s
     [HttpPost("pending"), Authorize(Policy = "GmailReception"), RequestSizeLimit(MaxBytes + 65536)]
     public Task<IActionResult> ReceivePending(CancellationToken ct) => Receive(Guid.Empty, ct);
 
-    [HttpPost("pending/upload"), Authorize(Roles = TeeNovaRoles.Admin), RequestSizeLimit(MaxBytes + 65536)]
+    [HttpPost("pending/upload"), Authorize(Roles = TeeNovaRoles.Admin), RequestSizeLimit(ManualArtworkUpload.MaxSourceBytes + 65536)]
     public Task<IActionResult> UploadPending(CancellationToken ct) => Upload(Guid.Empty, ct);
 
-    [HttpPost("sheets/{id:guid}/attachments/upload"), Authorize(Roles = TeeNovaRoles.Admin), RequestSizeLimit(MaxBytes + 65536)]
+    [HttpPost("sheets/{id:guid}/attachments/upload"), Authorize(Roles = TeeNovaRoles.Admin), RequestSizeLimit(ManualArtworkUpload.MaxSourceBytes + 65536)]
     public async Task<IActionResult> UploadToSheet(Guid id, CancellationToken ct)
     {
         if (id == Guid.Empty || await sheets.FindAsync(id, cancellationToken: ct) == null)
@@ -70,15 +70,16 @@ public sealed class GmailReceptionController(IRepository<ReceptionSheet, Guid> s
         catch (InvalidDataException) { return BadRequest(new { message = "上传数据不完整或过大，请重新选择文件。" }); }
         catch (BadHttpRequestException e) when (e.StatusCode == StatusCodes.Status413PayloadTooLarge)
         {
-            return StatusCode(e.StatusCode, new { message = "每次上传的文件合计不能超过 8 MiB。" });
+            return StatusCode(e.StatusCode, new { message = ManualArtworkUpload.SourceLimitMessage });
         }
         ManualArtworkUpload upload;
         try { upload = await ManualArtworkUpload.Read(form, ct); }
         catch (InvalidDataException e) { return BadRequest(new { message = e.Message }); }
 
-        var result = Store.SaveUpload(sheet, upload.Id, upload.Files);
+        var result = Store.SaveUpload(sheet, upload);
         if (result.Conflict) return Conflict(new { message = "工单或上传内容已改变，请刷新后重新选择文件。" });
-        return Ok(new { result.SheetId, result.Added, count = upload.Files.Count });
+        return Ok(new { result.SheetId, result.Added, count = upload.Files.Count,
+            upload.OriginalBytes, upload.StoredBytes, upload.CompressedFiles });
     }
 
     private async Task<IActionResult> Receive(Guid id, CancellationToken ct)

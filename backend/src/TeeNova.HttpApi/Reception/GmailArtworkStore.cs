@@ -64,12 +64,16 @@ internal sealed class GmailArtworkStore(string root)
     public GmailSaveResult Save(Guid sheet, string mailbox, string message, IReadOnlyList<GmailFile> files, GmailOrigin? origin = null)
         => SaveBatch(sheet, mailbox, message, files, origin, null);
 
-    public GmailSaveResult SaveUpload(Guid sheet, Guid uploadId, IReadOnlyList<GmailFile> files)
+    internal static byte[] UploadFingerprint(IReadOnlyList<GmailFile> files)
     {
         var manifest = files.OrderBy(f => f.Slot).Select(f => new { f.Slot, f.Name, f.Mime, Hash = SHA256.HashData(f.Bytes) });
-        var fingerprint = SHA256.HashData(JsonSerializer.SerializeToUtf8Bytes(manifest));
+        return SHA256.HashData(JsonSerializer.SerializeToUtf8Bytes(manifest));
+    }
+
+    public GmailSaveResult SaveUpload(Guid sheet, ManualArtworkUpload upload)
+    {
         var origin = sheet == Guid.Empty ? new GmailOrigin("本地上传", "", DateTimeOffset.UtcNow) : null;
-        return SaveBatch(sheet, UploadMailbox, uploadId.ToString(), files, origin, fingerprint);
+        return SaveBatch(sheet, UploadMailbox, upload.Id.ToString(), upload.Files, origin, upload.SourceFingerprint);
     }
 
     private GmailSaveResult SaveBatch(Guid sheet, string mailbox, string message, IReadOnlyList<GmailFile> files, GmailOrigin? origin, byte[]? fingerprint)

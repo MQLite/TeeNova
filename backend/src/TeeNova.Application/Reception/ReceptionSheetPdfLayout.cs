@@ -4,17 +4,19 @@ using System.Text;
 namespace TeeNova.Reception;
 
 internal sealed record ReceptionPdfText(string Text, double X, double Y, int Size, double Right, bool Accent);
-internal sealed record ReceptionPdfRule(double Y, bool Filled);
+internal sealed record ReceptionPdfRule(double Y, bool Filled, double Height = 18);
 internal sealed record ReceptionPdfPage(List<ReceptionPdfText> Lines, List<ReceptionPdfRule> Rules);
 
-internal sealed class ReceptionSheetPdfLayout
+internal sealed partial class ReceptionSheetPdfLayout
 {
     public const double Width = 210 * 72d / 25.4;
     public const double Height = 297 * 72d / 25.4;
     private const int Margin = 36;
     private const double Right = Width - Margin;
-    private const int Body = 11;
-    private const int LineHeight = 16;
+    private enum Density { Standard, Compact, Dense }
+    private readonly Density _density;
+    private int Body => _density == Density.Dense ? 10 : 11;
+    private int LineHeight => _density == Density.Dense ? 13 : 16;
     private const int LastBodyBaseline = 783;
     private const double ColumnWidth = (Right - Margin) / 2;
 
@@ -23,29 +25,48 @@ internal sealed class ReceptionSheetPdfLayout
     private ReceptionPdfPage Page => _pages[^1];
     private double _y;
 
-    private ReceptionSheetPdfLayout(ReceptionSheetPdfSnapshot snapshot)
+    private ReceptionSheetPdfLayout(ReceptionSheetPdfSnapshot snapshot, Density density)
     {
+        _density = density;
         OpenPage();
         Write(Wrap(Inline(snapshot.Layout?.Title ?? "接待工作单"), Margin, Right, 22), Margin, Right, 22, true);
         Write([$"工作单 {snapshot.SheetId:D}  ·  门店自取"], Margin, Right);
         Rule();
-        Fields(("接单日期", snapshot.Received), ("预计可取日期", snapshot.PickupDate ?? "待定"));
-        Fields(("客户", Value(snapshot.Customer, "未填写")), ("联系电话", Value(snapshot.Phone, "未填写")));
-        Fields(("总价", Amount(snapshot.TotalPrice)), ("订金", Amount(snapshot.Deposit)));
-        TextSection("关联服装预计费用", Value(snapshot.PrintEstimate, "未随工单保存"));
-        Rule();
-        if (snapshot.Layout is { } layout)
+        if (density != Density.Standard)
         {
-            for (var i = 0; i < layout.Groups.Length; i++)
-                Garments(layout.Groups[i], i + 1);
+            CompactDetails(snapshot);
+        }
+        else
+        {
+            Fields(("接单日期", snapshot.Received), ("预计可取日期", snapshot.PickupDate ?? "待定"));
+            Fields(("客户", Value(snapshot.Customer, "未填写")), ("联系电话", Value(snapshot.Phone, "未填写")));
+            Fields(("总价", Amount(snapshot.TotalPrice)), ("订金", Amount(snapshot.Deposit)));
+            TextSection("关联服装预计费用", Value(snapshot.PrintEstimate, "未随工单保存"));
+            Rule();
+            if (snapshot.Layout is { } layout)
+            {
+                for (var i = 0; i < layout.Groups.Length; i++)
+                    Garments(layout.Groups[i], i + 1);
+            }
         }
         TextSection("制作说明", Value(snapshot.Instructions, "无"));
         for (var i = 0; i < _pages.Count; i++)
             _pages[i].Lines.Add(new($"第 {i + 1} 页 / 共 {_pages.Count} 页", 438, Height - Margin, 10, Right, true));
     }
 
-    public static IReadOnlyList<ReceptionPdfPage> Build(ReceptionSheetPdfSnapshot snapshot) =>
-        new ReceptionSheetPdfLayout(snapshot)._pages;
+    public static IReadOnlyList<ReceptionPdfPage> Build(ReceptionSheetPdfSnapshot snapshot)
+    {
+        var standard = snapshot.Layout?.Groups.Length > 1 ? null :
+            new ReceptionSheetPdfLayout(snapshot, Density.Standard)._pages;
+        if (standard?.Count == 1) return standard;
+        var compact = new ReceptionSheetPdfLayout(snapshot, Density.Compact)._pages;
+        if (compact.Count == 2)
+        {
+            var dense = new ReceptionSheetPdfLayout(snapshot, Density.Dense)._pages;
+            if (dense.Count == 1) return dense;
+        }
+        return standard != null && standard.Count <= compact.Count ? standard : compact;
+    }
 
     private void OpenPage()
     {
@@ -163,20 +184,22 @@ internal sealed class ReceptionSheetPdfLayout
         }
     }
 
-    private static int CellHeight(string[] values, Func<int, double> x) =>
+    private int CellHeight(string[] values, Func<int, double> x) =>
         values.Select((value, index) => Wrap(Inline(value), x(index), x(index + 1) - 8, Body).Length * LineHeight).Max();
 
-    private void Write(string[] lines, double x, double right, int size = Body, bool accent = false)
+    private void Write(string[] lines, double x, double right, int? size = null, bool accent = false)
     {
+        var fontSize = size ?? Body;
         foreach (var line in lines)
         {
-            if (line.Length > 0) Page.Lines.Add(new(line, x, _y, size, right, accent));
-            _y += Math.Max(LineHeight, size + 5);
+            if (line.Length > 0) Page.Lines.Add(new(line, x, _y, fontSize, right, accent));
+            _y += Math.Max(LineHeight, fontSize + (_density == Density.Dense ? 3 : 5));
         }
     }
 
-    private static string[] Wrap(string value, double x, double right, int size)
+    private string[] Wrap(string value, double x, double right, int size)
     {
+        if (_density != Density.Standard) return WrapCompact(value, right - x - 2, size);
         // Use a full em for each glyph to leave room for Chinese and mixed-script fields.
         // The renderer verifies actual glyph widths before writing any line.
         var capacity = Math.Max(1, (int)((right - x - 4) / size));

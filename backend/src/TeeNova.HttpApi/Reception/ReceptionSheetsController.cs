@@ -124,7 +124,7 @@ public class ReceptionSheetsController(IRepository<ReceptionSheet, Guid> sheets,
     {
         var strokes = input.Handwriting;
         if (strokes is { Length: > 10000 } || strokes?.Any(s => s?.Points is not { Length: > 0 } ||
-            s.Points.Any(p => p == null || p.X is < 0 or > 1800 || p.Y is < 0 or > 900)) == true ||
+            s.Points.Any(p => p == null || p.X is < 0 or > 1800 || p.Y is < 0 or > 3600)) == true ||
             strokes?.Sum(s => (long)s.Points.Length) > 150000)
             return BadRequest(new { message = "手稿超出支持范围。" });
         if (id == Guid.Empty || input.Layout?.IsValid() == false || !ReceptionSheet.ValidAmount(input.TotalPrice) ||

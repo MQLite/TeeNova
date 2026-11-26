@@ -60,3 +60,40 @@ it('keeps recognized prints until the operator confirms a garment-only estimate'
   expect(screen.getByText('仅计衣价（不含印花费）')).toBeVisible()
   expect(screen.queryByRole('button', {name: /仅计衣价/})).toBeNull()
 })
+
+it('defaults to a single mixed order list and edits the original groups without losing notes or pricing', () => {
+  const kids: GarmentGroup = {...sibling, pricingKind: 'kidsHoodie'}
+  const changed = vi.fn()
+  function Editor() {
+    const [draft, setDraft] = useState({...layout, groups: [group, kids]})
+    return <GarmentEditor layout={draft} onChange={next => { setDraft(next); changed(next) }}/>
+  }
+  render(<Editor/>)
+  expect(screen.getAllByRole('table')).toHaveLength(1)
+  expect(screen.getByText('整单合计').closest('tr')).toHaveTextContent('14')
+  expect(changed).not.toHaveBeenCalled()
+  fireEvent.click(screen.getByRole('button', {name: '编辑服装明细'}))
+  const section = within(screen.getByRole('region', {name: kids.heading}))
+  fireEvent.change(section.getByLabelText('第1行数量'), {target: {value: '0'}})
+  expect(changed).toHaveBeenLastCalledWith({...layout, groups: [group, {...kids,
+    rows: [{...kids.rows[0], quantity: 0}, kids.rows[1]]}]})
+  fireEvent.click(screen.getByRole('button', {name: '查看合并清单'}))
+  expect(screen.getByText('整单合计').closest('tr')).toHaveTextContent('11')
+})
+
+it('continues editing when a change creates a mixed order and exposes missing required headings', () => {
+  function Editor() {
+    const [draft, setDraft] = useState({...layout, title: ''})
+    return <GarmentEditor layout={draft} onChange={setDraft}/>
+  }
+  render(<Editor/>)
+  const section = within(screen.getByRole('region', {name: sibling.heading}))
+  fireEvent.change(section.getByLabelText('估价商品'), {target: {value: 'kidsHoodie'}})
+  const title = screen.getByLabelText('工作单标题')
+  expect(title).toHaveAttribute('aria-invalid', 'true')
+  expect(screen.queryByText('查看合并清单')).toBeNull()
+  fireEvent.change(title, {target: {value: '新工单'}})
+  expect(section.getByLabelText('估价商品')).toHaveValue('kidsHoodie')
+  fireEvent.click(screen.getByRole('button', {name: '查看合并清单'}))
+  expect(screen.getByRole('heading', {name: '新工单'})).toBeVisible()
+})

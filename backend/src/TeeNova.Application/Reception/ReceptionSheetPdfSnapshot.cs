@@ -15,7 +15,7 @@ public sealed record ReceptionSheetPdfSnapshot(
     decimal? Deposit,
     string? PrintEstimate)
 {
-    public const string TemplateVersion = "reception-a4-v1";
+    public const string TemplateVersion = "reception-a4-v2";
     private static readonly TimeZoneInfo Auckland = TimeZoneInfo.FindSystemTimeZoneById("Pacific/Auckland");
 
     public static ReceptionSheetPdfSnapshot FromSheet(ReceptionSheet sheet)
