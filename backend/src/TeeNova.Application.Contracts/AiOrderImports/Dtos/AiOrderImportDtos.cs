@@ -41,6 +41,7 @@ public sealed class StartAiOrderRecognitionInput
 {
     public string Provider { get; set; } = string.Empty;
     public string Model { get; set; } = string.Empty;
+    public bool RerecognizeReception { get; set; }
 }
 
 public sealed class AiOrderRecognitionOptionsDto

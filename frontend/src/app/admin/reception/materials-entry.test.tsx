@@ -1,4 +1,4 @@
-import { act, fireEvent, render, screen, within } from '@testing-library/react'
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import { blankWorksheet } from '@/features/reception/worksheet'
 import { ensureMaterialSources, fallbackMaterialLimits, fetchMaterialLimits, recognizeMaterials, type MaterialsResult } from '@/features/reception/materials'
@@ -64,7 +64,7 @@ it('prevents a superseded file result from overwriting an edited description', a
   expect(saveSheet).toHaveBeenCalledWith(expect.any(String), expect.objectContaining({ materials: source, replaceMaterials: true }), [], undefined, undefined, undefined)
 })
 
-it('keeps a suggestion with conflicting inputs unselected and shows its exact source reference', async () => {
+it('applies the recognized date and shows its conflicting source references inline', async () => {
   vi.mocked(recognizeMaterials).mockImplementation(async job => {
     job.uploaded = new Map([[job.items[0].key, saved.materials!.files[0]]])
     return { ...blankWorksheet, pickupDate: '2026-12-01', sourceNotes: [{ kind: 'conflict', field: 'pickupDate',
@@ -80,10 +80,8 @@ it('keeps a suggestion with conflicting inputs unselected and shows its exact so
   const supplement = screen.getByRole('dialog', { name: '补充描述' })
   expect(supplement.querySelector('[data-selected=true]')).toHaveTextContent('补记 12月2日')
   fireEvent.click(within(supplement).getByRole('button', { name: '关闭预览' }))
-  const date = screen.getByRole('group', { name: '预计可取日期' })
-  expect(within(date).getByRole('radio', { name: '保留现值' })).toBeChecked()
-  fireEvent.click(screen.getByRole('button', { name: '应用核对结果' }))
-  expect(screen.getByLabelText('预计可取日期')).toHaveValue('')
+  expect(screen.queryByRole('button', {name: '应用核对结果'})).toBeNull()
+  expect(screen.getByLabelText('预计可取日期')).toHaveValue('2026-12-01')
 })
 
 it('previews the authenticated PDF original and turns to the next page', async () => {
@@ -115,7 +113,7 @@ it('reopens named materials and description, and marks expired sources while pre
   expect(screen.getByRole('button', { name: '打印 / 保存 A4 PDF' })).toBeEnabled()
 })
 
-it.each(['correction', 'conflict'] as const)('reviews free-form garment quantity %s with the proposed size rows', async kind => {
+it.each(['correction', 'conflict'] as const)('uses the recognized garment quantity for a %s with the proposed size rows', async kind => {
   vi.mocked(recognizeMaterials).mockResolvedValue({ ...blankWorksheet, layout: { title: '核对尺码', groups: [{
     heading: '黑色 T 恤', notes: '', presentation: 'rows', rows: [
       { colour: '黑色', size: 'M', quantity: 10 }, { colour: '黑色', size: 'L', quantity: 6 },
@@ -124,15 +122,12 @@ it.each(['correction', 'conflict'] as const)('reviews free-form garment quantity
     previousValue: '8', suggestedValue: '10', references: [{ documentId: 'size', line: 2 }] }] })
   startBatch()
   fireEvent.click(screen.getByRole('button', { name: '生成工作单草稿' }))
-  const row = await screen.findByRole('group', { name: /黑色 T 恤.*黑色.*M/ })
-  expect(within(row).getByRole('radio', { name: kind === 'correction' ? /采用识别数量.*10/ : /数量留空/ })).toBeChecked()
-  fireEvent.click(screen.getByRole('button', { name: '应用核对结果' }))
-  fireEvent.click(screen.getByRole('button', { name: '编辑服装明细' }))
-  expect(screen.getByLabelText('第1行数量')).toHaveValue(kind === 'correction' ? '10' : '')
+  fireEvent.click(await screen.findByRole('button', {name: '编辑服装明细'}))
+  expect(screen.getByLabelText('第1行数量')).toHaveValue('10')
   expect(screen.getByLabelText('第2行数量')).toHaveValue('6')
 })
 
-it.each(['saved', 'first draft'])('offers to clear values withdrawn from the %s without replacing manual garment notes', async previous => {
+it.each(['saved', 'first draft'])('replaces the %s with the revised material batch, including withdrawals', async previous => {
   vi.spyOn(window, 'confirm').mockReturnValue(true)
   const rows = [{ colour: 'Black', size: 'M', quantity: 8 }, { colour: 'Black', size: 'L', quantity: 6 }]
   const group = { heading: 'Tee', notes: '', presentation: 'rows' as const, rows }
@@ -152,24 +147,19 @@ it.each(['saved', 'first draft'])('offers to clear values withdrawn from the %s 
   fireEvent.change(await screen.findByLabelText('本组制作要求'), { target: { value: '手工备注' } })
   fireEvent.click(screen.getByRole('button', { name: '编辑接待材料' }))
   fireEvent.change(screen.getByLabelText('补充描述（选填）'), { target: { value: '客户取消 M 码数量和日期' } })
-  fireEvent.click(screen.getByRole('button', { name: '生成工作单草稿' }))
-  const date = await screen.findByRole('group', { name: '预计可取日期' })
-  const customer = screen.getByRole('group', { name: '客户姓名' })
-  const total = screen.getByRole('group', { name: '总价（NZD）' })
-  const quantity = screen.getByRole('group', { name: /Tee.*Black.*M/ })
-  expect(within(total).getByRole('radio', { name: '保留现值' })).toBeChecked()
-  expect(within(customer).getByRole('radio', { name: '保留现值' })).toBeChecked()
-  expect(within(quantity).getByRole('radio', { name: /保留数量.*8/ })).toBeChecked()
-  fireEvent.click(within(quantity).getByRole('radio', { name: '清除数量' }))
-  fireEvent.click(within(date).getByRole('radio', { name: '清除现值' }))
-  fireEvent.click(screen.getByRole('button', { name: '应用核对结果' }))
-  expect(screen.getByLabelText('客户姓名')).toHaveValue('Mina')
+  fireEvent.click(screen.getByRole('button', {name: '重新识别并覆盖工单'}))
+  fireEvent.click(await screen.findByRole('button', {name: '编辑服装明细'}))
+  expect(screen.getByLabelText('客户姓名')).toHaveValue('')
   expect(screen.getByLabelText('预计可取日期')).toHaveValue('')
-  fireEvent.click(screen.getByRole('button', { name: '编辑服装明细' }))
-  expect(screen.getByLabelText('本组制作要求')).toHaveValue('手工备注')
+  expect(screen.getByLabelText('本组制作要求')).toHaveValue('')
   expect(screen.getByLabelText('第1行数量')).toHaveValue('')
   expect(screen.getByLabelText('第2行数量')).toHaveValue('6')
-  expect(screen.getByRole('textbox', { name: '总价（NZD）' })).toHaveValue('125.00')
+  expect(screen.getByRole('textbox', {name: '总价（NZD）'})).toHaveValue('')
+  if (previous === 'saved') {
+    await waitFor(() => expect(saveSheet).toHaveBeenCalledWith(saved.id, expect.objectContaining({
+      ...revised, payments: [], materials: source, replaceMaterials: true,
+    }), [], saved.version, undefined, undefined))
+  } else expect(saveSheet).not.toHaveBeenCalled()
 })
 
 it('keeps the selected colour’s other sizes and the same size in another colour', async () => {
@@ -182,32 +172,25 @@ it('keeps the selected colour’s other sizes and the same size in another colou
     references: [{ documentId: 'size', line: 2, quote: 'White,M,9' }] }] })
   startBatch()
   fireEvent.click(screen.getByRole('button', { name: '生成工作单草稿' }))
-  const row = await screen.findByRole('group', { name: /Tee.*Black.*M/ })
-  expect(within(row).getByRole('radio', { name: '数量留空' })).toBeChecked()
-  expect(screen.queryByRole('group', { name: /Tee.*White.*M/ })).toBeNull()
-  fireEvent.click(screen.getByRole('button', { name: '应用核对结果' }))
-  fireEvent.click(screen.getByRole('button', { name: '编辑服装明细' }))
-  expect(screen.getByLabelText('第1行数量')).toHaveValue('')
+  fireEvent.click(await screen.findByRole('button', {name: '编辑服装明细'}))
+  expect(screen.getByLabelText('第1行数量')).toHaveValue('10')
   expect(screen.getByLabelText('第2行数量')).toHaveValue('9')
   expect(screen.getByLabelText('第3行数量')).toHaveValue('6')
 })
 
-it('keeps mixed-customer drafts in whole-field review with no automatically accepted orders', async () => {
+it('shows the multiple-customer note on the populated draft before its first save', async () => {
   vi.mocked(recognizeMaterials).mockResolvedValue({ ...blankWorksheet, customer: 'Mina', layout: { title: '工作单', groups: [{
     heading: 'Tee', notes: '', presentation: 'rows', rows: [{ colour: 'Black', size: 'M', quantity: 10 }],
   }] }, sourceNotes: [{ kind: 'multipleCustomers', field: 'customer', message: '原件似乎属于两个客户', references: [{ documentId: 'size', line: 2 }] }] })
   startBatch()
   fireEvent.click(screen.getByRole('button', { name: '生成工作单草稿' }))
-  const groups = await screen.findByRole('group', { name: '服装分组明细' })
-  expect(within(groups).getByRole('radio', { name: '保留现值' })).toBeChecked()
-  const customer = screen.getByRole('group', { name: '客户姓名' })
-  expect(within(customer).getByRole('radio', { name: '保留现值' })).toBeChecked()
-  fireEvent.click(screen.getByRole('button', { name: '应用核对结果' }))
-  expect(screen.getByLabelText('客户姓名')).toHaveValue('')
-  expect(screen.queryByLabelText('第1行数量')).toBeNull()
+  expect(await screen.findByText('原件似乎属于两个客户')).toBeVisible()
+  expect(screen.getByLabelText('客户姓名')).toHaveValue('Mina')
+  expect(screen.queryByRole('radio')).toBeNull()
+  expect(saveSheet).not.toHaveBeenCalled()
 })
 
-it('holds both identical duplicate occurrences for separate choices and keeps the unrelated L amount', async () => {
+it('keeps both duplicate source rows and their recognized quantities', async () => {
   const blackM = { colour: 'Black', size: 'M', quantity: 8 }
   vi.mocked(recognizeMaterials).mockResolvedValue({ ...blankWorksheet, layout: { title: '工作单', groups: [{
     heading: 'Tee', notes: '', presentation: 'rows', rows: [blackM, { ...blackM }, { colour: 'Black', size: 'L', quantity: 4 }],
@@ -215,19 +198,13 @@ it('holds both identical duplicate occurrences for separate choices and keeps th
     references: [{ documentId: 'size', line: 2, quote: 'Black,M,8' }] }] })
   startBatch()
   fireEvent.click(screen.getByRole('button', { name: '生成工作单草稿' }))
-  const first = await screen.findByRole('group', { name: /Tee.*Black.*M.*第 1 笔/ })
-  const second = screen.getByRole('group', { name: /Tee.*Black.*M.*第 2 笔/ })
-  expect(within(first).getByRole('radio', { name: '数量留空' })).toBeChecked()
-  expect(within(second).getByRole('radio', { name: '数量留空' })).toBeChecked()
-  fireEvent.click(within(first).getByRole('radio', { name: '采用识别数量 8 件' }))
-  fireEvent.click(screen.getByRole('button', { name: '应用核对结果' }))
-  fireEvent.click(screen.getByRole('button', { name: '编辑服装明细' }))
+  fireEvent.click(await screen.findByRole('button', {name: '编辑服装明细'}))
   expect(screen.getByLabelText('第1行数量')).toHaveValue('8')
-  expect(screen.getByLabelText('第2行数量')).toHaveValue('')
+  expect(screen.getByLabelText('第2行数量')).toHaveValue('8')
   expect(screen.getByLabelText('第3行数量')).toHaveValue('4')
 })
 
-it('retains a manually edited group while keeping the previous M amount and adopting only the L correction', async () => {
+it('saves all recognized group and quantity changes on the existing sheet', async () => {
   vi.spyOn(window, 'confirm').mockReturnValue(true)
   const rows = [{ colour: 'Black', size: 'M', quantity: 8 }, { colour: 'Black', size: 'L', quantity: 4 }]
   const current = { heading: 'Tee', notes: '手工保留', presentation: 'rows' as const, rows }
@@ -240,21 +217,15 @@ it('retains a manually edited group while keeping the previous M amount and adop
   ] })
   render(<ReceptionDesk initialSheet={saved.id} />)
   fireEvent.click(await screen.findByRole('button', { name: '编辑接待材料' }))
-  fireEvent.click(screen.getByRole('button', { name: '生成工作单草稿' }))
-  const medium = await screen.findByRole('group', { name: /Tee.*Black.*M/ })
-  const large = screen.getByRole('group', { name: /Tee.*Black.*L/ })
-  expect(within(medium).getByRole('radio', { name: '保留数量 8 件' })).toBeChecked()
-  expect(within(large).getByRole('radio', { name: '保留数量 4 件' })).toBeChecked()
-  fireEvent.click(within(large).getByRole('radio', { name: '采用识别数量 6 件' }))
-  fireEvent.click(screen.getByRole('button', { name: '应用核对结果' }))
-  fireEvent.click(screen.getByRole('button', { name: '编辑服装明细' }))
-  expect(screen.getByLabelText('第1行数量')).toHaveValue('8')
+  fireEvent.click(screen.getByRole('button', {name: '重新识别并覆盖工单'}))
+  fireEvent.click(await screen.findByRole('button', {name: '编辑服装明细'}))
+  expect(screen.getByLabelText('第1行数量')).toHaveValue('10')
   expect(screen.getByLabelText('第2行数量')).toHaveValue('6')
-  expect(screen.getByLabelText('服装分组')).toHaveValue('Tee')
-  expect(screen.getByLabelText('本组制作要求')).toHaveValue('手工保留')
+  expect(screen.getByLabelText('本组制作要求')).toHaveValue('机器建议')
+  expect(saveSheet).toHaveBeenCalledTimes(1)
 })
 
-it('reviews withdrawals even when replacement files were saved before recognition', async () => {
+it('clears withdrawn fields even when replacement files were saved before recognition', async () => {
   vi.spyOn(window, 'confirm').mockReturnValue(true)
   const before = { ...saved, pickupDate: '2026-12-04', totalPrice: 125 }
   const replacement = { importId: 'replacement', documentIds: ['new-size'], description: source.description }
@@ -269,12 +240,9 @@ it('reviews withdrawals even when replacement files were saved before recognitio
   fireEvent.change(screen.getByLabelText('选择接待材料文件'), { target: { files: [new File(['Colour,Size,Qty\nBlack,M,8'], '更新.csv')] } })
   fireEvent.click(screen.getByRole('button', { name: '保存修改' }))
   await screen.findByText(/待做好 · 已保存/)
-  fireEvent.click(screen.getByRole('button', { name: '生成工作单草稿' }))
-  const date = await screen.findByRole('group', { name: '预计可取日期' })
-  const total = screen.getByRole('group', { name: '总价（NZD）' })
-  expect(within(total).getByRole('radio', { name: '保留现值' })).toBeChecked()
-  fireEvent.click(within(date).getByRole('radio', { name: '清除现值' }))
-  fireEvent.click(screen.getByRole('button', { name: '应用核对结果' }))
-  expect(screen.getByLabelText('预计可取日期')).toHaveValue('')
-  expect(screen.getByRole('textbox', { name: '总价（NZD）' })).toHaveValue('125.00')
+  fireEvent.click(screen.getByRole('button', {name: '重新识别并覆盖工单'}))
+  expect(await screen.findByLabelText('预计可取日期')).toHaveValue('')
+  expect(screen.getByRole('textbox', {name: '总价（NZD）'})).toHaveValue('')
+  await waitFor(() => expect(saveSheet).toHaveBeenCalledTimes(2))
+  expect(vi.mocked(saveSheet).mock.lastCall?.[3]).toBe('v2')
 })

@@ -107,6 +107,16 @@ describe('AI order import browser API', () => {
     )
   })
 
+  it('requests a new reception recognition on the same completed import', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(Response.json({ attemptId: 'next-attempt', outcome: 'Processing' }))
+    vi.stubGlobal('fetch', fetchMock)
+    await startAiOrderRecognition('import-1', 'openai', 'gpt-6.2-sol', 'next-key', false, true)
+    expect(fetchMock).toHaveBeenCalledWith('/api/proxy/api/admin/ai-order-imports/import-1/recognition',
+      expect.objectContaining({
+        body: JSON.stringify({ provider: 'openai', model: 'gpt-6.2-sol', rerecognizeReception: true }),
+      }))
+  })
+
   it('uses the explicit retry route and never changes the selected model', async () => {
     const fetchMock = vi.fn().mockResolvedValue({
       ok: true,

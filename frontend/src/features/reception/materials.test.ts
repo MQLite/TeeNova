@@ -38,7 +38,7 @@ it('refreshes a previously failed batch after acknowledging a retry', async () =
     .mockResolvedValueOnce({ status: 'NeedsReview' } as api.AiOrderImport)
   vi.mocked(adminApiClient.get).mockResolvedValue({ customer: 'Xu', pickupDate: null })
   await expect(recognizeMaterials(job, new AbortController().signal, vi.fn(), vi.fn())).resolves.toMatchObject({ customer: 'Xu' })
-  expect(api.startAiOrderRecognition).toHaveBeenCalledWith('saved', 'openai', 'text-model', expect.any(String), true)
+  expect(api.startAiOrderRecognition).toHaveBeenCalledWith('saved', 'openai', 'text-model', expect.any(String), true, false)
 })
 
 it('resumes the failed file by its own upload key and sends the supplement after all originals', async () => {
@@ -80,6 +80,6 @@ it('selects a model capable of all materials and reuses a saved batch without tr
   await expect(recognizeMaterials(job, new AbortController().signal, vi.fn(), vi.fn())).resolves.toMatchObject({
     customer: 'Xu', pickupDate: '', sourceNotes: [{ field: 'pickupDate' }],
   })
-  expect(api.startAiOrderRecognition).toHaveBeenCalledWith('saved', 'openai', 'both', expect.any(String), false)
+  expect(api.startAiOrderRecognition).toHaveBeenCalledWith('saved', 'openai', 'both', expect.any(String), false, false)
   expect(api.uploadAiOrderSource).not.toHaveBeenCalled()
 })

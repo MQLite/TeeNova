@@ -64,14 +64,15 @@ export async function recognizeReceptionImport<T extends Worksheet>(job: Recogni
   signal.throwIfAborted()
   let record = await getAiOrderImport(importId)
   signal.throwIfAborted()
-  if (record.status === 'Uploaded' || record.status === 'Failed') {
+  const completed = record.status === 'NeedsReview' || record.status === 'Draft'
+  if (record.status === 'Uploaded' || record.status === 'Failed' || completed) {
     if (record.status === 'Failed' && !record.recognition?.isRetryable) throw new Error('此次识别失败，可以对照原稿填写。')
     const attempt = record.recognition?.attemptNumber ?? 0
-    if (job.retryAttempt !== attempt) {
+    if (!job.recognitionKey || (record.status === 'Failed' && job.retryAttempt !== attempt)) {
       job.recognitionKey = 'recognize-' + crypto.randomUUID()
       job.retryAttempt = attempt
     }
-    await startAiOrderRecognition(importId, selected.provider, selected.model, job.recognitionKey!, record.status === 'Failed')
+    await startAiOrderRecognition(importId, selected.provider, selected.model, job.recognitionKey, record.status === 'Failed', completed)
   }
   recognizing()
   const deadline = Date.now() + 120_000
@@ -83,6 +84,8 @@ export async function recognizeReceptionImport<T extends Worksheet>(job: Recogni
       const draft = await adminApiClient.get<Omit<T, 'pickupDate'> & { pickupDate: string | null }>(
         '/api/admin/reception-sheets/recognition/' + importId, undefined, { signal },
       )
+      signal.throwIfAborted()
+      job.recognitionKey = undefined
       return { ...draft, pickupDate: draft.pickupDate ?? '' } as T
     }
     if (record.status === 'Failed' || record.status === 'Cancelled') throw new Error('识别未完成，可以重试或手动填写。')

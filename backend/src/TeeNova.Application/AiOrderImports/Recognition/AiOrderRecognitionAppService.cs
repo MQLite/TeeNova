@@ -170,7 +170,9 @@ public class AiOrderRecognitionAppService : ApplicationService
             return ToDto(existing);
         }
 
-        if ((!isRetry && import.Status != AiOrderImportStatus.Uploaded) ||
+        var rerecognize = !isRetry && reception && input.RerecognizeReception &&
+            import.Status is AiOrderImportStatus.NeedsReview or AiOrderImportStatus.Draft;
+        if ((!isRetry && import.Status != AiOrderImportStatus.Uploaded && !rerecognize) ||
             (isRetry && import.Status != AiOrderImportStatus.Failed))
             throw Safe(
                 AiOrderImportErrorCodes.RecognitionStartNotAllowed,
@@ -279,7 +281,7 @@ public class AiOrderRecognitionAppService : ApplicationService
         import.ClaimProcessingLease(
             leaseToken,
             now.AddMinutes(_options.LeaseMinutes),
-            now);
+            now, rerecognize);
         var attempt = new AiOrderProcessingAttempt(
             _guidGenerator.Create(),
             importId,

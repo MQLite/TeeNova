@@ -665,10 +665,11 @@ export function startAiOrderRecognition(
   model: string,
   idempotencyKey: string,
   retry = false,
+  rerecognizeReception = false,
 ): Promise<AiOrderRecognitionStatus> {
   return recognitionPost(
     `/api/proxy/api/admin/ai-order-imports/${importId}/recognition${retry ? '/retry' : ''}`,
-    { provider, model },
+    { provider, model, ...(rerecognizeReception && { rerecognizeReception }) },
     idempotencyKey,
   )
 }

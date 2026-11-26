@@ -1,6 +1,6 @@
 import { beforeEach, expect, it, vi } from 'vitest'
 import * as api from '@/api/ai-order-imports'
-import { ensureCaptureSource, recognizeCapture, type CaptureRequest } from './recognize'
+import { ensureCaptureSource, recognizeCapture, recognizeReceptionImport, type CaptureRequest } from './recognize'
 import { adminApiClient } from '@/lib/admin-client'
 
 vi.mock('@/api/ai-order-imports', () => ({
@@ -58,5 +58,21 @@ it('recognizes a saved text document with a configured text-only OpenAI model', 
   vi.mocked(adminApiClient.get).mockResolvedValue({ customer: 'Lee', pickupDate: null })
   const job = { key: 'saved', text: '黑T M 10', source: { importId: 'import', documentId: 'doc' } }
   await expect(recognizeCapture(job, new AbortController().signal, vi.fn())).resolves.toMatchObject({ customer: 'Lee' })
-  expect(api.startAiOrderRecognition).toHaveBeenCalledWith('import', 'openai', 'text-model', expect.any(String), false)
+  expect(api.startAiOrderRecognition).toHaveBeenCalledWith('import', 'openai', 'text-model', expect.any(String), false, false)
+})
+
+it.each(['NeedsReview', 'Draft'] as const)('runs a fresh attempt for a %s source and reuses the key after a lost response', async status => {
+  const job: CaptureRequest = {key: 'same-source'}
+  const completed = {status, recognition: {attemptNumber: 1}} as api.AiOrderImport
+  vi.mocked(api.getAiOrderImport).mockResolvedValue(completed)
+  vi.mocked(api.startAiOrderRecognition).mockRejectedValueOnce(new Error('lost response'))
+  vi.mocked(adminApiClient.get).mockResolvedValueOnce({customer: 'First'}).mockResolvedValueOnce({customer: 'Second'})
+  const run = () => recognizeReceptionImport(job, 'import', {provider: 'openai', model: 'm'}, new AbortController().signal, vi.fn())
+  await expect(run()).rejects.toThrow('lost response')
+  await expect(run()).resolves.toMatchObject({customer: 'First'})
+  await expect(run()).resolves.toMatchObject({customer: 'Second'})
+  const [failed, retried, rerun] = vi.mocked(api.startAiOrderRecognition).mock.calls
+  expect(retried).toEqual(failed)
+  expect(rerun).toEqual(['import', 'openai', 'm', expect.any(String), false, true])
+  expect(rerun[3]).not.toBe(retried[3])
 })

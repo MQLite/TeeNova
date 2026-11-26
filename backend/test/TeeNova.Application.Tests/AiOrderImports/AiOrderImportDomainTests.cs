@@ -55,6 +55,26 @@ public class AiOrderImportDomainTests
         Assert.Throws<BusinessException>(() => import.CompleteProcessing("not-owned", Now));
     }
 
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void An_explicit_rerun_appends_a_revision_after_completed_recognition(bool draft)
+    {
+        var import = CreateImport();
+        import.ClaimProcessingLease("first", Now.AddMinutes(5), Now);
+        import.AdvanceRevision(0, 1);
+        import.CompleteProcessing("first", Now);
+        if (draft) import.MarkDraft();
+
+        Assert.Throws<BusinessException>(() => import.ClaimProcessingLease("second", Now.AddMinutes(5), Now));
+        import.ClaimProcessingLease("second", Now.AddMinutes(5), Now, rerecognize: true);
+        Assert.Equal(1, import.CurrentRevision);
+        import.AdvanceRevision(1, 2);
+        import.CompleteProcessing("second", Now);
+        Assert.Equal(2, import.CurrentRevision);
+        Assert.Equal(AiOrderImportStatus.NeedsReview, import.Status);
+    }
+
     [Fact]
     public void Failure_can_be_retried_with_a_new_lease()
     {

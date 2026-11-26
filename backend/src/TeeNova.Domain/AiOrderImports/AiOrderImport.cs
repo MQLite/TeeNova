@@ -60,7 +60,7 @@ public class AiOrderImport : FullAuditedAggregateRoot<Guid>
         Status = AiOrderImportStatus.Uploaded;
     }
 
-    public void ClaimProcessingLease(string leaseToken, DateTime leaseExpiresAt, DateTime now)
+    public void ClaimProcessingLease(string leaseToken, DateTime leaseExpiresAt, DateTime now, bool rerecognize = false)
     {
         ThrowIfTerminal();
 
@@ -74,7 +74,8 @@ public class AiOrderImport : FullAuditedAggregateRoot<Guid>
         if (Status is not (
             AiOrderImportStatus.Uploaded or
             AiOrderImportStatus.Processing or
-            AiOrderImportStatus.Failed))
+            AiOrderImportStatus.Failed) &&
+            !(rerecognize && Status is AiOrderImportStatus.NeedsReview or AiOrderImportStatus.Draft))
         {
             throw Error("CannotStartProcessing");
         }

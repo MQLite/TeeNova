@@ -113,7 +113,7 @@ it('preserves both stored references when text cannot load and retries its priva
   expect(screen.getByRole('button', { name: '保存修改' })).toBeDisabled()
 })
 
-it('shows the original beside conflicting text results and applies the selected phone number', async () => {
+it('replaces the phone from the latest pasted text without a field review', async () => {
   const input = beginText()
   const text = '订单邮件\n短袖\t黑\tM\t10\n连帽衫\t蓝\tS\t4\n电话改为 021111'
   fireEvent.change(input, { target: { value: text } })
@@ -121,13 +121,32 @@ it('shows the original beside conflicting text results and applies the selected 
   fireEvent.change(screen.getByLabelText('联系电话'), { target: { value: '021000' } })
   fireEvent.click(screen.getByRole('button', { name: '编辑原文' }))
   vi.mocked(recognizeCapture).mockResolvedValueOnce({ ...blankWorksheet, phone: '021111' })
-  vi.spyOn(window, 'confirm').mockReturnValue(true)
-  fireEvent.click(screen.getByRole('button', { name: '整理成工作单' }))
-  const field = await screen.findByRole('group', { name: '联系电话' })
+  fireEvent.click(screen.getByRole('button', { name: '重新识别并覆盖工单' }))
+  expect(await screen.findByLabelText('联系电话')).toHaveValue('021111')
   expect(document.querySelector('pre')?.textContent).toBe(text)
-  fireEvent.click(within(field).getByRole('radio', { name: /使用识别值/ }))
-  fireEvent.click(screen.getByRole('button', { name: '应用核对结果' }))
-  expect(screen.getByLabelText('联系电话')).toHaveValue('021111')
+  expect(screen.queryByRole('button', {name: '应用核对结果'})).toBeNull()
+})
+
+it('saves revised text to the same order and keeps that version if another recognition fails', async () => {
+  const saved = { ...savedPhotoSheet, sourceText: { importId: 'text-import', documentId: 'text-document' } }
+  const latest = { ...blankWorksheet, customer: '李女士', instructions: '黑色 M 码两件' }
+  vi.mocked(fetchSheet).mockResolvedValue(saved)
+  vi.mocked(saveSheet).mockResolvedValue({ ...saved, ...latest, version: 'v2' })
+  vi.mocked(recognizeCapture).mockResolvedValueOnce(latest).mockRejectedValueOnce(new Error('识别超时'))
+  vi.stubGlobal('fetch', vi.fn(async () => new Response('原订单：黑色 M 码一件')))
+  render(<ReceptionDesk initialSheet="saved" />)
+  fireEvent.click(await screen.findByRole('button', { name: '编辑原文' }))
+  const input = await screen.findByLabelText('客户需求原文')
+  fireEvent.change(input, { target: { value: '李女士：更正为黑色 M 码两件' } })
+  fireEvent.click(screen.getByRole('button', { name: '重新识别并覆盖工单' }))
+  await waitFor(() => expect(saveSheet).toHaveBeenCalledWith(saved.id, expect.objectContaining({ ...latest, payments: [] }),
+    [], saved.version, saved.sourcePhoto, { importId: 'i', documentId: 'd' }))
+  fireEvent.click(screen.getByRole('button', { name: '编辑原文' }))
+  fireEvent.click(screen.getByRole('button', { name: '重新识别并覆盖工单' }))
+  expect(await screen.findByRole('alert')).toHaveTextContent('识别超时')
+  fireEvent.click(screen.getByRole('button', { name: '核对工作单' }))
+  expect(screen.getByLabelText('客户姓名')).toHaveValue(latest.customer)
+  expect(saveSheet).toHaveBeenCalledTimes(1)
 })
 
 it('lets staff clear a previously recognized pickup date after the customer withdraws it', async () => {
@@ -141,11 +160,8 @@ it('lets staff clear a previously recognized pickup date after the customer with
   expect(await screen.findByLabelText('预计可取日期')).toHaveValue('2026-11-28')
   fireEvent.click(screen.getByRole('button', { name: '编辑原文' }))
   fireEvent.change(screen.getByLabelText('客户需求原文'), { target: { value: '更正：周末取，日期再定。' } })
-  fireEvent.click(screen.getByRole('button', { name: '整理成工作单' }))
-  const field = await screen.findByRole('group', { name: '预计可取日期' })
-  fireEvent.click(within(field).getByRole('radio', { name: '使用识别值' }))
-  fireEvent.click(screen.getByRole('button', { name: '应用核对结果' }))
-  expect(screen.getByLabelText('预计可取日期')).toHaveValue('')
+  fireEvent.click(screen.getByRole('button', { name: '重新识别并覆盖工单' }))
+  expect(await screen.findByLabelText('预计可取日期')).toHaveValue('')
   expect(screen.getByLabelText('制作说明')).toHaveValue('周末取，日期再定')
 })
 
@@ -204,33 +220,18 @@ it('ignores recognition from the prior draft when navigation opens a different w
   expect(screen.getByRole('button', { name: '保存修改' })).toBeDisabled()
 })
 
-it('reconciles conflicting values individually and preserves information missing from recognition', async () => {
+it('overwrites the saved photo order using its existing version and source', async () => {
   vi.mocked(fetchSheet).mockResolvedValue(savedPhotoSheet)
-  vi.mocked(recognizeCapture).mockResolvedValue({ ...blankWorksheet, customer: '原稿姓名', phone: ' ',
-    instructions: '周三取件', totalPrice: 100, deposit: 0 })
-  vi.spyOn(window, 'confirm').mockReturnValue(true)
-  render(<ReceptionDesk />)
-  fireEvent.click(screen.getByRole('button', { name: '打开已存工单' }))
-  fireEvent.click(await screen.findByRole('button', { name: '更换原稿' }))
-  fireEvent.click(screen.getByRole('button', { name: '整理成工作单' }))
-  const deposit = await screen.findByRole('group', { name: '订金（NZD）' })
-  fireEvent.click(within(deposit).getByRole('radio', { name: /使用识别值/ }))
-  fireEvent.click(screen.getByRole('button', { name: '查看原稿', expanded: false }))
-  const source = '/api/admin/ai-order-imports/i/documents/d/content'
-  expect(screen.getByRole('img')).toHaveAttribute('src', source)
-  fireEvent.error(screen.getByRole('img'))
-  fireEvent.click(screen.getByRole('button', { name: '重试加载' }))
-  expect(screen.getByRole('img')).toHaveAttribute('src', source + '?retry=1')
-  fireEvent.click(screen.getByRole('button', { name: '收起原稿', expanded: true }))
-  expect(screen.queryByRole('img')).toBeNull()
-  expect(within(deposit).getByRole('radio', { name: /使用识别值/ })).toBeChecked()
-  fireEvent.click(screen.getByRole('button', { name: '应用核对结果' }))
-  expect(screen.getByLabelText('客户姓名')).toHaveValue('店内姓名')
-  expect(screen.getByLabelText('联系电话')).toHaveValue('021234')
-  expect(screen.getByLabelText('预计可取日期')).toHaveValue('2026-12-02')
-  expect(screen.getByLabelText('制作说明')).toHaveValue('周三取件')
-  expect(screen.getByRole('textbox', { name: '订金（NZD）' })).toHaveValue('0.00')
-  expect(screen.getByRole('textbox', { name: '总价（NZD）' })).toHaveValue('100.00')
+  vi.mocked(saveSheet).mockResolvedValue({...savedPhotoSheet, version: 'v2'})
+  const next = {...blankWorksheet, customer: '原稿姓名', instructions: '周三取件', totalPrice: 100, deposit: 0}
+  vi.mocked(recognizeCapture).mockResolvedValue(next)
+  render(<ReceptionDesk initialSheet="saved"/>)
+  fireEvent.click(await screen.findByRole('button', {name: '更换原稿'}))
+  fireEvent.click(screen.getByRole('button', {name: '重新识别并覆盖工单'}))
+  expect(await screen.findByDisplayValue('原稿姓名')).toBeVisible()
+  expect(screen.getByLabelText('联系电话')).toHaveValue('')
+  await waitFor(() => expect(saveSheet).toHaveBeenCalledWith('saved', expect.objectContaining({...next, payments: []}),
+    [], 'v1', savedPhotoSheet.sourcePhoto, undefined))
 })
 
 it('reviews replacement payment marks, edits the amount and saves once per payment', async () => {
@@ -243,13 +244,9 @@ it('reviews replacement payment marks, edits the amount and saves once per payme
   render(<ReceptionDesk initialSheet="saved"/>)
   expect(await screen.findByRole('combobox', { name: /第 1 笔付款方式/ })).toHaveValue('Cash')
   fireEvent.click(screen.getByRole('button', { name: '更换原稿' }))
-  fireEvent.click(screen.getByRole('button', { name: '整理成工作单' }))
-  await screen.findByText('EFTPOS · NZ$20.00')
-  const review = screen.getByRole('group', { name: '实际已付款' })
-  expect(within(review).getByText('EFTPOS · NZ$20.00')).toBeVisible()
-  expect(within(review).getByText('Transfer · NZ$15.00')).toBeVisible()
-  fireEvent.click(within(review).getByRole('radio', { name: /使用识别值/ }))
-  fireEvent.click(screen.getByRole('button', { name: '应用核对结果' }))
+  fireEvent.click(screen.getByRole('button', { name: '重新识别并覆盖工单' }))
+  await screen.findByRole('textbox', {name: '第 2 笔实付金额（NZD）'})
+  await waitFor(() => expect(screen.getByRole('button', {name: '保存修改'})).toBeDisabled())
   fireEvent.change(screen.getByRole('textbox', { name: '第 2 笔实付金额（NZD）' }), { target: { value: '15.25' } })
   fireEvent.click(screen.getByRole('button', { name: '添加已付款项' }))
   expect(screen.getByRole('button', { name: '保存修改' })).toBeDisabled()
@@ -257,27 +254,81 @@ it('reviews replacement payment marks, edits the amount and saves once per payme
   fireEvent.click(screen.getByRole('button', { name: '保存修改' }))
   await waitFor(() => expect(saveSheet).toHaveBeenCalledWith('saved', expect.objectContaining({
     payments: [{ amount: 20, method: 'EFTPOS' }, { amount: 15.25, method: 'Transfer' }],
-    totalPrice: undefined, deposit: 10,
-  }), [], 'v1', saved.sourcePhoto, undefined))
+  }), [], 'v2', saved.sourcePhoto, undefined))
 })
 
-it('shows the current handwritten original while reviewing recognition differences', async () => {
+it('re-recognizes the current handwriting and saves its replacement on the same order without field review', async () => {
   const handwriting = 'data:image/png;base64,AA=='
   vi.spyOn(HTMLCanvasElement.prototype, 'toDataURL').mockReturnValue(handwriting)
-  vi.spyOn(HTMLCanvasElement.prototype, 'toBlob').mockImplementation(callback => callback(new Blob(['ink'])))
-  vi.spyOn(window, 'confirm').mockReturnValue(true)
-  vi.mocked(recognizeCapture).mockResolvedValue({ ...blankWorksheet, customer: '原稿姓名' })
+  let ink = 'ink'
+  const snapshot = vi.spyOn(HTMLCanvasElement.prototype, 'toBlob').mockImplementation(callback => callback(new Blob([ink])))
+  const confirm = vi.spyOn(window, 'confirm').mockReturnValue(true)
+  const original = {...savedPhotoSheet, sourcePhoto: undefined, handwriting: [{erase: false, points: [{x: 4, y: 8}]}],
+    layout: {title: '旧清单', groups: []}, payments: [{amount: 12, method: 'Cash' as const}]}
+  vi.mocked(fetchSheet).mockResolvedValue(original)
+  const latest = {...blankWorksheet, customer: '原稿新姓名', instructions: '改用蓝色', totalPrice: 0,
+    layout: {title: '新版清单', groups: []}}
+  vi.mocked(recognizeCapture).mockReset()
+    .mockResolvedValueOnce({...blankWorksheet, customer: '第一次识别'})
+    .mockRejectedValueOnce(new Error('识别超时'))
+    .mockResolvedValueOnce(latest)
+  const save = vi.mocked(saveSheet).mockReset().mockImplementation(async (id, sheet, strokes, version) => {
+    const stored = {...original, id, customer: sheet.customer, phone: sheet.phone, pickupDate: sheet.pickupDate,
+      instructions: sheet.instructions, layout: sheet.layout, deposit: sheet.deposit, totalPrice: sheet.totalPrice,
+      payments: sheet.payments, handwriting: strokes, version: version === 'v1' ? 'v2' : 'v3'}
+    vi.mocked(fetchSheet).mockResolvedValue(stored)
+    return stored
+  })
   render(<ReceptionDesk />)
-  fireEvent.click(screen.getByRole('button', { name: '新建接待工单' }))
+  fireEvent.click(screen.getByRole('button', { name: '打开已存工单' }))
+  fireEvent.click(await screen.findByRole('button', { name: '编辑手稿' }))
   fireEvent.click(screen.getByLabelText('手写接单纸'))
-  fireEvent.click(screen.getByRole('button', { name: '手动填写' }))
-  fireEvent.change(screen.getByLabelText('客户姓名'), { target: { value: '店内姓名' } })
+  const recognize = () => fireEvent.click(screen.getByRole('button', { name: /整理成工作单|重新识别并覆盖工单/ }))
+  recognize()
+  expect(await screen.findByDisplayValue('第一次识别')).toBeVisible()
+  expect(screen.queryByRole('button', {name: '应用核对结果'})).toBeNull()
+  await waitFor(() => expect(save).toHaveBeenCalledTimes(1))
   fireEvent.click(screen.getByRole('button', { name: '编辑手稿' }))
-  fireEvent.click(screen.getByRole('button', { name: '整理成工作单' }))
-  fireEvent.click(await screen.findByRole('button', { name: '查看原稿' }))
-  expect(screen.getByRole('img', { name: '当前工作单的手写原稿' })).toHaveAttribute('src', handwriting)
-  fireEvent.click(screen.getByRole('button', { name: '放弃本次结果' }))
-  expect(screen.getByLabelText('客户姓名')).toHaveValue('店内姓名')
+  recognize()
+  expect(await screen.findByRole('alert')).toHaveTextContent('识别超时')
+  expect(save).toHaveBeenCalledTimes(1)
+  expect(snapshot).toHaveBeenCalledTimes(2)
+  const calls = vi.mocked(recognizeCapture).mock.calls
+  expect(calls[1][0].key).not.toBe(calls[0][0].key)
+  fireEvent.click(screen.getByRole('button', {name: '核对工作单'}))
+  expect(screen.getByLabelText('客户姓名')).toHaveValue('第一次识别')
+  fireEvent.click(screen.getByRole('button', {name: '编辑手稿'}))
+  ink = 'corrected ink'
+  fireEvent.click(screen.getByLabelText('手写接单纸'))
+  recognize()
+  expect(await screen.findByDisplayValue(latest.customer)).toBeVisible()
+  expect(confirm).not.toHaveBeenCalled()
+  expect(snapshot).toHaveBeenCalledTimes(3)
+  expect(calls[2][0].key).not.toBe(calls[1][0].key)
+  expect(calls[2][0].file?.size).toBe(new Blob([ink]).size)
+  await waitFor(() => expect(save).toHaveBeenLastCalledWith(original.id,
+    expect.objectContaining({...latest, payments: []}), [{erase: false, points: [{x: 1, y: 2}]}], 'v2', undefined, undefined))
+  expect(save).toHaveBeenCalledTimes(2)
+  fireEvent.click(screen.getByRole('button', {name: '工单总览'}))
+  fireEvent.click(screen.getByRole('button', {name: '打开已存工单'}))
+  expect(await screen.findByDisplayValue(latest.customer)).toBeVisible()
+  expect(screen.getByLabelText('联系电话')).toHaveValue('')
+  expect(screen.getByLabelText('工作单标题')).toHaveValue('新版清单')
+  expect(screen.queryByLabelText('第 1 笔实付金额（NZD）')).toBeNull()
+})
+
+it('keeps a new handwritten order as a draft until its first save', async () => {
+  vi.spyOn(HTMLCanvasElement.prototype, 'toDataURL').mockReturnValue('data:image/png;base64,AA==')
+  vi.spyOn(HTMLCanvasElement.prototype, 'toBlob').mockImplementation(callback => callback(new Blob(['ink'])))
+  vi.mocked(recognizeCapture).mockResolvedValueOnce({...blankWorksheet, customer: '新客户'})
+  const save = vi.mocked(saveSheet).mockClear()
+  render(<ReceptionDesk/>)
+  fireEvent.click(screen.getByRole('button', {name: '新建接待工单'}))
+  fireEvent.click(screen.getByLabelText('手写接单纸'))
+  fireEvent.click(screen.getByRole('button', {name: '整理成工作单'}))
+  expect(await screen.findByDisplayValue('新客户')).toBeVisible()
+  expect(screen.getByRole('button', {name: '保存到取货列表'})).toBeEnabled()
+  expect(save).not.toHaveBeenCalled()
 })
 
 it('retries the stored photo in both views without replacing its source or dirtying the sheet', async () => {

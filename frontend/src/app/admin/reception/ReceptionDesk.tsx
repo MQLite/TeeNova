@@ -7,9 +7,7 @@ import { useCallback, useEffect, useId, useRef, useState } from 'react'
 import { blankWorksheet, hasSheetContent, missingSheetHeadings, todayInAuckland, type Worksheet } from '@/features/reception/worksheet'
 import { ensureCaptureSource, recognizeCapture, type CaptureRequest } from '@/features/reception/recognize'
 import { prepareReceptionPhoto } from '@/features/reception/photo'
-import { emptyRecognitionValue, mergeRecognition, recognitionLabels, type RecognitionDifference, type RecognitionField } from '@/features/reception/mergeRecognition'
 import { ensureMaterialSources, recognizeMaterials, type MaterialItem, type RecognitionSourceNote } from '@/features/reception/materials'
-import { applyQuantityReview, isQuantityNote, prepareQuantityReview, type QuantityReview } from '@/features/reception/materialQuantityReview'
 import { sourceContentUrl } from '@/api/ai-order-imports'
 import { useReceptionEstimate } from '@/features/reception/useReceptionEstimate'
 import { receptionPricingInputs } from '@/features/reception/estimate'
@@ -19,7 +17,7 @@ import { ReceptionPdfs, ReceptionPreview } from './ReceptionPdfs'
 import { MaterialNotes, MaterialPreview, MaterialSources, MaterialTabs, ReceptionMaterialsEditor, useMaterialTabs, type MaterialPreviewTarget } from './ReceptionMaterials'
 import { useReceptionMaterials } from './useReceptionMaterials'
 import { ReceptionQueue } from './ReceptionQueue'
-import { RecognitionReview, WorksheetValue } from './RecognitionReview'
+import { WorksheetValue } from './RecognitionReview'
 import { OriginalText, StoredOriginalText, TextEditor, useTextOriginal } from './TextOriginal'
 import { advanceSheet, fetchSheet, generateSheetPdf, saveSheet, stages, type SavedSheet, type SheetPdf, type Stage } from './sheets'
 import { displayAmount, displayPayment, SheetAmounts } from './SheetAmounts'
@@ -28,33 +26,6 @@ import { formatNzDate } from '@/lib/datetime'
 import './reception.css'
 
 type SaveRequest = { attempt: number; print: boolean; afterStroke: boolean }
-
-const sourceFieldNames: [RegExp, RecognitionField][] = [
-  [/layout|group|garment|size|quantity|qty|count|print|服装|尺码|印花|数量|件数|码数|恤|连帽衫/i, 'groups'],
-  [/phone|mobile|电话|手机/i, 'phone'],
-  [/pickup|取货|自取|日期/i, 'pickupDate'],
-  [/payment|paid|eftpos|cash|transfer|实付|付款|收款/i, 'payments'],
-  [/deposit|订金|定金/i, 'deposit'],
-  [/amount|total|总价|费用|金额/i, 'totalPrice'],
-  [/customer|客户|姓名|顾客/i, 'customer'],
-  [/title|标题/i, 'title'],
-  [/instruction|note|制作说明|备注/i, 'instructions'],
-]
-
-function reviewMaterialNotes(notes: RecognitionSourceNote[]) {
-  const proposed = new Set<RecognitionField>()
-  const unresolved = new Set<RecognitionField>()
-  for (const note of notes) {
-    if (note.kind === 'multipleCustomers') return { fields: new Set(Object.keys(recognitionLabels) as RecognitionField[]), suggested: new Set<RecognitionField>() }
-    if (note.kind === 'evidence') continue
-    const field = Object.hasOwn(recognitionLabels, note.field) ? note.field as RecognitionField :
-      note.kind === 'possibleDuplicate' ? 'groups' : sourceFieldNames.find(([pattern]) => pattern.test(note.field))?.[1]
-    if (!field) continue
-    if (note.kind === 'correction') proposed.add(field)
-    else unresolved.add(field)
-  }
-  return { fields: new Set([...proposed, ...unresolved]), suggested: new Set([...proposed].filter(field => !unresolved.has(field))) }
-}
 
 export function ReceptionDesk({ initialSheet }: { initialSheet?: string } = {}) {
   const openedFromLink = useRef<string>()
@@ -75,7 +46,6 @@ export function ReceptionDesk({ initialSheet }: { initialSheet?: string } = {}) 
   const { openSource: openMaterialSource } = materials
   const [materialPreview, setMaterialPreview] = useState<MaterialPreviewTarget>()
   const [materialNotes, setMaterialNotes] = useState<RecognitionSourceNote[]>([])
-  const [materialQuantityUnlocated, setMaterialQuantityUnlocated] = useState(false)
   const materialTabs = useMaterialTabs()
   const { reset: resetMaterialTabs } = materialTabs
   const [captureTools, setCaptureTools] = useState<HTMLDivElement | null>(null)
@@ -104,18 +74,11 @@ export function ReceptionDesk({ initialSheet }: { initialSheet?: string } = {}) 
   const pdfAttempt = useRef<number>()
   const [recognitionFailed, setRecognitionFailed] = useState(false)
   const editRevision = useRef(0)
-  const [pendingRecognition, setPendingRecognition] = useState<{
-    incoming: Worksheet; differences: RecognitionDifference[]; reviewMissing: boolean; textKey?: string; materialsKey?: string
-    reviewFields?: ReadonlySet<RecognitionField>; initiallyAccepted?: ReadonlySet<RecognitionField>; fromMaterials?: boolean
-    quantities?: QuantityReview[]
-  }>()
-  const lastAppliedTextKey = useRef<string>()
-  const lastAppliedMaterialsKey = useRef<string>()
+  const recognitionSaveRevision = useRef<number>()
   const canvas = useRef<HTMLCanvasElement>()
   const sheetId = useRef<string>()
   const job = useRef<CaptureRequest>()
   const controller = useRef<AbortController>()
-  const recognized = useRef(false)
   useEffect(() => () => controller.current?.abort(), [])
   useEffect(() => {
     if (!dirty) return
@@ -152,7 +115,6 @@ export function ReceptionDesk({ initialSheet }: { initialSheet?: string } = {}) 
       const file = await prepareReceptionPhoto(original)
       const preview = URL.createObjectURL(file)
       job.current = { key: crypto.randomUUID(), file, method }
-      recognized.current = false
       strokes.current = []
       setInitialStrokes([]); setHasInk(false); setPhoto('')
       setPadKey(k => k + 1)
@@ -166,12 +128,11 @@ export function ReceptionDesk({ initialSheet }: { initialSheet?: string } = {}) 
   function useHandwriting() {
     if (!window.confirm('移除当前照片，改用手写接单？')) return
     setSourcePhotoUrl(''); setError(''); markDirty()
-    job.current = undefined; recognized.current = false
+    job.current = undefined
   }
   function changeCaptureMode(useText: boolean) {
     materials.setActive(false)
     setTextMode(useText)
-    recognized.current = false
     setError('')
     setRecognitionFailed(false)
   }
@@ -183,7 +144,6 @@ export function ReceptionDesk({ initialSheet }: { initialSheet?: string } = {}) 
       setBusy('')
     }
     textOriginal.edit(value)
-    recognized.current = false
     setError('')
     setRecognitionFailed(false)
     markDirty()
@@ -195,10 +155,8 @@ export function ReceptionDesk({ initialSheet }: { initialSheet?: string } = {}) 
       setBusy('')
     }
     setMaterialNotes([])
-    setMaterialQuantityUnlocated(false)
     setError('')
     setRecognitionFailed(false)
-    recognized.current = false
     markDirty()
   }
   function addMaterials(files: File[], method: MaterialItem['method']) {
@@ -215,11 +173,11 @@ export function ReceptionDesk({ initialSheet }: { initialSheet?: string } = {}) 
     catch (e) { if (openAttempt.current === attempt) setError(e instanceof Error ? e.message : '材料上传失败。') }
     finally { if (openAttempt.current === attempt) setBusy('') }
   }
+  const handwritingMode = !materials.active && !textMode && !sourcePhotoUrl
   const canRecognize = materials.active ? materials.items.length > 0 && !materials.validation && !materials.items.some(item => item.saved?.expired)
-    : textMode ? textOriginal.valid : !!sourcePhotoUrl || hasInk
-  async function recognize() {
+    : textMode ? textOriginal.valid : !!sourcePhotoUrl || (hasInk && !drawing)
+  async function recognize(retry = false) {
     if (!canRecognize || busy || controller.current) return
-    if (hasSheetContent(sheet) && !window.confirm('现在识别原稿？空白字段将自动补齐，有差异的内容可逐项核对。')) return
     setError('')
     setRecognitionFailed(false)
     setBusy(materials.active ? '正在准备所选材料…' : textMode ? '准备文字原稿…' : '准备手稿…')
@@ -227,51 +185,30 @@ export function ReceptionDesk({ initialSheet }: { initialSheet?: string } = {}) 
     controller.current = token
     try {
       const progress = (text: string) => { if (!token.signal.aborted) setBusy(text) }
+      let result: Worksheet
+      let notes: RecognitionSourceNote[] = []
       if (materials.active) {
         const batch = materials.getJob()
-        const { sourceNotes = [], ...recognizedSheet } = await recognizeMaterials(batch, token.signal, progress, materials.report(batch, token.signal))
-        if (token.signal.aborted) return
-        setMaterialNotes(sourceNotes)
-        const reviewMissing = !!record?.materials ||
-          (!!lastAppliedMaterialsKey.current && lastAppliedMaterialsKey.current !== batch.key)
-        const mixedCustomers = sourceNotes.some(note => note.kind === 'multipleCustomers')
-        const quantityNotes = sourceNotes.filter(note => note.kind !== 'evidence' && isQuantityNote(note))
-        const quantityReview = mixedCustomers ? { incoming: recognizedSheet, quantities: [], locationUnknown: false } :
-          prepareQuantityReview(sheet, recognizedSheet, quantityNotes, reviewMissing)
-        const { incoming, quantities, locationUnknown } = quantityReview
-        setMaterialQuantityUnlocated(locationUnknown)
-        const { fields, suggested } = reviewMaterialNotes(mixedCustomers ? sourceNotes : sourceNotes.filter(note => !quantityNotes.includes(note)))
-        const merged = mergeRecognition(sheet, incoming, undefined, reviewMissing, fields)
-        if (merged.differences.length || quantities.length || sourceNotes.some(note => note.kind !== 'evidence')) {
-          const initiallyAccepted = new Set(merged.differences.filter(difference =>
-            suggested.has(difference.field) && emptyRecognitionValue(difference.current)).map(difference => difference.field))
-          setPendingRecognition({ incoming, differences: merged.differences, reviewMissing, reviewFields: fields,
-            initiallyAccepted, fromMaterials: true, materialsKey: batch.key, quantities })
-        } else {
-          applyRecognition(merged.sheet, undefined, batch.key)
-        }
-        review()
-        return
-      }
-      let capture = textMode ? textOriginal.capture() : job.current
-      if (!capture) {
-        const blob = await new Promise<Blob | null>(resolve => canvas.current!.toBlob(resolve, 'image/png'))
-        token.signal.throwIfAborted()
-        if (!blob) throw new Error('无法读取手稿，请重试。')
-        capture = job.current = { key: crypto.randomUUID(), file: new File([blob], 'reception-note.png', { type: 'image/png' }) }
-      }
-      const result = await recognizeCapture(capture, token.signal, progress)
-      if (token.signal.aborted) return
-      const textKey = textMode ? capture.key : undefined
-      // A revised transcript can withdraw a value. Let the operator decide before clearing it.
-      const reviewMissing = textMode && textOriginal.edited && lastAppliedTextKey.current !== textKey &&
-        Boolean(lastAppliedTextKey.current || record?.sourceText)
-      const merged = mergeRecognition(sheet, result, undefined, reviewMissing)
-      if (merged.differences.length) {
-        setPendingRecognition({ incoming: result, differences: merged.differences, reviewMissing, textKey })
+        const { sourceNotes, ...worksheet } = await recognizeMaterials(batch, token.signal, progress, materials.report(batch, token.signal))
+        result = worksheet
+        notes = sourceNotes ?? []
       } else {
-        applyRecognition(merged.sheet, textKey)
+        let capture = textMode ? textOriginal.capture() : job.current
+        if (handwritingMode && !retry) capture = undefined
+        if (!capture) {
+          const blob = await new Promise<Blob | null>(resolve => canvas.current!.toBlob(resolve, 'image/png'))
+          token.signal.throwIfAborted()
+          if (!blob) throw new Error('无法读取手稿，请重试。')
+          capture = job.current = { key: crypto.randomUUID(), file: new File([blob], 'reception-note.png', { type: 'image/png' }) }
+        }
+        result = await recognizeCapture(capture, token.signal, progress)
       }
+      if (token.signal.aborted) return
+      setMaterialNotes(notes)
+      // The save endpoint preserves old payments when the field is omitted.
+      setSheet({...result, payments: result.payments ?? []})
+      markDirty()
+      if (record) recognitionSaveRevision.current = editRevision.current
       review()
     } catch (e) {
       if (!token.signal.aborted) {
@@ -284,14 +221,6 @@ export function ReceptionDesk({ initialSheet }: { initialSheet?: string } = {}) 
       if (!token.signal.aborted) setBusy('')
     }
   }
-  function applyRecognition(next: Worksheet, textKey?: string, materialsKey?: string) {
-    if (textKey) lastAppliedTextKey.current = textKey
-    if (materialsKey) lastAppliedMaterialsKey.current = materialsKey
-    setSheet(next)
-    setPendingRecognition(undefined)
-    recognized.current = true
-    markDirty()
-  }
   function manual() {
     controller.current?.abort()
     controller.current = undefined
@@ -302,6 +231,7 @@ export function ReceptionDesk({ initialSheet }: { initialSheet?: string } = {}) 
   }
   function requestSave(print = false) {
     if (busy || saveRequest.current || !canSave || (print ? pdfAttempt.current !== undefined : !dirty)) return
+    recognitionSaveRevision.current = undefined
     const attempt = openAttempt.current
     if (print && record && !dirty && !drawing) {
       void generatePdf(record, attempt, editRevision.current)
@@ -401,24 +331,22 @@ export function ReceptionDesk({ initialSheet }: { initialSheet?: string } = {}) 
     resetSheet()
   }
   function resetSheet() {
+    recognitionSaveRevision.current = undefined
     openAttempt.current++
     setOpeningId(undefined)
     controller.current?.abort()
     controller.current = undefined
-    setPendingRecognition(undefined)
     setRecognitionFailed(false)
     saveRequest.current = undefined
     pdfAttempt.current = undefined
     setSaveState('idle'); setPdfPending(false); setPdfError(''); setGeneratedPdfs([]); setPreviewPdf(undefined)
-    lastAppliedTextKey.current = undefined
-    lastAppliedMaterialsKey.current = undefined
     setRecord(undefined); setSheet(blankWorksheet); setHasInk(false); setDirty(false)
     setSourcePhotoUrl('')
     setTextMode(false); openTextSource()
-    openMaterialSource(); setMaterialPreview(undefined); setMaterialNotes([]); setMaterialQuantityUnlocated(false); resetMaterialTabs()
+    openMaterialSource(); setMaterialPreview(undefined); setMaterialNotes([]); resetMaterialTabs()
     strokes.current = []; setInitialStrokes([]); setConflict(false); setRecovered(undefined)
     setPhoto(''); setError(''); setView('write'); setReceived(todayInAuckland())
-    canvas.current = undefined; sheetId.current = undefined; job.current = undefined; recognized.current = false
+    canvas.current = undefined; sheetId.current = undefined; job.current = undefined
     setPadKey(k => k + 1)
   }
   async function recoverFirstSave() {
@@ -435,6 +363,7 @@ export function ReceptionDesk({ initialSheet }: { initialSheet?: string } = {}) 
   const open = useCallback(async (id: string) => {
     setQueueMessage('')
     if (dirty && !window.confirm('打开已保存版本会替换当前未保存的修改，是否继续？')) return
+    recognitionSaveRevision.current = undefined
     const attempt = ++openAttempt.current
     controller.current?.abort()
     controller.current = undefined
@@ -448,9 +377,6 @@ export function ReceptionDesk({ initialSheet }: { initialSheet?: string } = {}) 
     try {
       const next = await fetchSheet(id)
       if (openAttempt.current !== attempt) return
-      setPendingRecognition(undefined)
-      lastAppliedTextKey.current = undefined
-      lastAppliedMaterialsKey.current = undefined
       setRecord(next)
       setDrawing(false)
       setRecovered(undefined)
@@ -463,13 +389,13 @@ export function ReceptionDesk({ initialSheet }: { initialSheet?: string } = {}) 
       setPadKey(k => k + 1)
       setReceived(formatNzDate(next.creationTime, {year:'numeric',month:'short',day:'numeric'}))
       setDirty(false); setConflict(false); setView('review')
-      recognized.current = false; job.current = undefined
+      job.current = undefined
       setPhoto('')
       setSourcePhotoUrl(next.sourcePhoto ? sourceContentUrl(next.sourcePhoto.importId, next.sourcePhoto.documentId) : '')
       openTextSource(next.sourceText)
       setTextMode(!!next.sourceText)
       openMaterialSource(next.materials)
-      setMaterialPreview(undefined); setMaterialNotes([]); setMaterialQuantityUnlocated(false); resetMaterialTabs()
+      setMaterialPreview(undefined); setMaterialNotes([]); resetMaterialTabs()
       if (next.sourcePhoto) job.current = { key: crypto.randomUUID(), source: next.sourcePhoto }
     } catch (e) {
       if (openAttempt.current === attempt) setError(e instanceof Error ? e.message : '打开失败。')
@@ -509,6 +435,15 @@ export function ReceptionDesk({ initialSheet }: { initialSheet?: string } = {}) 
     (!!textOriginal.text || !!textOriginal.source || !!record?.sourceText)
   const invalidMaterials = materials.edited ? materials.validation : ''
   const canSave = !recovered && !invalidTextEdit && !invalidMaterials && !missing.length && (hasOtherContent || hasInk || drawing)
+  // Save with the newly rendered worksheet and its quote, using the usual version check.
+  useEffect(() => {
+    if (recognitionSaveRevision.current === undefined) return
+    if (recognitionSaveRevision.current !== editRevision.current || !canSave || !dirty) {
+      recognitionSaveRevision.current = undefined
+      return
+    }
+    if (!busy && estimate.printText !== '待估价') requestSave()
+  })
   const saveLabel = saveState === 'saving' ? '保存中' : saveState === 'failed' ? '保存失败' :
     dirty ? '有未保存修改' : record ? '已保存' : '草稿'
   const displayState = (record ? stages[record.stage] + ' · ' : '') + saveLabel
@@ -525,7 +460,6 @@ export function ReceptionDesk({ initialSheet }: { initialSheet?: string } = {}) 
     setDrawing(false)
     setHasInk(ink)
     job.current = undefined
-    recognized.current = false
     markDirty()
     if (saveRequest.current?.afterStroke) {
       const request = saveRequest.current
@@ -539,7 +473,7 @@ export function ReceptionDesk({ initialSheet }: { initialSheet?: string } = {}) 
     }
   }
   const originalImage = sourcePhotoUrl || photo
-    ? <OriginalPhoto url={sourcePhotoUrl || photo} handwriting={!sourcePhotoUrl} compact={!pendingRecognition} />
+    ? <OriginalPhoto url={sourcePhotoUrl || photo} handwriting={!sourcePhotoUrl} compact />
     : null
   const original = textOriginal.hasOriginal
     ? <><OriginalText value={textOriginal}/>{originalImage}</> : originalImage
@@ -549,13 +483,13 @@ export function ReceptionDesk({ initialSheet }: { initialSheet?: string } = {}) 
   return <div className="reception-desk" lang="zh-CN">
     <header className="rc-mast"><strong>OtahuhuPrintingShop</strong><span>接待工作台</span></header>
     <nav aria-label="接待导航">{([['queue','工单总览'], ['write','接单录入'], ['review','核对工作单']] as const).map(([tab,label]) =>
-      <button key={tab} disabled={!!busy || !!pendingRecognition || !!recovered} aria-current={view === tab ? 'page' : undefined} onClick={() => { setError(''); if (tab === 'review') review(); else setView(tab) }}>{label}</button>)}
+      <button key={tab} disabled={!!busy || !!recovered} aria-current={view === tab ? 'page' : undefined} onClick={() => { setError(''); if (tab === 'review') review(); else setView(tab) }}>{label}</button>)}
       <a href="/admin/reception/pending">待关联设计稿</a></nav>
     <div className="rc-body">
       {error && <p className="rc-error" role="alert">{error}
         {conflict && !recovered && (record ? <button disabled={!!busy} onClick={() => void open(record.id)}>重新载入工单</button> :
           sheetId.current && <button disabled={!!busy} onClick={() => void recoverFirstSave()}>找回已保存工单</button>)}
-        {view === 'write' && recognitionFailed && <button type="button" disabled={!!busy || !canRecognize} onClick={() => void recognize()}>重试识别</button>}</p>}
+        {view === 'write' && recognitionFailed && <button type="button" disabled={!!busy || !canRecognize} onClick={() => void recognize(true)}>重试识别</button>}</p>}
       {recognizing ? <aside className="rc-recognition-progress" aria-label="整理工作单进度" role="region">
         <div className="rc-progress-heading"><span className="rc-spinner" aria-hidden="true"/><strong>正在整理工作单</strong></div>
         <p role="status">{busy}</p>
@@ -600,7 +534,7 @@ export function ReceptionDesk({ initialSheet }: { initialSheet?: string } = {}) 
           </>}
           <button aria-pressed={textMode && !materials.active} disabled={!!busy || drawing} onClick={() => changeCaptureMode(true)}>粘贴文字</button>
           <button aria-pressed={materials.active} disabled={!!busy || drawing} onClick={() => {
-            materials.setActive(true); recognized.current = false; setError(''); setRecognitionFailed(false)
+            materials.setActive(true); setError(''); setRecognitionFailed(false)
           }}>从文件生成工作单</button>
           {textMode || materials.active ? <button disabled={!!busy} onClick={() => changeCaptureMode(false)}>{sourcePhotoUrl ? '返回照片' : '返回手写'}</button>
             : sourcePhotoUrl && <button disabled={!!busy} onClick={useHandwriting}>改用手写</button>}
@@ -611,7 +545,7 @@ export function ReceptionDesk({ initialSheet }: { initialSheet?: string } = {}) 
         {!materials.active && textMode && view === 'write' && <TextEditor value={textOriginal} onChange={editText} disabled={editsLocked && !recognizing}/>}
         {!materials.active && textMode && invalidTextEdit && !textOriginal.text.trim() && <p className="rc-error">请填写文字原稿后保存。</p>}
         {!materials.active && textMode && textOriginal.edited && dirty && record?.sourceText && <button disabled={!!busy}
-          onClick={() => { recognized.current = false; openTextSource(record.sourceText) }}>恢复已保存的原文</button>}
+          onClick={() => { openTextSource(record.sourceText) }}>恢复已保存的原文</button>}
         <div hidden={textMode || materials.active}>{sourcePhotoUrl ? <OriginalPhoto url={sourcePhotoUrl} /> : <InkPad key={padKey} toolbarHost={view === 'write' && !textMode && !materials.active ? captureTools : null}
           initialStrokes={initialStrokes} onReady={ready} disabled={editsLocked} onStrokeStart={() => {
             setDrawing(true)
@@ -622,25 +556,10 @@ export function ReceptionDesk({ initialSheet }: { initialSheet?: string } = {}) 
         <div className="rc-actions rc-end">
           <button disabled={!!busy || !dirty || !canSave} onClick={() => requestSave()}>{record ? '保存修改' : '保存工单'}</button>
           {!recognizing && <button disabled={!!busy} onClick={manual}>手动填写</button>}
-          <button className="rc-primary" disabled={!canRecognize || !!busy} onClick={() => recognized.current ? review() : void recognize()}>
-            {materials.active ? '生成工作单草稿' : '整理成工作单'}</button></div>
+          <button className="rc-primary" disabled={!canRecognize || !!busy} onClick={() => void recognize()}>
+            {record || hasContent ? '重新识别并覆盖工单' : materials.active ? '生成工作单草稿' : '整理成工作单'}</button></div>
       </section>
-      {pendingRecognition && <RecognitionReview differences={pendingRecognition.differences}
-        original={pendingRecognition.fromMaterials ? materialSources : original}
-        compareOriginal={pendingRecognition.fromMaterials || textOriginal.hasOriginal}
-        materialComparison={pendingRecognition.fromMaterials}
-        initiallyAccepted={pendingRecognition.initiallyAccepted}
-        quantities={pendingRecognition.quantities}
-        quantityLocationUnknown={pendingRecognition.fromMaterials && materialQuantityUnlocated}
-        sourceNotes={pendingRecognition.fromMaterials ? sourceNotes : undefined}
-        onApply={(accepted, acceptedQuantities) => applyRecognition(applyQuantityReview(
-          mergeRecognition(sheet, pendingRecognition.incoming, accepted, pendingRecognition.reviewMissing, pendingRecognition.reviewFields).sheet,
-          pendingRecognition.quantities ?? [], acceptedQuantities), pendingRecognition.textKey, pendingRecognition.materialsKey)}
-        onCancel={() => {
-          setPendingRecognition(undefined)
-          if (pendingRecognition.fromMaterials) { setMaterialNotes([]); setMaterialQuantityUnlocated(false) }
-        }}/>}
-      {view === 'review' && !pendingRecognition && <section className="rc-detail">
+      {view === 'review' && <section className="rc-detail">
         <header className="rc-detail-header rc-heading">
           <div className="rc-detail-title"><h1>{record ? '编辑工作单' : '核对工作单'}</h1>
             <span className="rc-sheet-state" data-tone={saveTone} aria-live="polite">{displayState}</span></div>
@@ -683,7 +602,6 @@ export function ReceptionDesk({ initialSheet }: { initialSheet?: string } = {}) 
           <fieldset disabled={editsLocked} className="rc-detail-editor rc-order-pane"><legend className="sr-only">服装与制作</legend>
             <GarmentEditor layout={sheet.layout} catalogue={estimate.catalogue} onChange={layout => edit('layout', layout)}/>
             <label>制作说明<textarea rows={1} value={sheet.instructions} maxLength={24000} onChange={e => edit('instructions', e.target.value)} placeholder="交付约定或整单备注"/></label>
-            {materialQuantityUnlocated && <p className="rc-error">部分争议数量无法定位到唯一尺码。请对照原件核对并编辑。</p>}
             {sourceNotes}
           </fieldset>
         </div>
