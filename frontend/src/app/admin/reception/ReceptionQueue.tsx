@@ -4,8 +4,32 @@ import { useEffect, useState } from 'react'
 import { todayInAuckland } from '@/features/reception/worksheet'
 import { fetchQueue, type SheetSummary, type Stage } from './sheets'
 import { ArtworkPreview, sheetArtworkPath } from './ArtworkPreview'
+import { displayAmount, displayPayment } from './SheetAmounts'
 
 const headings: Record<Stage, string> = {Preparing: '待完成工单', Ready: '已做完 · 未取走', Collected: '已取走工单'}
+
+function TicketPayment({totalPrice, payments}: Pick<SheetSummary, 'totalPrice' | 'payments'>) {
+  let label = '收款未登记'
+  if (payments?.length) {
+    let paidCents = 0
+    for (const payment of payments) {
+      if (payment.amount == null) return <span className="rc-ticket-payment">实收待核</span>
+      paidCents += Math.round(payment.amount * 100)
+    }
+    const totalCents = totalPrice == null ? null : Math.round(totalPrice * 100)
+    let status = '已收'
+    if (totalCents !== null) {
+      if (paidCents > totalCents) status = '超额付款'
+      else if (paidCents === totalCents) status = '已付清'
+      else status = paidCents === 0 ? '未付款' : '部分付款'
+    }
+    label = status + ' ' + displayAmount(paidCents / 100)
+    const methods = [...new Set(payments.map(payment => payment.method).filter(Boolean))]
+    if (methods.length) label += ' · ' + methods.join('/')
+  }
+  const detail = [label, '总价 ' + displayAmount(totalPrice), ...(payments ?? []).map(displayPayment)].join(' · ')
+  return <span className="rc-ticket-payment" title={detail}>{label}</span>
+}
 
 function QueueColumn({stage, date, search, onOpen, openingId, disabled}: {
   stage: Stage; date: string; search: string; openingId?: string; onOpen: (id: string) => void; disabled: boolean
@@ -36,7 +60,8 @@ function QueueColumn({stage, date, search, onOpen, openingId, disabled}: {
         <button className="rc-ticket" aria-busy={sheet.id === openingId || undefined} title={`打开工单 #${sheet.id.slice(0,8)}`}
           disabled={openingId ? sheet.id === openingId : disabled} onClick={() => onOpen(sheet.id)}>
           <strong title={sheet.customer}>{sheet.customer || '未填写姓名'}</strong>
-          <span title={sheet.phone}>{sheet.phone || '未留联系方式'}</span>
+          <span className="rc-ticket-phone" title={sheet.phone}>{sheet.phone || '未留联系方式'}</span>
+          <TicketPayment totalPrice={sheet.totalPrice} payments={sheet.payments}/>
           <span className="sr-only">#{sheet.id.slice(0,8)}{sheet.id === openingId && ' · 正在打开…'}</span>
         </button>
         {!!sheet.artwork?.length && <div className="rc-ticket-art" role="group" aria-label="关联设计稿">{sheet.artwork.map(file =>

@@ -37,7 +37,10 @@ public class ReceptionSheet : AuditedAggregateRoot<Guid>
         payments.Length <= 40 && payments.All(p => p is not null && ValidAmount(p.Amount) &&
             p.Method is "EFTPOS" or "Cash" or "Transfer");
 
-    public ReceptionPayment[] ReadPayments() => this.GetProperty<string>("ReceptionPayments") is { } json
+    public ReceptionPayment[] ReadPayments() => ReadPayments(ExtraProperties);
+
+    public static ReceptionPayment[] ReadPayments(ExtraPropertyDictionary properties) =>
+        properties.TryGetValue("ReceptionPayments", out var value) && value is string json
         ? JsonSerializer.Deserialize<ReceptionPayment[]>(json)! : [];
 
     public void SetPayments(ReceptionPayment[] payments)

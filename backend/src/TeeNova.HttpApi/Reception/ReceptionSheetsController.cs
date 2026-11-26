@@ -86,10 +86,11 @@ public class ReceptionSheetsController(IRepository<ReceptionSheet, Guid> sheets,
         }
         var rows = await query.OrderBy(x => x.PickupDate == null).ThenBy(x => x.PickupDate)
             .ThenBy(x => x.CreationTime).ThenBy(x => x.Id).Skip(offset).Take(51)
-            .Select(x => new { x.Id, x.Customer, x.Phone, x.PickupDate, x.CreationTime, x.TotalPrice, x.Deposit }).ToListAsync(ct);
+            .Select(x => new { x.Id, x.Customer, x.Phone, x.PickupDate, x.CreationTime, x.TotalPrice, x.Deposit,
+                Payments = ReceptionSheet.ReadPayments(x.ExtraProperties) }).ToListAsync(ct);
         var page = rows.Take(50).ToArray();
         var artwork = page.Length == 0 ? null : GmailArtworkStore.Configured(config, host, storageOptions).ListForSheets(page.Select(s => s.Id));
-        return Ok(new { items = page.Select(s => new { s.Id, s.Customer, s.Phone, s.PickupDate, s.CreationTime, s.TotalPrice, s.Deposit,
+        return Ok(new { items = page.Select(s => new { s.Id, s.Customer, s.Phone, s.PickupDate, s.CreationTime, s.TotalPrice, s.Deposit, s.Payments,
             artwork = artwork?[s.Id] ?? Enumerable.Empty<GmailFileInfo>() }), hasMore = rows.Count > 50 });
     }
 

@@ -27,6 +27,19 @@ namespace TeeNova.Tests.Reception;
 public sealed class ReceptionSheetPdfArchiveTests
 {
     [Fact]
+    public async Task Queue_returns_recorded_payments_separately_from_the_deposit()
+    {
+        await using var fixture = await ArchiveFixture.Create();
+        ReceptionPayment[] payments = [new(12.50m, "Cash"), new(5, "EFTPOS")];
+        var saved = await fixture.Client.PutAsJsonAsync(fixture.SheetRoute, new { customer = "Queue", totalPrice = 50, deposit = 20, payments });
+        saved.EnsureSuccessStatusCode();
+        var page = await fixture.Client.GetFromJsonAsync<JsonElement>("/api/admin/reception-sheets?stage=Preparing");
+        var row = Assert.Single(page.GetProperty("items").EnumerateArray());
+        Assert.Equal(20, row.GetProperty("deposit").GetDecimal());
+        Assert.Equal(payments, row.GetProperty("payments").Deserialize<ReceptionPayment[]>(JsonSerializerOptions.Web));
+    }
+
+    [Fact]
     public async Task Archive_routes_require_the_reception_admin_role()
     {
         var builder = WebApplication.CreateBuilder();
