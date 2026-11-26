@@ -595,6 +595,13 @@ export function ReceptionDesk({ initialSheet }: { initialSheet?: string } = {}) 
             </div>
             {record && <details className="rc-disclosure"><summary>设计稿</summary>
               <GmailArtwork key={record.id} sheetId={record.id} />
+              {record.hasGmailTrialPdf && <p><a href={`/api/proxy/api/admin/reception-sheets/${record.id}/gmail-trial-pdf`}
+                target="_blank" rel="noreferrer">打开 Gmail 设计稿 · 左胸（PDF）</a></p>}
+              {record.hasMessengerTrialArtwork && <figure><figcaption>Messenger 设计稿 · 左胸</figcaption>
+                <a href={`/api/proxy/api/admin/reception-sheets/${record.id}/messenger-trial-artwork`} target="_blank" rel="noreferrer">
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img className="rc-original-photo art-transparent" src={`/api/proxy/api/admin/reception-sheets/${record.id}/messenger-trial-artwork`} alt="打开左胸测试设计稿"/>
+                </a></figure>}
             </details>}
             {record && <ReceptionPdfs key={record.id} sheet={record} dirty={dirty} generated={generatedPdfs}
               preview={previewPdf} onPreview={setPreviewPdf}/>}

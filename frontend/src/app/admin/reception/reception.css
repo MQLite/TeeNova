@@ -156,7 +156,7 @@
 .rc-ticket :is(strong, span:not(.sr-only)) { min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
 .rc-ticket strong { flex: 1; }
 .rc-ticket span:not(.sr-only) { max-width: 62%; color: var(--ink-secondary); font-variant-numeric: tabular-nums; }
-.rc-ticket span.rc-ticket-payment { flex: 0 0 auto; max-width: 45%; font-size: .85rem; }
+.rc-ticket span.rc-ticket-payment { flex: 0 0 auto; max-width: 45%; font-size: .85rem; white-space: normal; overflow-wrap: anywhere; }
 .rc-ticket-phone { flex: 1; }
 .rc-ticket-art { display: flex; align-items: center; max-width: 32%; overflow-x: auto; gap: 3px; }
 .rc-ticket-art button.art-compact { flex: 0 0 44px; width: 44px; height: 44px; padding: 3px; }

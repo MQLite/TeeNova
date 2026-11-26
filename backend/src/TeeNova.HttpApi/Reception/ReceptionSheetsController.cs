@@ -5,6 +5,7 @@ using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Options;
 using TeeNova.AiOrderImports.PrivateStorage;
 using System.Text.Json;
+using System.Security.Cryptography;
 using TeeNova.AiOrderImports;
 using TeeNova.AiOrderImports.Recognition;
 using Microsoft.AspNetCore.Authorization;
@@ -35,7 +36,8 @@ public class ReceptionSheetsController(IRepository<ReceptionSheet, Guid> sheets,
         ReceptionMaterials? Materials = null, bool ReplaceMaterials = false, ReceptionPayment[]? Payments = null);
     public record SheetDto(Guid Id, string Customer, string Phone, DateOnly? PickupDate,
         string Instructions, string Stage, DateTime CreationTime, ReceptionPrintLayout? Layout, decimal? TotalPrice,
-        decimal? Deposit, InkStroke[]? Handwriting, string Version, ReceptionPhotoSource? SourcePhoto, ReceptionTextSource? SourceText = null, string? PrintEstimate = null,
+        decimal? Deposit, InkStroke[]? Handwriting, string Version, ReceptionPhotoSource? SourcePhoto, bool HasMessengerTrialArtwork = false,
+        bool HasGmailTrialPdf = false, ReceptionTextSource? SourceText = null, string? PrintEstimate = null,
         MaterialDetails? Materials = null, ReceptionPayment[]? Payments = null);
     public record MaterialFile(Guid Id, string Name, string ContentType, int? PageCount, bool Expired, long ByteSize);
     public record MaterialDetails(Guid ImportId, Guid[] DocumentIds, string Description, MaterialFile[] Files);
@@ -55,8 +57,53 @@ public class ReceptionSheetsController(IRepository<ReceptionSheet, Guid> sheets,
         return new(s.Id, s.Customer, s.Phone, s.PickupDate, s.Instructions, s.Stage.ToString(), s.CreationTime,
             s.ReadPrintLayout() is { } json ? JsonSerializer.Deserialize<ReceptionPrintLayout>(json) : null,
             s.TotalPrice, s.Deposit, s.HandwritingJson is { } ink ? JsonSerializer.Deserialize<InkStroke[]>(ink) : null,
-            s.ConcurrencyStamp, s.ReadSourcePhoto(), s.ReadSourceText(), s.PrintEstimate, details,
+            s.ConcurrencyStamp, s.ReadSourcePhoto(), s.IsTrialReady(), s.HasProperty(GmailPdfKey), s.ReadSourceText(), s.PrintEstimate, details,
             s.ReadPayments());
+    }
+
+    // Only the known, harmless fixture from the store's test email is accepted by this pilot.
+    private const string GmailPdfKey = "GmailTrialPdf";
+    private const string TrialPdfSha256 = "087246ADF5506562C979958A94558E832B00CC62A8B7BE13EB0DF591734D5067";
+
+    [HttpPost("{id:guid}/gmail-trial-pdf")]
+    [RequestSizeLimit(64 * 1024)]
+    public async Task<IActionResult> AttachGmailTrialPdf(Guid id, [FromForm] IFormFile file,
+        [FromForm, Required, RegularExpression("^[0-9a-f]{1,32}$")] string messageId, CancellationToken ct)
+    {
+        if (file.Length is <= 0 or > 32768) return BadRequest();
+        using var buffer = new MemoryStream();
+        await file.CopyToAsync(buffer, ct);
+        var bytes = buffer.ToArray();
+        if (Convert.ToHexString(SHA256.HashData(bytes)) != TrialPdfSha256) return BadRequest();
+        var sheet = await sheets.FindAsync(id, cancellationToken: ct);
+        if (sheet == null) return NotFound();
+        if (sheet.Customer != "TEST-001") return BadRequest();
+        if (sheet.HasProperty(GmailPdfKey))
+            return sheet.GetProperty<string>("GmailTrialMessageId") == messageId ? NoContent() : Conflict();
+        sheet.SetProperty(GmailPdfKey, Convert.ToBase64String(bytes));
+        sheet.SetProperty("GmailTrialMessageId", messageId);
+        await sheets.UpdateAsync(sheet, autoSave: true, cancellationToken: ct);
+        return NoContent();
+    }
+
+    [HttpGet("{id:guid}/gmail-trial-pdf")]
+    public async Task<IActionResult> OpenGmailTrialPdf(Guid id, CancellationToken ct)
+    {
+        var sheet = await sheets.FindAsync(id, cancellationToken: ct);
+        if (sheet?.GetProperty<string>(GmailPdfKey) is not { } pdf) return NotFound();
+        Response.Headers.CacheControl = "private, no-store";
+        Response.Headers.ContentDisposition = "inline; filename=\"TEST-001-Gmail-proof.pdf\"";
+        return File(Convert.FromBase64String(pdf), "application/pdf");
+    }
+
+    [HttpGet("{id:guid}/messenger-trial-artwork")]
+    public async Task<IActionResult> TrialArtwork(Guid id, CancellationToken ct)
+    {
+        var sheet = await sheets.FindAsync(id, cancellationToken: ct);
+        if (sheet?.ReadTestArtwork() is not { } art) return NotFound();
+        Response.Headers.CacheControl = "private, no-store";
+        Response.Headers.XContentTypeOptions = "nosniff";
+        return File(art.Bytes, art.Mime);
     }
 
     [HttpGet("recognition/{importId:guid}")]

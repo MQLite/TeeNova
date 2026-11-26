@@ -1,5 +1,7 @@
 using Volo.Abp.AspNetCore.Mvc;
 using Volo.Abp.Modularity;
+using Microsoft.Extensions.DependencyInjection;
+using TeeNova.Reception;
 
 namespace TeeNova;
 
@@ -9,4 +11,6 @@ namespace TeeNova;
 )]
 public class TeeNovaHttpApiModule : AbpModule
 {
+    public override void ConfigureServices(ServiceConfigurationContext context) =>
+        context.Services.AddHostedService<MessengerTrialReplyWorker>();
 }

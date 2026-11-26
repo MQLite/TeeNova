@@ -9,7 +9,7 @@ const path = '/api/admin/reception-sheets'
 export const stages = { Preparing: '待做好', Ready: '待取货', Collected: '已取货' } as const
 export type Stage = keyof typeof stages
 export interface SheetSummary { artwork?: Artwork[]; id: string; customer: string; phone?: string; pickupDate: string | null; creationTime: string; totalPrice?: number | null; deposit?: number | null; payments?: WorksheetPayment[] }
-export interface SavedSheet extends SheetSummary { phone: string; instructions: string; stage: Stage; layout?: PrintLayout | null; version: string; handwriting?: Stroke[] | null; sourcePhoto?: PhotoSource | null; sourceText?: PhotoSource | null; printEstimate?: string | null; materials?: SavedMaterials | null }
+export interface SavedSheet extends SheetSummary { phone: string; instructions: string; stage: Stage; layout?: PrintLayout | null; version: string; handwriting?: Stroke[] | null; sourcePhoto?: PhotoSource | null; sourceText?: PhotoSource | null; hasMessengerTrialArtwork?: boolean; hasGmailTrialPdf?: boolean; printEstimate?: string | null; materials?: SavedMaterials | null }
 export const deleteSheet = (id: string, version: string) =>
   adminApiClient.delete<void>(path + '/' + id + '?version=' + encodeURIComponent(version))
 export const fetchSheet = (id: string) => adminApiClient.get<SavedSheet>(path + '/' + id)
